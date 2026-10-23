@@ -1,0 +1,675 @@
+N O R T H A M E R I CA N P R I VAT E U N I V E R S I T Y — N AU E C O S Y S T E M
+
+
+
+
+SmartCampus AI
+Master Architecture & Pipeline
+  v3 · REVIEWED & ENHANCED EDITION
+
+Agentic orientation & admission platform — multimodal (text / voice), multilingual (French ·
+Tunisian Derja · Arabizi), with an explicit human–agent operating model. This edition
+corrects v2 against the official project description (Projet N°3) and the VisioroAI working
+session, and records the recommended design decisions.
+
+
+   IIT                                ISB               ISA
+   Engineering & Technology           Business          Architecture
+
+
+
+
+   VISION                           →         JARVIS                       →      HITL
+   Front-office agent · Steps 1–7             Back-office agent · Step 8          Human decision · Step 9
+
+
+
+
+MODULE                     IA Générative — 3ème Génie Informatique · Semestre 1
+
+ÉQUIPE                     Groupe 3 — « Night Agents » · 5 membres
+
+MEMBRES                    Mehdi Zouari (Lead) · Moataz Triki · Yassine Guermazi · Melek Rekik · Youssef Trabelsi
+
+ENSEIGNANT                 M. Taoufik Ben Abdallah · en collaboration avec VisioroAI
+
+ÉDITION                    v3 — 2026 / 2027
+
+
+
+Groupe 3 — Night Agents                                                                       Projet N°3 · SmartCampus AI
+R E V I E W O F S C V 2 · W H AT C H A N G E D A N D W H Y
+
+   1       Executive Summary & Review Verdict
+SC v2 has a solid core: early eligibility filtering, a hierarchical multi-agent design, lazy authentication, chat
+compression and a dedicated follow-up agent. Checked against the official description (Projet N°3) and the VisioroAI
+whiteboard, it has gaps that a jury will notice — mainly missing actors, a missing evaluation section, unsupported
+numbers and a privacy problem in the step order. v3 keeps the v2 identity (VISION + JARVIS) and fixes those points.
+
+   Kept from v2 (strong)                                                         Fixed in v3 (gaps)
+       Two named orchestrators: VISION (front-office) &                              Only 3 actors vs. 6 actors in the spec → mapped to 3
+       JARVIS (back-office)                                                          primary + 3 secondary
+       Eligibility gate before any heavy compute (OCR, QCM)                          No "Résultats & validation" metrics (required in the
+       Progressive (lazy) authentication with anonymous                              presentation) → §10
+       session                                                                       No roadmap (required) → §11 · team matrix rebalanced
+       Structured candidate state instead of endless chat history                    for 5 members
+       Human-in-the-loop on the admission decision                                   Transcript uploaded before authentication → personal
+       Per-school data separation IIT / ISB / ISA                                    data under an anonymous cookie
+                                                                                     RAG used only as a scoring step — spec wants free Q&A
+                                                                                     at any time
+                                                                                     Unverifiable claims (3× conversion, −92 % memory,
+                                                                                     5,000 users, "zero hallucination")
+                                                                                     JARVIS described as both "polling every 60 s" and
+                                                                                     "event-driven"
+
+Key decisions recorded in this edition
+ Question                                     Decision                                      Reason (one line)
+ When must the student                        Not to chat. Only at the first of: upload a   Rule = "auth when the student gives something
+ authenticate?                                document · save / email the shortlist ·       personal or wants something kept". Zero friction for
+                                              start pre-inscription.                        browsing.
+ Agent or human RH for follow-up?             Both, with case ownership. JARVIS runs        Automation for volume, people for judgment — and
+                                              the standard path; Human RH owns              no double messages to the student.
+                                              exceptions. A case has exactly one
+                                              owner at a time.
+ How to stop chat history                     3-tier memory: hot Redis · warm               Storage is cheap; the real cost is the context
+ exploding (1,000+ students)?                 structured profile + rolling summary ·        window (tokens, latency, quality).
+                                              cold compressed archive with retention.
+ How to free RH-agent history                 No per-booking transcripts. State-            Agent is stateless; it rebuilds context from the DB on
+ after cancellations?                         machine rows + append-only events; a          every trigger.
+                                              cancel = status change that releases the
+                                              slot.
+ 3 databases — physical or                    One PostgreSQL server, 3 school               Satisfies "3 databases" with isolation, without
+ logical?                                     schemas + core, separate roles & row-         distributed-sync complexity for a student project.
+                                              level security; outbox kept so schools
+                                              can split later.
+ Grades: OCR first or later?                  Orientation uses declared grades              Removes the privacy issue and gives OCR a real job
+                                              (anonymous); the official relevé is           (form filling + consistency check).
+                                              uploaded after auth and its OCR pre-fills
+                                              the form.
+
+    SCOPE NOTE
+    The official description covers IIT and ISB. ISA appears in the whiteboard session and in v2, so v3 keeps it as an
+    announced extension. Confirm with M. Ben Abdallah that ISA is in scope so the jury reads it as added value, not a
+    deviation.
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                            IIT · ISB · ISA | p. 1
+INPUT FOR THE USE-CASE DIAGRAM
+
+   2       Actors — Whiteboard × Spec × v3
+The whiteboard keeps three people: User / Candidat, Resp NAU (the "Admin" label was crossed out and replaced)
+and a crossed-out third role. The spec lists six actors. v3 reconciles both: three primary actors who drive the
+pipeline, three secondary actors who configure or supervise it, and the external systems.
+ v3 actor                        Type          Covers (spec)                Main use cases
+ Candidat / Student                Primary     Candidat / futur étudiant    Chat by text or voice (FR / Derja / Arabizi) · ask about programs ·
+                                                                            get a justified 2–3 shortlist and compare · authenticate · upload
+                                                                            relevé · fill pre-inscription · give consent · pass QCM · book /
+                                                                            reschedule / cancel interview · receive notifications
+ NAU Responsable                   Primary     Responsable académique       Publish availability · view ready candidates · read AI interview
+ one per school (IIT /                         IIT · Responsable            brief (profile, verified grades, orientation, QCM) · confirm or
+ ISB / ISA)                                    académique ISB ·             adjust the recommended track · conduct interview · record
+                                               Responsable entretien        outcome & observations · sign final decision (HITL)
+ Human RH                          Primary     "Conseiller" escalation in   Exception queue: no-reply, no-show, repeated cancellations,
+ admissions officer                            the spec's Relance           document anomalies, complaints · take ownership of a case ·
+                                               agentique                    contact student · hand case back to JARVIS · approve message
+                                                                            templates
+ Direction                         Secondary   Direction                    Funnel dashboard (visitor → pre-inscription → interview →
+                                                                            enrolment) · demand per program · IIT/ISB/ISA comparison ·
+                                                                            agent KPIs · abandoned files · ask questions in natural language
+                                                                            (ATLAS, optional)
+ Platform Admin                    Secondary   Administrateur de la         Accounts & roles · campaigns & workflow parameters (reminder
+                                               plateforme                   delays, max reschedules) · RAG documents · orientation rules ·
+                                                                            QCM & email templates · model settings · logs & audit
+ External systems                  System      "Intégrations externes"      Email/SMS provider · calendar API · identity provider (Google
+                                                                            OAuth) · STT model · LLM serving · object storage
+
+
+    RECOMMENDATION FOR THE DIAGRAM                                            WHY MERGE THE 3 RESPONSABLES
+    Draw Student, NAU Responsable, Human RH on the                            In the NAU context the person who validates
+    left; Direction, Admin as secondary; JARVIS as a                          orientation for a school is usually the one who
+    system actor (it initiates use cases on its own: send                     interviews. Merging keeps the diagram readable. Model
+    reminder, release slot, escalate). Use «include» for                      it as one actor with a school attribute; if the jury
+    Authenticate from Upload relevé, Save shortlist and                       prefers the spec's exact list, specialise it into Resp.
+    Submit pre-inscription.                                                   académique and Resp. entretien via generalisation.
+
+
+Golden rule (from v2, kept)
+Humans never talk to sub-agents. They interact with VISION, JARVIS or their dashboard. Every agent action that
+changes a candidate's situation is logged with who / what / why, so any decision can be explained afterwards.
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                        IIT · ISB · ISA | p. 2
+SYSTEM VIEW
+
+   3       Global Architecture
+Five layers. The two orchestrators share the same data layer but never call each other directly: VISION writes a pre-
+inscription submitted event; JARVIS reacts to it. This keeps the live chat fast and the follow-up robust.
+
+                             Student web                 RH exception              Responsable                Direction                Admin console
+CHANNELS                     chat                        board                     portal                     dashboard                config · RAG docs ·
+                             text · voice note ·         queue · ownership         slots · brief ·            funnel · KPIs            logs
+                             file upload                                           decision
+
+                             API (FastAPI) · Next.js frontend
+                             auth (OTP / OAuth) · rate limiting · RBAC per school ·
+BACKEND
+                             guardrails
+                             (prompt-injection filter, PII masking in logs, "no promise of admission" output check) · audit log
+
+                             VISION · LangGraph supervisor                 JARVIS · event workers                      ATLAS · optional
+AGENTS                       6 sub-agents · live conversation ·            3 sub-agents · timers & events ·            Direction insights · read-only SQL
+                             Steps 1–7                                     Step 8
+
+                             Redis                       PostgreSQL core           Schemas iit · isb          pgvector                 MinIO (S3)
+                             hot sessions · last         accounts ·                · isa                      official corpus ·        relevés · cold chat
+DATA                         turns · TTL 7 d             candidates ·              dossiers · QCM ·           metadata school /        archive
+                                                         appointments ·            decisions (RLS)            program
+                                                         events · outbox
+
+                             Whisper                     Open LLM +                VLM                        SMTP / SMS ·             Langfuse /
+AI & EXTERNAL                STT (+ optional             QLoRA                     relevé extraction          Calendar API             LangSmith
+                             TTS)                        Derja / Arabizi                                      notifications · slots    traces · eval · cost
+                                                         adapter
+
+
+Mapping to the stack proposed in the spec
+ Spec layer                            v3 choice                                    Note
+ Frontend                              Next.js / React                              Chat with push-to-talk, OCR confirmation card, 4 dashboards
+                                                                                    (RH, Responsable, Direction, Admin)
+ Backend                               FastAPI                                      Python end-to-end with LangGraph; tools exposed to agents as
+                                                                                    typed functions
+ Relational DB                         PostgreSQL 16 + pgvector                     One engine for relational + vector reduces ops for a 7-person
+                                                                                    team
+ Voice                                 Whisper (STT), optional TTS                  Evaluate on a Tunisian audio test set (WER) before / after any
+                                                                                    adaptation
+ Agentic AI                            LangGraph + Postgres checkpointer            Supervisor, routing, memory, interrupt() for human-in-the-
+                                                                                    loop
+ LLM                                   Open-source 7–8B instruct + QLoRA            Satisfies "adapter au moins un modèle"; keep a hosted API as
+                                                                                    fallback for the demo
+ Communication                         SMTP + calendar API; Celery + Redis          Delayed tasks for reminders; webhook for calendar changes
+                                       broker
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                                    IIT · ISB · ISA | p. 3
+FROM FIRST MESSAGE TO FINAL DECISION
+
+   4       End-to-End Pipeline (9 Steps)
+Read it like a journey: the student talks to VISION, then JARVIS takes care of the follow-up, and a human makes the
+final decision. Each box is one step; details are on the next page.
+       VISION agent (live chat)                   JARVIS agent (follow-up)                   Human RH (exceptions)              NAU Responsable (decision)
+
+                                                                                         2
+                                                      1                                                                  3                                     4
+
+  ① Discover
+  VISION · no account                          Talk               ›        Ask & get to know        ›        Check eligibility           ›      Get 2–3 tracks
+  needed                                                                   Answers with official
+                                     Text or voice · French,                                               Bac / Licence rules ·             IIT / ISB / ISA compared
+                                         Derja, Arabizi                      sources · learns            stop early if not eligible                  & explained
+                                                                                interests
+
+
+                                                               Login only here — email code or Google · nothing typed before is lost
+
+                                                                                         6
+                                                      5                                                                  7
+
+  ② Enrol                                                         ›         Pre-inscription         ›                                    ›
+  VISION · logged in                          Log in                                                           Short QCM                          IIT · ISB · ISA
+                                       Anonymous chat                      Upload relevé → form         5–10 questions + 1-page                dossier routed to the
+                                    merged into the account                auto-filled → saved in       brief for the interviewer                chosen school
+                                                                               the school DB
+
+                                                               ▼ pre-inscription submitted → JARVIS takes over automatically
+
+                                                          8a                                            8b                                             8c
+
+  ③ Follow up                                                                  ›                                           ›
+  JARVIS + Human RH                           Book interview                            Remind & reschedule                           Problem? → Human RH
+                                        Sends free slots of the NAU                       Reminder 24 h before ·                      No reply 72 h · no-show · 3rd
+                                               Responsable                              understands “I can’t come”                         cancel · complaint
+
+
+                                                           9                                            9                                              ✓
+
+  ④ Decide                                                                     ›                                           ›
+  Human in the loop                           Review the brief                           Interview & decision                            Notify the student
+                                       Profile, verified grades, tracks,            NAU Responsable signs: admitted /                  JARVIS sends the human-
+                                                      QCM                                  waitlist / rejected                             approved result
+
+
+    THE WHOLE IDEA IN ONE LINE
+    Agents do the talking and the follow-up; rules decide what is allowed; humans handle exceptions and make every
+    official decision.
+
+Candidate status (one column drives every dashboard): ANONYMOUS → PROFILING → ELIGIBLE | INELIGIBLE → ORIENTED →
+AUTHENTICATED → PREINSCRIBED → QCM_DONE → SCHEDULED → INTERVIEWED → ADMITTED | WAITLIST | REJECTED · side states:
+DORMANT, ESCALATED, WITHDRAWN.
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                                              IIT · ISB · ISA | p. 4
+Traceability to the official "processus métier ciblé"
+ Spec step                                       v3 steps             How v3 delivers the expected output
+ 1 · Conversation multimodale                    1 (+ all)            Voice + text, three language varieties and code-switching; context kept
+                                                                      through the memory tiers (§7)
+ 2 · Orientation académique                      2, 3, 4              Adaptive questions → profile → gate → justified shortlist, never an imposed
+                                                                      choice
+ 3 · Information programmes                      2 (continuous)       RAG Q&A available at every step, with the program / rule / source cited
+ 4 · Préinscription & QCM                        5, 6, 7              Pre-filled exact form, consent, dossier created in the school schema, targeted
+                                                                      QCM
+ 5 · Suivi admission                             8, 9                 Slot proposal, invitations, reminders, escalation, interview and final enrolment
+                                                                      decision
+
+Step detail — who does what (technical view)
+ #         Owner                              AI / tooling                             Human touch-point              Fails safely by…
+ 1         VISION · 1.1                       Whisper, LID, regex Arabizi map,         —                              Asking to repeat / offering text
+                                              QLoRA LLM                                                               input when STT confidence is
+                                                                                                                      low
+ 2         VISION · 1.2                       pgvector hybrid search (BM25 +           Admin maintains corpus         "I don't have an official source
+                                              vectors), citation check                                                for that" + contact link
+ 3         VISION · 1.3                       Rule engine (YAML rules by Admin)        Admin edits rules              Borderline cases flagged "to
+                                                                                                                      confirm by Responsable"
+ 4         VISION · 1.5                       score_compatibilite() (weights)          Responsable may adjust         Showing the score breakdown,
+                                              + LLM explanation                        later                          not just a verdict
+ 5         Backend                            OTP / OAuth, session merge               —                              Resume link; anonymous data
+                                                                                                                      kept 7 days
+ 6         VISION · 1.4 / 1.6                 OpenCV, VLM, Pydantic, outbox            RH on document anomaly         Student confirms highlighted
+                                              router                                                                  fields; mismatch → RH ticket
+ 7         VISION · 1.6                       Question bank + LLM variants, auto-      Admin approves question        Generating from a vetted bank,
+                                              grader                                   bank                           not from scratch
+ 8         JARVIS · 2.1–2.3                   Celery timers, calendar API, LLM reply   Human RH on exceptions         Escalation matrix (§6); one
+                                              understanding                                                           owner per case
+ 9         NAU Responsable                    Brief + dashboard                        Final decision                 No decision ever sent without
+                                                                                                                      human sign-off
+
+     DEMO TIP (20-MINUTE PRESENTATION)
+     Script the live demo on the spec's own "exemple complet de besoin": a lycéen sends a Tunisian voice note, likes
+     maths & informatique, hesitates between Prépa and Licence → shortlist → pre-inscription → QCM → slot booked → he
+     cancels by message → JARVIS reschedules. It shows every step in under 5 minutes.
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                                 IIT · ISB · ISA | p. 5
+M A X I M I S I N G A G E N T S — W I T H O U T "A G E N T- WA S H I N G "
+
+   5       Multi-Agent Hierarchy
+2 orchestrators + 9 sub-agents (+1 optional). The team asked to maximise AI agents; the strongest way to do that in
+front of a jury is to be precise about what is an LLM decision and what is deterministic code. Agents decide what to
+do next; rules and code decide what is allowed.
+
+          VISION                                                                             JARVIS
+   Front-office supervisor (LangGraph) · plans next action: ask,                       Back-office orchestrator · event + timer driven · stateless
+   explain, compare, start pre-inscription, ask for human validation                   between triggers
+
+
+             1.1 · Listener                                                                       2.1 · Scheduler                                           code
+             Voice & Dialect NLU — STT, Arabizi → clean text,                LLM                  Slots & booking — no double-booking
+             intent
+                                                                                                  2.2 · Messenger                                            LLM
+             1.2 · Librarian                                                 LLM                  Reminders; understands confirm / move / cancel
+             Program Q&A (RAG) — answers with cited sources
+                                                                                                  2.3 · Fixer                                  rules + LLM
+             1.3 · Gatekeeper                                                                     Frees slots, waitlist, opens RH ticket
+             Profile & Eligibility — LLM extracts, rules            LLM + rules
+             decide
+                                                                                       ATLAS · optional / stretch
+             1.4 · Reader                                                              Direction insight agent · natural-language questions → SQL over
+             Relevé extractor — VLM → checked grades +                     VLM         read-only views → chart + comment
+             confidence
+
+             1.5 · Advisor                                                              CROSS-CUTTING GUARDRAIL NODE
+                                                                    code + LLM
+             Orientation — score → explained 2–3 tracks                                 Every VISION and JARVIS output passes a check:
+                                                                                        citation present for factual claims, no admission
+             1.6 · Registrar                                                            promise, no fees invented, language matches the
+                                                                             LLM
+             Form pre-fill, adaptive QCM, interview brief                               student.
+
+
+Why JARVIS is not a "polling LLM"
+v2 said JARVIS polls every 60 s and is event-driven. v3 picks one model: events + timers, with a slow safety sweep.
+ Trigger                                      Example                                                  Mechanism
+ Domain event                                 pre-inscription submitted, slot cancelled, student       Outbox row → worker (or Postgres
+                                              replied                                                  LISTEN/NOTIFY )
+
+ Timer                                        reminder at T-24 h, no reply after 24 / 48 / 72 h        Celery task with ETA, stored with the appointment;
+                                                                                                       cancelled when state changes
+ Safety sweep                                 missed event, worker restart                             Every 10 min: reconcile states vs. timers
+                                                                                                       (idempotent)
+
+Result: nothing is "waiting in memory", reminders fire on time, and the same message is never sent twice (idempotency key =
+appointment_id + message_type).
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                                        IIT · ISB · ISA | p. 6
+THE QUESTION THE TEAM ASKED
+
+   6       Human RH + RH Agent at the Same Time?
+    VERDICT — YES, IT IS THE BEST APPROACH, ON ONE CONDITION
+    Use JARVIS for the standard path and the Human RH for exceptions with explicit case ownership. Without
+    ownership, the two will contradict each other (agent sends a reminder while the RH is on the phone with the student).
+    With it, you get automation's speed and human judgment where it matters.
+
+
+   Agent only                                                      Human only                                                Hybrid with ownership ✓
+   Cheap and fast, but fails on no-                                Reliable but does not scale at peak                       JARVIS: invite, book, remind,
+   shows, emotional or special cases,                              season, slow reminders, and the spec                      reschedule, release. RH: anything
+   disputes and anything outside policy.                           explicitly asks for agentic follow-up.                    requiring judgment. One owner per
+   Not acceptable for an admissions                                                                                          case; handover logged.
+   office.
+
+
+Operating rules
+ 1. One owner per case: case.owner ∈ {JARVIS, RH:<user>} . When RH takes a case, all automated messages for it stop.
+    RH can hand it back with one click.
+ 2. Agent authority is bounded: JARVIS may propose, book, remind, reschedule (max 2) and release slots. It may not
+    cancel a dossier, promise admission, grant exceptions or decide anything.
+ 3. Template-bound messages: RH approves message templates; the LLM only personalises within them (name, date,
+    language register).
+ 4. Escalation carries context: each RH ticket includes a 5-line LLM summary + timeline, so RH never re-reads a chat.
+
+Escalation matrix (default values — configurable by Admin)
+ Situation                                                        JARVIS does                                                   Escalates to RH when
+ Invitation not answered                                          Reminder at 24 h, second at 48 h                              No answer at 72 h → status
+                                                                                                                                DORMANT, RH ticket
+ Student cancels / asks to move                                   Offers new slots, releases old slot to waitlist               3rd change request
+ Student absent (no-show)                                         Marks NO_SHOW                                                 Immediately — a human calls
+ Responsable cancels                                              Apologises, re-offers priority slots                          No slot available within 7 days
+ Document mismatch / low confidence                               Asks student to confirm field                                 Declared ≠ official after confirmation
+ Complaint, distress, special needs, fees /                       Acknowledges, no commitment                                   Immediately
+ deadline exception
+
+Appointment state machine
+                                                                                                                          → Step 9 decision
+
+       AWAITING_SLOT                          INVITED                        BOOKED                            REMINDED                  ATTENDED
+
+
+
+                   no reply 72 h                                     reschedule ≤ 2                   cancel              absent
+                                                        RH hands back
+
+                             closed
+                                          ESCALATED             3rd change        CANCELLED
+        WITHDRAWN                                                                                                         NO_SHOW
+                                        owner = Human RH                              slot released
+
+
+
+                                                                                no-show → human call
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                                                IIT · ISB · ISA | p. 7
+THE THREE PROBLEMS RAISED BY THE TEAM
+
+   7       Solutions to the Core Problems
+Problem 1 — Authenticate at entry or at certain steps?
+Answer: at certain steps, decided by one rule. Browsing
+and orientation are anonymous (a signed session cookie +                          Why not at entry?
+Redis, rate-limited per IP / session). Authentication is                          A login wall at the first message kills exploratory visits —
+required the first time the student either gives something                        exactly the visitors the platform wants to convert. Why not at
+personal (document, form data) or wants something kept                            the very end? Because the relevé is personal data; storing it
+(save / email shortlist, book an interview).                                      under an anonymous cookie is a privacy and fraud risk. The
+                                                                                  "give or keep" rule covers both cases and is easy to defend.
+     Anonymous session TTL 7 days (v2's 24 h loses
+     students who come back after the weekend)
+     On auth, the anonymous profile and summary are
+     merged into the account — the student never repeats
+     themselves
+     Abuse control: per-session message quota, voice length
+     cap, upload only after auth
+
+Problem 2 — Chat history for 1,000+ students
+
+   ~24 MB                                     ~7,000                              ~1,200                               ≈ 6×
+   raw text for 1,000 students ×              input tokens per call if the full   tokens with profile + rolling        fewer input tokens per call →
+   60 messages × ~400 B —                     60-turn history is resent           summary + last 6 turns               lower cost & latency, better
+   storage is not the problem                 (≈120 tokens / turn)                                                     answers
+
+Estimates for sizing only — measure the real figures during the load test (§10).
+
+   Hot · Redis                                             Warm · PostgreSQL                                Cold · MinIO / S3
+   Current graph state + last 6–8 turns.                   candidate_profile (typed facts: level,           Raw transcript as gzip JSONL for
+   TTL 7 days for anonymous sessions;                      averages, interests, choices) + rolling          audit and evaluation.
+   refreshed on activity.                                  summary (≤ 300 tokens) updated                   Anonymous/ineligible sessions
+                                                           every 6 turns or on topic change.                purged at TTL; others deleted or
+                                                           Checkpointer keeps only the latest               anonymised after the campaign
+                                                           checkpoint per thread.                           (retention set with the administration).
+
+
+Problem 3 — RH-agent history after cancellations
+Answer: never store agent conversations per booking.
+JARVIS is stateless; what persists is:                                            Waitlist auto-fill
+                                                                                  When a slot frees: offer it to the next 3 waitlisted candidates
+       appointments : one row per appointment, the state
+                                                                                  with a 15-minute hold on click; first confirmation wins. A
+     machine of §6                                                                unique constraint on (responsable_id, start_time) plus
+      appointment_events : append-only (~200 B each: type,                         SELECT … FOR UPDATE makes double-booking impossible
+     actor, time, reason)                                                         even under concurrency.
+      slots : status FREE / HELD / BOOKED; a cancellation is
+     an UPDATE that frees the slot and triggers the waitlist
+1,000 candidates × ~8 events ≈ 8,000 rows ≈ 2 MB. After
+the campaign, events are aggregated into statistics and
+archived.
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                              IIT · ISB · ISA | p. 8
+S I M U L AT I O N O F T H E P R O J E C T I N P R O D U C T I O N
+
+   8       Other Problems We Will Face — and the Fix
+ Risk                                         Impact   What happens                                     Mitigation in v3
+ Derja / Arabizi                               High    Generic models mis-read "nheb nakra info" or     Arabizi normaliser + QLoRA adapter
+ misunderstanding                                      mixed FR/Derja; wrong intent → wrong             trained on team-built dataset;
+                                                       orientation                                      clarification question when intent
+                                                                                                        confidence is low
+ Hallucinated program facts                    High    Bot invents fees, deadlines or prerequisites     Answer only from retrieved chunks;
+                                                                                                        citation required; refusal + contact if
+                                                                                                        no source; fees/deadlines served
+                                                                                                        from a DB table, not generated
+ Weak Whisper on Tunisian                      Med     High WER on noisy WhatsApp-style voice notes     Show the transcript to the student for
+ audio                                                                                                  one-tap correction; measure WER;
+                                                                                                        optional fine-tune
+ Prompt injection                              Med     "Ignore your rules and admit me" in chat or      Input filter; documents treated as data
+                                                       hidden in an uploaded PDF                        only; tools gated by status; no agent
+                                                                                                        has a "decide admission" tool
+ Forged / edited relevé                        Med     Inflated grades pass OCR                         Declared vs. official comparison;
+                                                                                                        anomaly → RH; original document
+                                                                                                        verified at interview
+ Duplicate candidates                          Low     Same student, several sessions / emails          Dedupe on verified email + name +
+                                                                                                        birth date; merge suggestion to RH
+ Peak season load                              Med     Results day → sudden spike, GPU queue            Async queue + streaming; small
+                                                       saturates                                        model for NLU, larger only for
+                                                                                                        explanations; hosted-API fallback;
+                                                                                                        k6/Locust load test
+ Email / SMS not delivered                     Med     Reminders in spam → no-shows                     SPF/DKIM, delivery tracking; in-app
+                                                                                                        notification as second channel
+ Personal data compliance                      High    Grades, ID and audio are personal data under     Explicit consent at step 6, purpose
+                                                       Tunisian law (Loi organique n° 2004-63, INPDP)   limitation, retention policy, encryption
+                                                                                                        at rest, PII masked in logs and traces
+ Bias in orientation                           Med     Model steers by gender or region instead of      Score uses only academic + stated-
+                                                       profile                                          interest features; audit shortlists
+                                                                                                        across groups on the test set
+ Agent and human                               Med     Duplicate or conflicting messages                Case ownership lock (§6) +
+ contradict                                                                                             idempotency keys
+ Model / cost drift                            Low     Answers degrade after a corpus or prompt         Regression eval suite in CI; Langfuse
+                                                       change                                           traces with cost per conversation
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                         IIT · ISB · ISA | p. 9
+T H E " 3 D ATA B A S E S " R E Q U I R E M E N T
+
+   9       Data Architecture
+The team wants a database per school. v3 recommends logical separation on one PostgreSQL server: a shared
+ core plus one schema per school, each with its own role. School staff physically cannot read another school's
+dossiers (row-level security + separate credentials).
+
+  core                                        iit                         isb                       isa                        knowledge
+  accounts · candidates ·                     dossiers · QCM ·            dossiers · QCM ·          dossiers · QCM ·           pgvector chunks ·
+  status · consent ·                          briefs · decisions          briefs · decisions        briefs · decisions         metadata school /
+  appointments · slots · events                                                                                                program / source /
+  · outbox · audit                                                                                                             date
+
+
+   Routing at submission (step 6)                                                     Why not 3 physical DBs now
+   Same server → the dossier is written to core and the                               Distributed writes need retries, idempotency and
+   school schema in one transaction (no sync problem at all).                         reconciliation — weeks of work that does not improve the AI
+   The router interface stays behind an outbox event, so if NAU                       part the jury grades. Present the outbox as the scaling path,
+   later requires physically separate servers, only the worker                        not the day-one implementation.
+   changes — not the agents.
+
+
+Retention policy (proposal — validate with the administration)
+ Data                                                 Where                           Kept for
+ Anonymous / ineligible sessions                      Redis                           7 days, then purged automatically
+ Raw chat transcripts                                 MinIO (gzip)                    Until campaign closes + 6 months, then deleted or anonymised
+                                                                                      for evaluation
+ Relevé images                                        MinIO (encrypted)               Until final decision + period required by NAU
+ Profile, dossier, QCM, decision                      PostgreSQL                      Admitted: transferred to student record · others: per NAU
+                                                                                      policy
+ Appointment events, audit log                        PostgreSQL                      Aggregated to statistics after the campaign; audit kept per
+                                                                                      policy
+
+Minimum tables (ready for the class diagram)
+ candidate(id, email, status, school_target, owner) · candidate_profile(candidate_id, facts jsonb, summary text,
+updated_at) · consent(candidate_id, purpose, version, given_at) · document(id, candidate_id, type, uri,
+ocr_json, min_confidence) · shortlist(candidate_id, program_id, score, breakdown jsonb, citations jsonb) ·
+ slot(id, responsable_id, start_time, status, held_until) · appointment(id, candidate_id, slot_id, state,
+reschedules) · appointment_event(id, appointment_id, type, actor, reason, at) · rh_ticket(id, candidate_id,
+reason, summary, owner, status) · outbox(id, event_type, payload, processed_at)
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                              IIT · ISB · ISA | p. 10
+R E Q U I R E D B Y T H E S P E C : " R É S U LTAT S & VA L I D AT I O N "
+
+  10       Evaluation Plan & Metrics
+v2 had no measurable results. The spec asks to "évaluer objectivement compréhension, intentions et qualité des
+réponses". Every number below is a target to measure, always compared with a baseline (base model vs. fine-tuned,
+no-RAG vs. RAG).
+ Component                         Test set (team-built)              Metric                                  Target
+ Speech (Whisper)                  100+ Tunisian voice notes,         Word Error Rate                         Report baseline → adapted; aim
+                                   varied speakers                                                            −20 % relative
+ Dialect NLU                       300 utterances FR / Derja /        Accuracy, macro-F1, per-variety         ≥ 85 % accuracy; QLoRA > base
+                                   Arabizi, labelled intents          breakdown
+ RAG retrieval                     100 questions with gold            Recall@5, MRR                           Recall@5 ≥ 0.90
+                                   passages
+ RAG answers                       Same + 20 out-of-corpus traps      Faithfulness, answer relevancy          Faithfulness ≥ 0.85 · refusal ≥
+                                                                      (RAGAS), correct refusal                95 %
+ Relevé OCR                        30 anonymised transcripts          Field-level exact match; % flagged      ≥ 95 % fields
+                                                                      correctly
+ Orientation                       30 profiles judged by 2 advisors   Advisor's choice in top-3; agreement    ≥ 80 %
+ QCM & brief                       20 generated QCMs                  Expert rating 1–5; answer-key errors    ≥ 4/5 · 0 key errors
+ JARVIS                            Simulated campaign (200 fake       % closed without human; double-         0 double-booking · 100 % on
+                                   candidates, random cancels /       bookings; on-time reminders             time
+                                   no-shows)
+ End-to-end                        15 scripted personas               Task success, turns to shortlist, p95   p95 < 4 s (text)
+                                                                      latency, cost / candidate
+ Load                              k6 / Locust                        Concurrent sessions sustained at p95    Measure and report (replaces
+                                                                      target                                  v2's "5,000+" claim)
+
+    REPLACE V2'S UNSUPPORTED NUMBERS
+    "Boosts conversion 3×", "cuts memory by 92 %", "handles 5,000+ concurrent applicants", "zero-hallucination" and
+    "90 % of volume" have no source. A jury will ask where they come from. Present them as hypotheses and show the
+    measured values from this table instead.
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                          IIT · ISB · ISA | p. 11
+REQUIRED BY THE SPEC: "ROADMAP DE MISE EN ŒUVRE"
+
+  11       Roadmap & 5-Member Team Matrix
+ Sprint                       Deliverable                                              Demo at end of sprint
+ S0 · W1–2                    Corpus collection (IIT/ISB/ISA brochures, rules,         Corpus indexed, DB migrated
+                              FAQ), schemas, test-set protocol, repo + CI
+ S1 · W3–4                    Text chat + RAG Q&A with citations, guardrails v1        Ask "chnowa el farq bin Prépa w Licence?" → cited
+                                                                                       answer
+ S2 · W5–6                    Voice + Arabizi normaliser, QLoRA baseline;              Voice note → shortlist with score breakdown
+                              profiling, eligibility, orientation
+ S3 · W7–8                    Auth + merge, pre-inscription form, relevé OCR,          Full Phase A end-to-end
+                              routing to school schemas, QCM + brief
+ S4 · W9–10                   JARVIS (slots, reminders, replies, waitlist), RH         Cancel → reschedule → escalation live
+                              board, Responsable portal
+ S5 · W11–12                  Evaluation campaign, load test, Direction dashboard      Final 20-min presentation
+                              (+ ATLAS if time), slides & demo script
+
+ #       Role                                 Steps            Key deliverables
+ 1       PO / Scrum Master +                  3, 7, 9          Eligibility & orientation rules with the schools, QCM bank, brief template, test sets
+         Evaluation                                            & metrics (§10), report & slides
+ 2       AI & NLP Architect                   1, 6             Whisper pipeline, Arabizi normaliser, dialect dataset, QLoRA fine-tuning, relevé
+                                                               VLM extractor
+ 3       Data & RAG Engineer                  2, 4, 6          Corpus ingestion, hybrid retrieval, citations, score_compatibilite() , core +
+                                                               IIT/ISB/ISA schemas
+ 4       Backend & Agents                     1–8              FastAPI, auth, VISION LangGraph supervisor, memory tiers, guardrails, JARVIS
+         Engineer                                              workers, calendar / email
+ 5       Frontend & UI Developer              1, 6, 8, 9       Chat UI (voice, OCR card, QCM), RH board, Responsable portal, Direction
+                                                               dashboard
+
+Pairing: 2↔3 on the RAG + dialect model, 4↔5 on dashboards and JARVIS. Scope guard for 5 people: ATLAS and TTS stay optional;
+fine-tune only one model.
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                             IIT · ISB · ISA | p. 12
+TRACEABILIT Y FOR THE TEAM
+
+  12       Correction Log — v2 → v3
+ #       In v2                                  Problem                                 v3
+ 1       3 human actors only                    Spec defines 6 (Resp. académique        3 primary + 2 secondary + system actors,
+                                                IIT/ISB, Resp. entretien, Direction,    with mapping (§2)
+                                                Admin)
+ 2       5 roles without evaluation owner       No one owned metrics, guardrails or     Rebalanced 5-role matrix + pairing (§11)
+                                                the memory design
+ 3       No evaluation section                  Mandatory "Résultats & validation"      Metrics, test sets, baselines (§10)
+ 4       No roadmap                             Mandatory in "Solution proposée"        6 sprints with demos (§11)
+ 5       Relevé uploaded at step 3, auth at     Personal document stored under          Declared grades for orientation; relevé after
+         step 5                                 anonymous cookie                        auth; OCR pre-fills form
+ 6       RAG only in scoring step               Spec: program information at any time   Program Q&A sub-agent available in every
+                                                                                        step
+ 7       JARVIS polls every 60 s and is "event- Contradiction; polling wastes work      Events + timers + 10-min reconciliation sweep
+         driven"                                and delays
+ 8       All 10 units called "AI agents"        Scheduling and booking are              Each unit labelled LLM / VLM / rules / code
+                                                deterministic code                      (§5)
+ 9       3×, −92 %, 5,000+, zero-               Unsourced claims                        Hypotheses → measured targets
+         hallucination, 90 %
+ 10      Redis TTL 24 h                         Returning students lose progress        7 days + resume link
+ 11      3 physical DBs + outbox from day one   Distributed-sync complexity without     Schemas + RLS, outbox kept as scaling path
+                                                grading value
+ 12      No consent, no guardrails              Spec: "enregistrer le consentement";    Consent table, guardrail node, retention policy
+                                                injection & PII risks
+ 13      Human RH vs. JARVIS boundary loose     Risk of conflicting messages            Case ownership + escalation matrix + state
+                                                                                        machine
+ 14      Outcome communication missing          Pipeline ends at "Confirm Admission"    JARVIS sends human-approved outcome;
+                                                click                                   retention starts
+ 15      No Direction / Admin features          Spec lists dashboards and               Direction dashboard (+ ATLAS optional),
+                                                configuration                           Admin console
+ 16      Sub-agent 1.5 mapped to "Step 5–6"     QCM is step 6 in v2                     Renumbered pipeline, consistent table
+
+     DEFENSE PITCH IN ONE SENTENCE
+     "VISION talks, JARVIS follows up, humans decide: agents handle the volume, rules bound what they may do, and
+     every recommendation is cited, measured and signed off by a person."
+
+
+
+
+SmartCampus AI v3 — Groupe 3 · Night Agents                                                                                   IIT · ISB · ISA | p. 13
+

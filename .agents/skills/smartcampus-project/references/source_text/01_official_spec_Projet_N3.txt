@@ -1,0 +1,253 @@
+                                                               ‫ صفاقس‬-‫الجامعة الشمالية األمريكية الخاصة‬
+                                                                ‫المدرسة العليا الدولية الخاصة للتكنولوجيا‬
+                                                        UNIVERSITE NORD-AMERICAINE PRIVEE
+                                                    INSTITUT INTERNATIONAL DE TECHNOLOGIE
+                                                                DEPARTEMENT INFORMATIQUE
+
+
+ DESCRIPTION DU PROJET N°3 ©
+ Matières : IA générative                                      Année Universitaire : 2026-2027
+ Discipline : 3ème année Génie Informatique                    Semestre : 1 / Nombre de page : 4
+ Enseignant : Taoufik Ben Abdallah                             En collaboration avec
+
+
+SmartCampus AI – Plateforme agentique d’orientation universitaire
+ Un système agentique conversationnel qui échange spontanément avec les futurs étudiants en
+ français, dialecte tunisien ou Arabizi, par texte ou audio. Il explique les parcours Licence,
+ Préparatoire et Ingénierie de l’IIT ainsi que les formations de l’ISB, construit progressivement le
+ profil du candidat, propose une orientation justifiée, accompagne la préinscription puis assure le suivi
+ jusqu’au rendez-vous d’inscription, avec QCM ciblé et intervention humaine pour les décisions
+ officielles.
+
+1. Contexte et motivation
+Le choix d’une formation supérieure est souvent difficile pour un futur étudiant : les informations sont
+réparties entre plusieurs pages, brochures et interlocuteurs, les différences entre parcours ne sont pas
+toujours comprises et le candidat hésite entre plusieurs orientations. Cette difficulté augmente lorsque
+l’échange naturel se fait en dialecte tunisien ou en Arabizi, ou lorsque le candidat préfère parler plutôt
+qu’écrire. CampusGuide AI transforme l’orientation en une conversation continue et personnalisée.
+Le système ne se contente pas de répondre à des questions : il collecte progressivement les intérêts, le
+niveau scolaire, les matières préférées, les objectifs professionnels et les contraintes du candidat,
+consulte les informations officielles de l’IIT et de l’ISB via RAG, compare les parcours, explique ses
+recommandations et déclenche les étapes de préinscription et de suivi.
+Processus métier ciblé
+ Étape   Service / fonction   Rôle                                                           Sortie attendue
+                              Comprendre le candidat en français, tunisien ou
+         Conversation                                                                        Profil initial et intentions
+ 1                            Arabizi, en texte ou audio, et maintenir le
+         multimodale                                                                         identifiés.
+                              contexte de la discussion.
+                              Poser des questions adaptatives, analyser
+         Orientation                                                                         Shortlist de formations avec
+ 2                            intérêts, niveau, préférences et objectifs puis
+         académique                                                                          justification.
+                              comparer les parcours possibles.
+                              Interroger le corpus RAG officiel IIT/ISB :
+         Information                                                                         Réponses fiables et parcours
+ 3                            conditions, contenus, débouchés, passerelles,
+         programmes                                                                          recommandé.
+                              durée et modalités.
+                              Collecter les données nécessaires, créer la
+         Préinscription &                                                                    Dossier candidat créé et QCM
+ 4                            préinscription et générer un QCM ciblé selon le
+         QCM                                                                                 personnalisé.
+                              parcours et le profil.
+                              Planifier les relances, proposer un rendez-vous,
+                                                                                             Rendez-vous préparé
+ 5       Suivi admission      envoyer les emails et suivre les étapes jusqu’à
+                                                                                             et dossier suivi.
+                              l’inscription finale.
+
+
+
+
+                                                    1/4
+Projet- IA générative                                                                                        2026-2027
+
+2. Objectifs
+   •   Centraliser les informations officielles sur les parcours Licence, Prépa et Ingénierie de l’IIT
+       ainsi que les formations de l’ISB.
+   •   Permettre une conversation naturelle, spontanée et contextualisée en français, dialecte tunisien
+       et Arabizi, par texte ou audio.
+   •   Construire progressivement un profil candidat à partir de ses résultats, intérêts, préférences,
+       contraintes et projet professionnel.
+   •   Proposer plusieurs orientations pertinentes avec explications, avantages, prérequis et niveau de
+       compatibilité, sans imposer un choix.
+   •   Orchestrer automatiquement le passage de l’orientation vers la préinscription, le QCM, le
+       rendez-vous et le suivi du candidat.
+   •   Générer un QCM ciblé avant l’entretien afin d’identifier les connaissances, motivations
+       et besoins d’accompagnement du candidat.
+   •   Adapter au moins un modèle au contexte tunisien/Arabizi et évaluer objectivement
+       compréhension, intentions et qualité des réponses.
+
+3. Acteurs et besoins fonctionnels
+
+ Acteur                 Rôle                           Besoins fonctionnels
+                                                       Dialoguer avec le chatbot en français, tunisien dialectal ou
+                                                       Arabizi, par texte ou audio ; poser librement des questions sur
+                                                       les formations ; découvrir les parcours Licence, Prépa et
+                                                       Ingénierie de l’IIT ainsi que les formations de l’ISB ; recevoir
+                        S’informe, échange avec le     des recommandations personnalisées selon son profil, ses
+ Candidat / futur       système et réalise son         intérêts et son parcours scolaire ; comparer plusieurs
+ étudiant               parcours d’orientation et de   formations ; demander des explications sur les débouchés
+                        préinscription.                et conditions d’accès ; effectuer une préinscription ; compléter
+                                                       les informations demandées ; passer un QCM personnalisé
+                                                       avant l’entretien ; consulter son rendez-vous ; recevoir les
+                                                       confirmations,      rappels    et    notifications     concernant
+                                                       l’avancement de sa candidature.
+                                                       Consulter les candidats orientés vers l’IIT ; accéder à leur profil
+                        Supervise les informations     et aux recommandations générées ; vérifier la cohérence de
+                                                       l’orientation proposée ; consulter les résultats du QCM ;
+ Responsable            et recommandations
+                                                       confirmer ou ajuster une recommandation académique ; gérer
+ académique IIT         concernant les formations
+                                                       les informations relatives aux formations IIT utilisées par le
+                        proposées par l’IIT.           système ; consulter les statistiques d’intérêt et d’orientation
+                                                       vers les différents parcours.
+                                                       Consulter les candidats orientés vers l’ISB ; accéder à leur
+                        Supervise les informations     profil et aux recommandations générées ; vérifier la cohérence
+                                                       de l’orientation proposée ; consulter les résultats du QCM ;
+ Responsable            et recommandations
+                                                       confirmer ou ajuster une recommandation académique ; gérer
+ académique ISB         concernant les formations
+                                                       les informations relatives aux formations ISB utilisées par le
+                        proposées par l’ISB.           système ; consulter les statistiques d’intérêt et d’orientation
+                                                       vers les différents parcours.
+                                                       Consulter les candidats prêts pour un entretien ; accéder au
+                                                       résumé de leur parcours conversationnel, à leur profil et à la
+                        Organise et réalise les
+ Responsable                                           formation recommandée ; consulter le QCM généré
+                        entretiens des candidats
+ entretien                                             automatiquement et les réponses du candidat ; disposer d’une
+                        préinscrits.                   synthèse des points à approfondir pendant l’entretien ; définir
+                                                       ou valider un rendez-vous ; envoyer une invitation ; saisir le
+
+                                                       2/4
+Projet- IA générative                                                                                      2026-2027
+
+                                                      résultat et les observations de l’entretien ; demander un
+                                                      complément d’information ou transmettre le dossier à l’étape
+                                                      suivante.
+                                                      Consulter un tableau de bord global ; suivre le nombre de
+                                                      conversations, orientations, préinscriptions, entretiens
+                        Supervise globalement le      et inscriptions ; analyser les formations les plus demandées ;
+                                                      comparer les orientations IIT/ISB ; suivre les taux de
+                        processus d’orientation, de
+ Direction                                            transformation visiteur → préinscription → entretien →
+                        préinscription et de
+                                                      inscription ; consulter les indicateurs de performance du
+                        conversion des candidats.     système agentique ; identifier les dossiers en attente ou
+                                                      abandonnés ; accéder à des statistiques et rapports d’aide à la
+                                                      décision.
+                                                      Gérer les comptes, rôles et droits d’accès ; configurer les
+                                                      formations, campagnes d’admission et paramètres du workflow
+                        Assure la configuration, la   ; administrer les documents et sources utilisées par le RAG ;
+                        sécurité et le bon            gérer les règles d’orientation ; configurer les modèles de QCM,
+ Administrateur
+                        fonctionnement technique      emails et notifications ; superviser les agents IA et leurs outils
+ de la plateforme
+                        et fonctionnel de la          ; consulter les journaux et erreurs ; gérer les paramètres des
+                        plateforme.                   modèles IA, de la transcription audio et des intégrations
+                                                      externes ; assurer la traçabilité et la maintenance de la
+                                                      plateforme.
+
+Exemples de fonctionnalités intégrant l’IA
+   • Comprendre et générer du français, du dialecte tunisien et de l’Arabizi, avec détection
+     automatique de la langue et code-switching.
+   • Transcrire les messages vocaux en texte, exploiter leur contenu dans le dialogue
+     et éventuellement produire une réponse audio.
+   • Maintenir une mémoire conversationnelle du candidat : niveau, centres d’intérêt, préférences,
+     questions déjà posées et choix envisagés.
+   • Interroger un corpus RAG officiel IIT/ISB et citer la formation, la règle ou la source utilisée
+     pour répondre.
+   • Calculer un profil d’orientation et comparer plusieurs parcours selon compétences, intérêts,
+     projet professionnel et prérequis.
+   • Planifier dynamiquement la prochaine action : poser une question, expliquer une formation,
+     proposer une comparaison, lancer la préinscription ou demander une validation humaine.
+   • Générer un QCM adaptatif lié au parcours ciblé et produire un résumé exploitable par le
+     responsable de l’entretien.
+   • Créer des emails personnalisés de confirmation, relance et rendez-vous, puis déclencher les
+     actions seulement selon les règles autorisées.
+
+4. Stack technologique proposée
+
+ Couche                 Technologies possibles         Usage
+                                                       Chat web, espace candidat, dashboards admissions
+ Frontend               Next.js / React
+                                                       et administration.
+                                                       API, authentification, règles métier, préinscription,
+ Backend                NestJS / FastAPI
+                                                       outils exposés aux agents.
+                                                       Candidats, profils, programmes, préinscriptions, QCM,
+ Base relationnelle     PostgreSQL
+                                                       rendez-vous et historique.
+
+
+                                                      3/4
+Projet- IA générative                                                                                 2026-2027
+
+                                                         Transcription audio, normalisation linguistique
+ Voix (STT / TTS)       Whisper
+                                                         et réponse vocale optionnelle.
+                        LangGraph / orchestration        Superviseur, routage entre agents, mémoire,
+ Agentic AI
+                        Python                           planification, outils et human-in-the-loop.
+                        Modèle open-source +             Dialogue tunisien/Arabizi, extraction de profil,
+ LLM
+                        LoRA/QLoRA                       génération et adaptation au domaine.
+                                                         Index des programmes, conditions d’accès, FAQ,
+ RAG                    pgvector / FAISS / Chroma
+                                                         brochures et procédures IIT/ISB.
+                        Email API / SMTP +               Confirmations, relances, invitations de rendez-vous et
+ Communication
+                        calendrier                       suivi des réponses.
+
+Exemple complet de besoin
+                  Situation                         Action du système agentique           Résultat visible
+                  Un lycéen envoie un vocal
+                                                    Transcrire, détecter l’intention,
+ Premier          tunisien : il aime maths et                                             Conversation naturelle
+                                                    mémoriser le profil et poser
+ échange          informatique mais hésite                                                et profil enrichi.
+                                                    quelques questions adaptées.
+                  entre Prépa et Licence.
+                  Il vise l’ingénierie logicielle   Interroger le RAG IIT/ISB,
+                                                                                          2–3 parcours
+ Orientation      mais souhaite une voie            comparer les parcours et justifier
+                                                                                          recommandés.
+                  pratique et progressive.          une shortlist.
+                  Le candidat choisit un            Collecter les données manquantes,
+ Préinscription   parcours et souhaite être         enregistrer le consentement et        Préinscription créée.
+                  recontacté.                       créer la préinscription.
+                  Le parcours et le profil          Générer un QCM adaptatif,
+                                                                                          Score et synthèse pour
+ QCM ciblé        scolaire sont connus avant        corriger puis résumer acquis,
+                                                                                          l’entretien.
+                  l’entretien.                      difficultés et motivations.
+                  Le dossier est prêt mais          Proposer un créneau autorisé,
+ Rendez-vous      aucun entretien n’est             envoyer l’invitation et enregistrer   Rendez-vous confirmé.
+                  planifié.                         la confirmation.
+                                                    Déclencher une relance
+ Relance          Le candidat devient inactif                                             Relance tracée ou
+                                                    personnalisée puis escalader vers
+ agentique        ou ne répond plus.                                                      intervention humaine.
+                                                    un conseiller selon les règles.
+
+NB. La description présentée du projet est indicative. D’autres fonctionnalités peuvent être intégrées
+ou certaines supprimées. Le suivi du projet sera assuré via l’application « Project Supervision »
+et validé par une présentation en fin de semestre.
+
+Contenu attendu de la présentation
+   1. Contexte & problématique : cadre d’application, enjeux et problème ciblé.
+   2. Solution proposée : Description de l’architecture agentique proposée, du processus global
+      de la solution et de sa roadmap de mise en œuvre
+   3. Résultats & validation : métriques d’évaluation, analyse des performances et discussion.
+   4. Conclusion & perspectives : bilan du projet, impact potentiel, axes d’amélioration et pistes
+      futures (données, modèles, déploiement).
+⏱️Durée : 20 minutes
+🧑‍🏫Recommandation : évitez les captures d’écran de code ; privilégiez diagrammes, tableaux de
+résultats, schémas de pipeline et démos.
+
+                                                                                                 Bon Travail
+
+                                                       4/4
+

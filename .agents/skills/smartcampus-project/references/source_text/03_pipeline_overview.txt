@@ -1,0 +1,66 @@
+SmartCampus AI — Project Pipeline                                                                                                                                                                                                  Groupe 3 — Night Agents · 5 membres
+                                                                                                                                                                                                                   IA Générative — 3ème Génie Informatique · 2026/2027
+From the student's first message to the final admission decision · IIT · ISB · ISA                                                                                                                                M. Taoufik Ben Abdallah · en collaboration avec VisioroAI
+
+
+      VISION — AI agent that talks with the student (steps 1–7)                        JARVIS — AI agent that follows up (step 8)              Human RH — handles exceptions                  NAU Responsable — final decision
+
+                           ① DISCOVER no account needed                                                                ② ENROL logged in                                                      ③ FOLLOW UP                 ④ DECIDE
+
+                             1                       2                         3                       4                       5                      6                      7                          8                        9
+
+
+STEP                                           ➜                       ➜                       ➜                                                ➜                      ➜                       ➜                         ➜                        ➜
+                                                                                                                                                        Pre-                                   auto                                                        Student
+                           Talk to the             Ask & build                 Check               Recommend LOGIN
+                                                                                                               HERE
+                                                                                                                                  Log in             inscription           Short QCM          hand-
+                                                                                                                                                                                                off      Book &               Interview &                  notified
+                            chatbot                  profile                  eligibility           2–3 tracks                                          form                 + brief                     remind                 decision                 result by email
+                                                                                                                                                                                                                                                          + in the app
+
+                         Student ·                 Student ·                                                                                        Student ·              Student ·                                          NAU
+WHO ACTS                                                                    VISION                 VISION                  Student                                                                    JARVIS
+                         VISION                    VISION                                                                                           VISION                 VISION                                             Responsable
+
+                                                   Answers                  Applies                Scores each                                      Reads the                                         Books a slot,
+                         Voice → text                                                                                                                                      5–10 adapted                                       Gives the
+                                                   program                  admission rules        program,                Merges the               uploaded relevé                                   reminds 24 h
+                         (Whisper);                questions with           (Bac / Licence /       explains why,           anonymous chat           and auto-fills         questions, auto-           before,                 interviewer the
+WHAT THE AI              understands                                                                                                                                       graded; writes a                                   brief; sends the
+DOES                                               official sources         Prépa); stops          compares IIT /          into the new             the exact school                                  reschedules if
+                         French, Derja,                                                                                                                                    1-page brief for                                   result after
+                                                   (RAG); learns            early if not           ISB / ISA side by       account                  form; flags                                       the student
+                         Arabizi                   level & interests        eligible               side                                             doubtful fields        the interviewer            can’t come              approval
+
+
+                                                   Admin keeps                                                                                      RH checks only                                    Human RH                Interviews and
+                                                                            Admin sets the                                                                                 Admin approves
+HUMAN ROLE               —                         documents up                                    —                       —                        if grades don’t                                   takes over              signs the final
+                                                                            rules                                                                                          question bank
+                                                   to date                                                                                          match                                             problem cases           decision
+
+                                                   Student profile                                 Shortlist with                                   Dossier saved
+                         Chat session                                       Eligible / not                                 Candidate                in the chosen                                                             Admitted ·
+                                                   (level, grades                                  reasons;                                                                QCM score +                Appointment
+RESULT / SAVED           started (no                                        eligible +                                     account (email           school                                                                    waitlist ·
+                                                   declared,                                       student picks                                                           interview brief            confirmed
+                         account)                  interests)               alternatives           one                     code or Google)          database +                                                                rejected
+                                                                                                                                                    consent
+
+
+                                 Temporary chat memory (Redis)                                                                   Main database + IIT · ISB · ISA databases                               Appointments & decisions
+                                 kept 7 days · short summary instead of full history                                             account, dossier, QCM, consent — each school sees only its              status + short events only — a cancel just frees the slot
+                                                                                                                                 own
+
+
+   🔒 Login only when needed                                                📚 No invented answers                                           🧑‍💼 Agent + human, one owner                                     ✅ Humans decide
+   Anyone can chat and get advice. An account is asked                     Every fact about programs comes from official IIT /             JARVIS handles normal cases. No reply in 72 h, no-               The AI recommends and prepares; only the NAU
+   only to upload documents, save the shortlist or fill the                ISB / ISA documents and is shown with its source.               show, 3rd cancellation or complaint → the Human RH               Responsable admits, waitlists or rejects a student.
+   form.                                                                                                                                   takes over and the agent stops.
+
+
+
+
+SmartCampus AI — Project N°3 · Pipeline overview                                                                                                                                                                                 Detailed architecture: SmartCampus_AI_v3.pdf
+
