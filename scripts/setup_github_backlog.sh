@@ -15,12 +15,12 @@ set -euo pipefail
 
 REPO="mahdizouari/SmartCampus_NightAgents"
 
-# Optional: set GitHub usernames for auto-assignment (leave empty to skip --assignee)
+# GitHub usernames for auto-assignment (leave empty to skip --assignee)
 GH_MEHDI="${GH_MEHDI:-mahdizouari}"
-GH_MOATAZ="${GH_MOATAZ:-}"
-GH_YASSINE="${GH_YASSINE:-}"
-GH_MELEK="${GH_MELEK:-}"
-GH_YOUSSEF="${GH_YOUSSEF:-}"
+GH_MOATAZ="${GH_MOATAZ:-moatazz12}"
+GH_YASSINE="${GH_YASSINE:-YassineGuermazi}"
+GH_MELEK="${GH_MELEK:-melekrekik90}"
+GH_YOUSSEF="${GH_YOUSSEF:-yousseftrabelsii}"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: GitHub CLI (gh) is not installed. Install it from https://cli.github.com/ and run 'gh auth login'."
@@ -86,7 +86,12 @@ create_issue() {
     args+=(--label "$l")
   done
   if [ -n "$assignee" ]; then
-    args+=(--assignee "$assignee")
+    if gh issue create "${args[@]}" --assignee "$assignee" >/dev/null 2>&1; then
+      echo "   Created: $title (assigned to @$assignee)"
+      return
+    else
+      echo "   Note: Could not assign @$assignee (pending invite?), creating unassigned: $title"
+    fi
   fi
   gh issue create "${args[@]}" >/dev/null
   echo "   Created: $title"
