@@ -21,21 +21,36 @@ for f in scripts/*.sh .githooks/*; do
   fi
 done
 
-# 3. Backend checks (when backend/ exists)
+# 3. Backend checks (when backend/ exists and dependencies are installed locally)
 if [ -d "backend" ]; then
   echo "==> [pre-push] Checking backend/..."
-  if command -v ruff >/dev/null 2>&1; then
+  if [ -x "backend/.venv/bin/ruff" ]; then
+    (cd backend && .venv/bin/ruff check .)
+  elif command -v ruff >/dev/null 2>&1; then
     (cd backend && ruff check .)
+  else
+    echo "Notice: ruff not installed locally — skipping local backend lint (GitHub CI will run it)."
   fi
-  if command -v pytest >/dev/null 2>&1 && { [ -d "backend/tests" ] || find backend -maxdepth 3 -name "test_*.py" | grep -q .; }; then
-    (cd backend && pytest -q)
+
+  if [ -d "backend/tests" ] || find backend -maxdepth 3 -name "test_*.py" | grep -q .; then
+    if [ -x "backend/.venv/bin/pytest" ]; then
+      (cd backend && .venv/bin/pytest -q)
+    elif python3 -c "import fastapi, pytest" >/dev/null 2>&1; then
+      (cd backend && pytest -q)
+    else
+      echo "Notice: backend venv/deps not installed locally — skipping local pytest (GitHub CI will run it)."
+    fi
   fi
 fi
 
-# 4. Frontend checks (when frontend/package.json exists)
+# 4. Frontend checks (when frontend/node_modules is installed locally)
 if [ -f "frontend/package.json" ] && command -v npm >/dev/null 2>&1; then
-  echo "==> [pre-push] Checking frontend/..."
-  (cd frontend && npm run lint --if-present)
+  if [ -d "frontend/node_modules" ]; then
+    echo "==> [pre-push] Checking frontend/..."
+    (cd frontend && npm run lint --if-present)
+  else
+    echo "Notice: frontend/node_modules not installed — skipping local lint (GitHub CI will run it)."
+  fi
 fi
 
 echo "==> [pre-push] All checks passed!"
