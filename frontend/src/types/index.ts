@@ -27,18 +27,20 @@ export type CandidateStatus =
   | 'WITHDRAWN';
 
 /**
- * Official Appointment State Machine (v3 §3 & data_model.md)
+ * Official Appointment State Machine (v3 §3, data_model.md & SA-3)
+ * Lifecycle: AWAITING_SLOT → INVITED → BOOKED → REMINDED → ATTENDED
+ * Exceptions: CANCELLED, NO_SHOW, ESCALATED, WITHDRAWN
  */
 export type AppointmentStatus =
-  | 'PROPOSED'
+  | 'AWAITING_SLOT'
+  | 'INVITED'
   | 'BOOKED'
   | 'REMINDED'
-  | 'RESCHEDULED'
-  | 'CANCELLED_BY_STUDENT'
-  | 'CANCELLED_BY_RESPONSABLE'
-  | 'RELEASED'
-  | 'HELD'
-  | 'NO_SHOW';
+  | 'ATTENDED'
+  | 'CANCELLED'
+  | 'NO_SHOW'
+  | 'ESCALATED'
+  | 'WITHDRAWN';
 
 /**
  * Human decision choices — only the NAU Responsable can decide.

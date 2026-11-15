@@ -1,7 +1,8 @@
 import { AcademicProgram, CandidateDossier, ChatMessage } from '@/types';
 
 /**
- * Verified base academic programs for IIT & ISB (+ ISA extension)
+ * Base academic programs for IIT & ISB (+ ISA extension)
+ * TODO(corpus): Replace placeholder program titles with official DB/RAG catalog data once ingested.
  */
 export const MOCK_PROGRAMS: AcademicProgram[] = [
   {
@@ -108,7 +109,7 @@ export const MOCK_DOSSIERS: CandidateDossier[] = [
     interviewSlot: {
       date: '2026-11-15',
       startTime: '14:00',
-      status: 'HELD',
+      status: 'ATTENDED',
       responsableName: 'Dr. Responsable IIT',
     },
     briefSummary: 'Entretien passé le 15/11. Motivation confirmée pour le génie civil et les projets d’infrastructures durables. En attente de la décision finale du Responsable.',
