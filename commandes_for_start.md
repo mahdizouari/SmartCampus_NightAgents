@@ -41,13 +41,23 @@ gh project link $(gh project list --owner mahdizouari --format json --jq '.proje
 
 ## 3. Daily Git Workflow
 
+Branch naming convention: `<member>/SA-XX-<short-description>` (or `<member>/Bonus-X-<short-description>`), lowercase with hyphens.
+
+Examples:
+- `mehdi/SA-28-auth-jwt`
+- `moataz/SA-17-sql-tables`
+- `yassine/Bonus-3-whisper`
+- `melek/SA-7-fastapi-init`
+- `youssef/SA-8-nextjs-init`
+
 ```bash
-# Always pull latest dev/main before starting a task
+# Always pull latest main before starting a task
 git checkout main && git pull origin main
 
-# Create a branch for your issue (example: SA-28)
-git checkout -b feat/SA-28-auth-jwt
+# Create a branch for your issue
+git checkout -b moataz/SA-17-sql-tables
 
 # Push your branch (pre-push hook runs automatically)
-git push -u origin feat/SA-28-auth-jwt
+git push -u origin moataz/SA-17-sql-tables
 ```
+
