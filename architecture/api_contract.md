@@ -1,9 +1,7 @@
 # SmartCampus AI — Contrat d'Interface & Spécification REST OpenAPI (`SA-5.2`)
 
 > **Tâche :** `[SA-5]` Concevoir les API et les règles d'accès — Contrat d'API REST & Schémas  
-> **Responsable :** Yassine Guermazi (`YG` / `@yassine-guermazi`)  
-> **Destinataires :** Développeurs Backend FastAPI (`Melek`, `Mehdi`), Frontend Next.js (`Youssef`), QA (`Melek`)  
-> **Référence associée :** [rbac_matrix.md](file:///C:/Users/yassi/Documents/GitHub/SmartCampus_NightAgents/architecture/rbac_matrix.md) (`SA-5.1`)  
+> **Référence associée :** [rbac_matrix.md](./rbac_matrix.md) (`SA-5.1`)  
 > **Standard :** OpenAPI Specification v3.1 / RFC 7807 (Problem Details)
 
 ---

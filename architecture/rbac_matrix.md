@@ -1,8 +1,6 @@
 # SmartCampus AI — Matrice RBAC & Règles d'Accès Sécurisées (`SA-5.1`)
 
 > **Tâche :** `[SA-5]` Concevoir les API et les règles d'accès — Volet Sécurité & RBAC  
-> **Responsable :** Yassine Guermazi (`YG` / `@yassine-guermazi`)  
-> **Destinataires :** Backend (`Melek`, `Mehdi`), Frontend (`Youssef`), Architecture (`Moataz`)  
 > **Dépendances :** `SA-3` (Acteurs & Workflows), `SA-4` (Architecture globale 5 couches)  
 > **Règle d'or HITL :** *"VISION talks, JARVIS follows up, humans decide."*
 
@@ -138,10 +136,6 @@ Distincts des quotas réseau, ces plafonds sont garantis par le code métier :
 * **Responsable / RH :** Pas de restriction sur la publication de créneaux ou le calage manuel de rendez-vous en exception.
 
 ### 5.3 En-têtes de Réponse Rate Limit (IETF Draft)
-* `RateLimit-Limit` : Nombre maximum de requêtes autorisées sur la fenêtre.
-* `RateLimit-Remaining` : Nombre de requêtes restantes sur la fenêtre courante.
-* `RateLimit-Reset` : Nombre de secondes avant réinitialisation du quota.
-* En cas de dépassement : code HTTP `429 Too Many Requests` avec en-tête `Retry-After: <secondes>`.
 * `RateLimit-Limit` : Nombre maximum de requêtes autorisées sur la fenêtre.
 * `RateLimit-Remaining` : Nombre de requêtes restantes sur la fenêtre courante.
 * `RateLimit-Reset` : Nombre de secondes avant réinitialisation du quota.
