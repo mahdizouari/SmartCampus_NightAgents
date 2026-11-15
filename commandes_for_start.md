@@ -51,13 +51,13 @@ Examples:
 - `youssef/SA-8-nextjs-init`
 
 ```bash
-# Always pull latest main before starting a task
-git checkout main && git pull origin main
+# Always pull latest dev before starting a task
+git checkout dev && git pull origin dev
 
 # Create a branch for your issue
 git checkout -b moataz/SA-17-sql-tables
 
-# Push your branch (pre-push hook runs automatically)
+# Push your branch (pre-push hook runs automatically), then open a PR into dev
 git push -u origin moataz/SA-17-sql-tables
 ```
 
