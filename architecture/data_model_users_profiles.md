@@ -45,8 +45,10 @@ erDiagram
     CORE_CANDIDATE ||--o{ CORE_EQUIVALENCE_REQUESTS : "soumet"
     CORE_ACCOUNTS ||--o{ CORE_EQUIVALENCE_REQUESTS : "instruit"
 
-    SA12_CATALOG_PROGRAM ||--o{ CORE_SHORTLIST : "cible_SA12"
-    SA12_CATALOG_PROGRAM ||--o{ CORE_EQUIVALENCE_REQUESTS : "vise_SA12"
+    SA12_CORE_SCHOOL ||--o{ CORE_CANDIDATE : "cible_SA12"
+    SA12_CORE_PROGRAM ||--o{ CORE_SHORTLIST : "cible_SA12"
+    SA12_CORE_PROGRAM ||--o{ CORE_EQUIVALENCE_REQUESTS : "vise_SA12"
+    CORE_ACCOUNTS ||--o{ SA14_CORPUS_DOCUMENTS : "administre_SA14"
 
     CORE_CANDIDATE ||--o{ SA14_SCHOOL_DOSSIERS : "preinscrit_SA14"
     CORE_CANDIDATE ||--o{ SA14_APPOINTMENTS : "planifie_SA14"
@@ -166,7 +168,6 @@ erDiagram
         uuid id PK
         uuid candidate_id FK
         uuid program_id FK
-        uuid track_id FK
         smallint rank
         numeric score
         jsonb breakdown
@@ -180,7 +181,7 @@ erDiagram
         varchar source_institution
         varchar target_school
         uuid target_program_id FK
-        varchar yaml_rule_code
+        varchar yaml_rule_key
         varchar gatekeeper_verdict
         varchar review_status
         uuid supporting_document_id FK
@@ -188,9 +189,21 @@ erDiagram
         timestamptz reviewed_at
     }
 
-    SA12_CATALOG_PROGRAM {
+    SA12_CORE_SCHOOL {
+        varchar code PK
+        varchar name
+    }
+
+    SA12_CORE_PROGRAM {
         uuid id PK
-        varchar school_code
+        varchar code UK
+        varchar school_code FK
+    }
+
+    SA14_CORPUS_DOCUMENTS {
+        uuid id PK
+        varchar code UK
+        uuid created_by FK
     }
 
     SA14_SCHOOL_DOSSIERS {
@@ -264,12 +277,12 @@ Permet le multi-rôle contrôlé et porte l'attribut `school_scope` exigé par l
 | `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Clé primaire d'affectation. |
 | `account_id` | `UUID` | `NOT NULL REFERENCES core.accounts(id) ON DELETE CASCADE` | Compte utilisateur rattaché. |
 | `role_id` | `SMALLINT` | `NOT NULL REFERENCES core.roles(id) ON DELETE RESTRICT` | Rôle attribué. |
-| `school_scope` | `core.school_code` | `NULL` (`'IIT' \| 'ISB' \| 'ISA'`) | Obligatoire pour le rôle `responsable`, `NULL` pour les rôles transversaux. |
+| `school_scope` | `VARCHAR(16)` | `NULL CHECK (school_scope IN ('iit', 'isb', 'isa'))` | Référentiel `core.school(code)` (`SA-12`). Obligatoire pour `responsable`, `NULL` pour les rôles transversaux. |
 | `responsibility_scope` | `VARCHAR(24)` | `NOT NULL DEFAULT 'ALL' CHECK (responsibility_scope IN ('ALL', 'ACADEMIC', 'INTERVIEW'))` | Permet de conserver le rôle `NAU Responsable` consolidé tout en autorisant une spécialisation académique / entretien si requise. |
 | `assigned_by` | `UUID` | `NULL REFERENCES core.accounts(id)` | Administrateur ayant attribué le rôle. |
 | `assigned_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Horodatage d'attribution. |
 
-Contrainte d'unicité fonctionnelle : index unique sur `(account_id, role_id, COALESCE(school_scope::text, 'GLOBAL'))`.
+Contrainte d'unicité fonctionnelle : index unique sur `(account_id, role_id, COALESCE(school_scope, 'GLOBAL'))`.
 
 #### `core.guest_sessions` — Visiteurs sans compte (suivi sans PII et fusion idempotente)
 Gère les visiteurs sans compte en conformité stricte avec le principe *« Give or Keep »* : le contenu conversationnel chaud reste dans Redis (TTL 7 jours), tandis que PostgreSQL trace uniquement l'identifiant technique de session pour fiabiliser et rendre idempotent l'appel `/auth/merge-session`.
@@ -300,7 +313,7 @@ Conserve le nom de table et les attributs pivots attendus par l'architecture cib
 | `email` | `VARCHAR(255)` | `NOT NULL` | Email de contact (synchronisé avec `core.accounts.email` ; conservé pour compatibilité et recherche). |
 | `birth_date` | `DATE` | `NULL` | Date de naissance pour détection de doublons (`email + nom + birth_date`). |
 | `status` | `core.candidate_status` | `NOT NULL DEFAULT 'AUTHENTICATED'` | État unique du cycle de vie (`ANONYMOUS` … `ADMITTED \| WAITLIST \| REJECTED` + états transversaux). |
-| `school_target` | `core.school_code` | `NULL` | École cible principale (`IIT`, `ISB` ou `ISA`), alimentée au choix de filière / préinscription. |
+| `school_target` | `VARCHAR(16)` | `NULL CHECK (school_target IN ('iit', 'isb', 'isa'))` | École cible principale (`iit`, `isb` ou `isa`), alignée sur `core.school(code)` (`SA-12`) et les schémas PostgreSQL / RLS. |
 | `owner` | `VARCHAR(64)` | `NOT NULL DEFAULT 'JARVIS' CHECK (owner = 'JARVIS' OR owner LIKE 'RH:%')` | Propriétaire actif unique du dossier (`One Owner`). |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Date de création du dossier candidat. |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Dernière mise à jour d'état ou de propriété. |
@@ -367,7 +380,9 @@ Permet d'évaluer finement l'éligibilité par matière (`1.3 Gatekeeper`) et de
 
 Contrainte d'intégrité : `CHECK (candidate_id IS NOT NULL OR guest_session_id IS NOT NULL)`.
 
-#### `core.document` — Pièces justificatives et extraction VLM (`1.4 Reader`)
+#### `core.document` — Pièces justificatives candidats et extraction VLM (`1.4 Reader`)
+*(Convention de nommage : `core.document` au singulier stocke les pièces privées déposées par les candidats, distincte de `core.documents` au pluriel dédiée aux documents officiels du corpus RAG dans `SA-14`.)*
+
 | Colonne | Type SQL | Contraintes | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Identifiant du document. |
@@ -384,13 +399,14 @@ Contrainte d'intégrité : `CHECK (candidate_id IS NOT NULL OR guest_session_id 
 | :--- | :--- | :--- | :--- |
 | `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Clé primaire. |
 | `candidate_id` | `UUID` | `NOT NULL REFERENCES core.candidate(id) ON DELETE CASCADE` | Candidat orienté. |
-| `program_id` | `UUID` | `NOT NULL` | Référence au programme dans le catalogue (`SA-12`). |
-| `track_id` | `UUID` | `NULL` | Référence à la filière / spécialisation précise (`SA-12`). |
+| `program_id` | `UUID` | `NOT NULL` | Référence directe vers `core.program(id)` (`SA-12`, FK activée en `SA-17`). |
 | `rank` | `SMALLINT` | `NOT NULL CHECK (rank BETWEEN 1 AND 5)` | Position dans la shortlist comparative (2–3 parcours recommandés). |
 | `score` | `NUMERIC(5,2)` | `NOT NULL CHECK (score >= 0 AND score <= 100)` | Score issu de `score_compatibilite()` (critères académiques + intérêts uniquement). |
 | `breakdown` | `JSONB` | `NOT NULL` | Détail pondéré du score affiché au candidat. |
 | `citations` | `JSONB` | `NOT NULL DEFAULT '[]'::jsonb` | Sources officielles issues de `knowledge` (`pgvector`). |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Date de calcul de la recommandation. |
+
+Contrainte d'unicité : `UNIQUE (candidate_id, program_id)`.
 
 #### `core.equivalence_requests` — Demandes d'équivalence et passerelles
 Modélise le traitement des demandes d'équivalence et des cas limites marqués *« à confirmer par le Responsable »* à l'étape 3 du pipeline.
@@ -401,9 +417,9 @@ Modélise le traitement des demandes d'équivalence et des cas limites marqués 
 | `candidate_id` | `UUID` | `NOT NULL REFERENCES core.candidate(id) ON DELETE CASCADE` | Candidat demandeur. |
 | `source_diploma` | `VARCHAR(128)` | `NOT NULL` | Diplôme ou cursus déjà validé (ex. `Licence Informatique`, `2ème année Prépa`). |
 | `source_institution` | `VARCHAR(192)` | `NULL` | Établissement d'origine. |
-| `target_school` | `core.school_code` | `NOT NULL` | École ciblée (`IIT`, `ISB`, `ISA`). |
-| `target_program_id` | `UUID` | `NOT NULL` | Programme cible visé par l'équivalence (catalogue `SA-12`). |
-| `yaml_rule_code` | `VARCHAR(64)` | `NULL` | Identifiant de la règle YAML appliquée par `1.3 Gatekeeper`. |
+| `target_school` | `VARCHAR(16)` | `NOT NULL CHECK (target_school IN ('iit', 'isb', 'isa'))` | École ciblée (`core.school(code)` dans `SA-12`). |
+| `target_program_id` | `UUID` | `NOT NULL` | Programme cible `core.program(id)` (`SA-12`, FK activée en `SA-17`). |
+| `yaml_rule_key` | `VARCHAR(100)` | `NULL` | Clé de règle YAML alignée sur `core.program_prerequisite.yaml_rule_key` (`SA-12`). |
 | `gatekeeper_verdict` | `VARCHAR(32)` | `NOT NULL CHECK (gatekeeper_verdict IN ('ELIGIBLE', 'BORDERLINE_TO_CONFIRM', 'INELIGIBLE'))` | Pré-évaluation déterministe. |
 | `review_status` | `VARCHAR(32)` | `NOT NULL DEFAULT 'PENDING_REVIEW' CHECK (review_status IN ('AUTO_VALIDATED', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'NEEDS_MORE_INFO'))` | Décision humaine sur l'équivalence (jamais tranchée par un agent en cas limite). |
 | `supporting_document_id` | `UUID` | `NULL REFERENCES core.document(id) ON DELETE SET NULL` | Justificatif associé après authentification. |
@@ -430,12 +446,6 @@ CREATE SCHEMA IF NOT EXISTS iit;
 CREATE SCHEMA IF NOT EXISTS isb;
 CREATE SCHEMA IF NOT EXISTS isa;
 CREATE SCHEMA IF NOT EXISTS knowledge;
-
-DO $$ BEGIN
-    CREATE TYPE core.school_code AS ENUM ('IIT', 'ISB', 'ISA');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
 
 DO $$ BEGIN
     CREATE TYPE core.candidate_status AS ENUM (
@@ -476,16 +486,16 @@ CREATE TABLE IF NOT EXISTS core.roles (
 
 CREATE TABLE IF NOT EXISTS core.account_roles (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id           UUID             NOT NULL REFERENCES core.accounts(id) ON DELETE CASCADE,
-    role_id              SMALLINT         NOT NULL REFERENCES core.roles(id) ON DELETE RESTRICT,
-    school_scope         core.school_code,
-    responsibility_scope VARCHAR(24)      NOT NULL DEFAULT 'ALL' CHECK (responsibility_scope IN ('ALL', 'ACADEMIC', 'INTERVIEW')),
-    assigned_by          UUID             REFERENCES core.accounts(id),
-    assigned_at          TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+    account_id           UUID        NOT NULL REFERENCES core.accounts(id) ON DELETE CASCADE,
+    role_id              SMALLINT    NOT NULL REFERENCES core.roles(id) ON DELETE RESTRICT,
+    school_scope         VARCHAR(16) CHECK (school_scope IN ('iit', 'isb', 'isa')), -- FK -> core.school(code) en SA-17
+    responsibility_scope VARCHAR(24) NOT NULL DEFAULT 'ALL' CHECK (responsibility_scope IN ('ALL', 'ACADEMIC', 'INTERVIEW')),
+    assigned_by          UUID        REFERENCES core.accounts(id),
+    assigned_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_account_roles_scope
-    ON core.account_roles (account_id, role_id, COALESCE(school_scope::text, 'GLOBAL'));
+    ON core.account_roles (account_id, role_id, COALESCE(school_scope, 'GLOBAL'));
 
 CREATE TABLE IF NOT EXISTS core.candidate (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -494,7 +504,7 @@ CREATE TABLE IF NOT EXISTS core.candidate (
     email            VARCHAR(255)         NOT NULL,
     birth_date       DATE,
     status           core.candidate_status NOT NULL DEFAULT 'AUTHENTICATED',
-    school_target    core.school_code,
+    school_target    VARCHAR(16)          CHECK (school_target IN ('iit', 'isb', 'isa')), -- FK -> core.school(code) en SA-17
     owner            VARCHAR(64)          NOT NULL DEFAULT 'JARVIS' CHECK (owner = 'JARVIS' OR owner LIKE 'RH:%'),
     created_at       TIMESTAMPTZ          NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ          NOT NULL DEFAULT NOW()
@@ -583,33 +593,30 @@ CREATE TABLE IF NOT EXISTS core.conversation_threads (
 CREATE TABLE IF NOT EXISTS core.shortlist (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id UUID         NOT NULL REFERENCES core.candidate(id) ON DELETE CASCADE,
-    program_id   UUID         NOT NULL, -- FK vers catalogue SA-12 ajoutée en migration SA-17
-    track_id     UUID,                  -- FK optionnelle vers parcours SA-12
+    program_id   UUID         NOT NULL, -- FK -> core.program(id) (SA-12) ajoutée en migration SA-17
     rank         SMALLINT     NOT NULL CHECK (rank BETWEEN 1 AND 5),
     score        NUMERIC(5,2) NOT NULL CHECK (score >= 0 AND score <= 100),
     breakdown    JSONB        NOT NULL,
     citations    JSONB        NOT NULL DEFAULT '[]'::jsonb,
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_shortlist_candidate_program UNIQUE (candidate_id, program_id)
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_shortlist_candidate_program_track
-    ON core.shortlist (candidate_id, program_id, COALESCE(track_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 CREATE TABLE IF NOT EXISTS core.equivalence_requests (
     id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    candidate_id           UUID             NOT NULL REFERENCES core.candidate(id) ON DELETE CASCADE,
-    source_diploma         VARCHAR(128)     NOT NULL,
+    candidate_id           UUID         NOT NULL REFERENCES core.candidate(id) ON DELETE CASCADE,
+    source_diploma         VARCHAR(128) NOT NULL,
     source_institution     VARCHAR(192),
-    target_school          core.school_code NOT NULL,
-    target_program_id      UUID             NOT NULL, -- FK vers catalogue SA-12 ajoutée en migration SA-17
-    yaml_rule_code         VARCHAR(64),
-    gatekeeper_verdict     VARCHAR(32)      NOT NULL CHECK (gatekeeper_verdict IN ('ELIGIBLE', 'BORDERLINE_TO_CONFIRM', 'INELIGIBLE')),
-    review_status          VARCHAR(32)      NOT NULL DEFAULT 'PENDING_REVIEW' CHECK (review_status IN ('AUTO_VALIDATED', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'NEEDS_MORE_INFO')),
-    supporting_document_id UUID             REFERENCES core.document(id) ON DELETE SET NULL,
-    reviewed_by            UUID             REFERENCES core.accounts(id),
+    target_school          VARCHAR(16)  NOT NULL CHECK (target_school IN ('iit', 'isb', 'isa')), -- FK -> core.school(code) en SA-17
+    target_program_id      UUID         NOT NULL, -- FK -> core.program(id) (SA-12) ajoutée en migration SA-17
+    yaml_rule_key          VARCHAR(100),
+    gatekeeper_verdict     VARCHAR(32)  NOT NULL CHECK (gatekeeper_verdict IN ('ELIGIBLE', 'BORDERLINE_TO_CONFIRM', 'INELIGIBLE')),
+    review_status          VARCHAR(32)  NOT NULL DEFAULT 'PENDING_REVIEW' CHECK (review_status IN ('AUTO_VALIDATED', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'NEEDS_MORE_INFO')),
+    supporting_document_id UUID         REFERENCES core.document(id) ON DELETE SET NULL,
+    reviewed_by            UUID         REFERENCES core.accounts(id),
     reviewer_comment       TEXT,
     reviewed_at            TIMESTAMPTZ,
-    created_at             TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS core.outbox (
@@ -644,27 +651,31 @@ CREATE TABLE IF NOT EXISTS core.audit_log (
 
 Cette section garantit l'assemblage direct avec les lots parallèles du modèle relationnel et de la sécurité avant l'écriture des migrations `SA-17`.
 
-### 5.1 Compatibilité avec `SA-12` (Catalogue académique IIT / ISB / ISA)
-* **Références sortantes depuis `SA-13` :** `core.shortlist.program_id`, `core.shortlist.track_id`, `core.equivalence_requests.target_program_id` et `core.candidate.school_target` (`IIT | ISB | ISA`).
-* **Contrat attendu côté `SA-12` :** les tables du catalogue (`programs`, `tracks`, `prerequisites`, `fees_deadlines`) doivent exposer une clé primaire `UUID` (`id`) et un attribut `school_code` compatible avec `core.school_code` (`IIT | ISB | ISA`).
-* **Ordre de migration (`SA-17`) :** créer les tables catalogue `SA-12` avant d'activer les contraintes `FOREIGN KEY` de `core.shortlist` et `core.equivalence_requests`.
+### 5.1 Compatibilité exacte avec `SA-12` (Catalogue académique IIT / ISB / ISA)
+* **Codes écoles normalisés (`core.school`) :** `core.account_roles.school_scope`, `core.candidate.school_target` et `core.equivalence_requests.target_school` utilisent désormais directement `VARCHAR(16)` en minuscules (`'iit' | 'isb' | 'isa'`), compatible par clé étrangère avec `core.school(code)` (`SA-12`), les politiques RLS (`SA-5`) et les noms de schémas PostgreSQL (`iit`, `isb`, `isa`).
+* **Cible programme unique (`core.program`) :** `core.shortlist.program_id` et `core.equivalence_requests.target_program_id` pointent directement vers `core.program(id)` (`UUID`) défini dans `SA-12` (sans colonne `track_id` distincte).
+* **Clé de règle d'équivalence :** `core.equivalence_requests.yaml_rule_key` (`VARCHAR(100)`) reprend exactement le nommage et la taille de `core.program_prerequisite.yaml_rule_key` (`SA-12`).
+* **Ordre de migration (`SA-17`) :** créer `core.school` et `core.program` (`SA-12`) avant d'activer les contraintes `FOREIGN KEY` de `core.account_roles`, `core.candidate`, `core.shortlist` et `core.equivalence_requests`.
 
-### 5.2 Compatibilité avec `SA-14` (Demandes de préinscription, QCM, rendez-vous et entretiens)
-L'ensemble des tables portées par `SA-14` s'appuie directement sur les clés primaires de `SA-13` :
+### 5.2 Compatibilité avec `SA-14` et les modules aval (Préinscription, QCM, Rendez-vous et Entretiens)
+* **Complémentarité avec `SA-14` (gestion documentaire & sync RAG) :** `SA-14` référence déjà directement `core.accounts(id)` depuis `core.documents.created_by` et `core.document_versions.uploaded_by`. Par ailleurs, `core.document` (singulier, `SA-13`) désigne exclusivement les justificatifs privés des candidats (relevés VLM chiffrés dans MinIO), tandis que `core.documents` (pluriel, `SA-14`) stocke les documents officiels du corpus RAG.
+* **Clés primaires exportées vers les modules préinscription, RDV et décisions :**
 
-| Domaine couvert (`SA-14`) | Schéma | Table cible (`SA-14`) | Clés étrangères consommées depuis `SA-13` | Contraintes critiques |
+| Domaine aval | Schéma | Tables cibles | Clés étrangères consommées depuis `SA-13` | Contraintes critiques |
 | :--- | :--- | :--- | :--- | :--- |
-| **Demandes de préinscription** | `iit` / `isb` / `isa` | `<school>.dossiers` | `candidate_id -> core.candidate(id)`<br/>`document_id -> core.document(id)`<br/>`program_id -> SA-12` | Écriture atomique `core + <school>` en une seule transaction + insertion `core.outbox`. |
+| **Demandes de préinscription** | `iit` / `isb` / `isa` | `<school>.dossiers` | `candidate_id -> core.candidate(id)`<br/>`document_id -> core.document(id)`<br/>`program_id -> core.program(id)` | Écriture atomique `core + <school>` en une seule transaction + insertion `core.outbox`. |
 | **QCM & Brief d'entretien** | `iit` / `isb` / `isa` | `<school>.qcm_results`, `<school>.briefs` | `candidate_id -> core.candidate(id)` via `dossier_id` | Isolation stricte par école (RLS). |
 | **Résultats des entretiens (HITL)** | `iit` / `isb` / `isa` | `<school>.decisions` | `candidate_id -> core.candidate(id)`<br/>`decided_by -> core.accounts(id)` | Écriture **exclusivement** réservée au rôle `responsable` de l'école correspondante. |
 | **Créneaux & Rendez-vous (`JARVIS`)** | `core` | `core.slot`, `core.appointment`, `core.appointment_event` | `slot.responsable_id -> core.accounts(id)`<br/>`appointment.candidate_id -> core.candidate(id)` | `UNIQUE (responsable_id, start_time)` + `SELECT ... FOR UPDATE` ; `reschedules <= 2`. |
 | **Exceptions & Escalades RH** | `core` | `core.rh_ticket` | `candidate_id -> core.candidate(id)` | `owner` synchronisé avec `core.candidate.owner`. |
 
 ### 5.3 Compatibilité RBAC / RLS (`SA-5`) et Typage Frontend (`SA-8`)
-* **Alignement RLS sur `core.candidate` :** la table `core.candidate` conserve sa clé primaire nommée `id` tandis que toutes ses tables dépendantes (`candidate_profile`, `declared_grades`, `consent`, `document`, `shortlist`, `equivalence_requests`, `dossiers`, `appointment`, `rh_ticket`) nomment leur clé étrangère `candidate_id`. Lors de `SA-17`, la politique RLS sur `core.candidate` doit donc utiliser :
-  ```sql
-  USING (id = current_setting('request.jwt.claim.candidate_id', true)::uuid)
-  ```
-  et `USING (candidate_id = current_setting('request.jwt.claim.candidate_id', true)::uuid)` sur les tables enfants.
+* **Alignement RLS sur `core.candidate` et les écoles :**
+  * `core.account_roles.school_scope` et `core.candidate.school_target` utilisent exactement `'iit' | 'isb' | 'isa'`, alignés avec le claim JWT `school` (`request.jwt.claim.school`) et le type `SchoolCode` de l'API REST (`SA-5`). La couche présentation frontend (`SA-8`) formate librement `'iit'` ↔ `'IIT'` pour l'affichage.
+  * La table `core.candidate` conserve sa clé primaire nommée `id` tandis que ses tables enfants nomment leur clé étrangère `candidate_id`. Lors de `SA-17`, la politique RLS sur `core.candidate` utilise :
+    ```sql
+    USING (id = current_setting('request.jwt.claim.candidate_id', true)::uuid)
+    ```
+    et `USING (candidate_id = current_setting('request.jwt.claim.candidate_id', true)::uuid)` sur les tables enfants.
 * **Alignement rôles JWT & DB :** `core.roles.code` reprend exactement les valeurs attendues par les claims JWT (`student`, `rh`, `responsable`, `direction`, `admin`) et alimente la table de jonction `core.account_roles(school_scope)` nécessaire aux politiques RLS multi-écoles (`iit`, `isb`, `isa`).
-* **Alignement Frontend (`SA-8`) :** l'énumération `core.candidate_status` correspond trait pour trait au type `CandidateStatus` (`ANONYMOUS` → `ADMITTED | WAITLIST | REJECTED` + `DORMANT`, `ESCALATED`, `WITHDRAWN`), `core.school_code` à `SchoolCode` (`IIT | ISB | ISA`), et `core.candidate.candidate_number` permet d'afficher la référence métier du dossier (`NAU-2026-XXXX`).
+* **Alignement Frontend (`SA-8`) :** l'énumération `core.candidate_status` correspond trait pour trait au type `CandidateStatus` (`ANONYMOUS` → `ADMITTED | WAITLIST | REJECTED` + `DORMANT`, `ESCALATED`, `WITHDRAWN`), et `core.candidate.candidate_number` permet d'afficher la référence métier du dossier (`NAU-2026-XXXX`).
