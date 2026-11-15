@@ -1,0 +1,138 @@
+name: CI — SmartCampus AI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: Repo Hygiene & Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check no .env files committed
+        run: |
+          if git ls-files | grep -E '(^|/)\.env(\..*)?$' | grep -v '\.env\.example$'; then
+            echo "ERROR: .env file tracked in git! Remove it and use .env.example instead."
+            exit 1
+          fi
+
+      - name: Validate shell scripts
+        run: |
+          shopt -s globstar nullglob
+          for f in scripts/**/*.sh .githooks/*; do
+            if [ -f "$f" ]; then
+              echo "Checking syntax: $f"
+              bash -n "$f"
+            fi
+          done
+
+      - name: Validate GitHub workflow & template YAML
+        run: |
+          python3 -c "
+          import glob, yaml
+          for path in glob.glob('.github/**/*.yml', recursive=True) + glob.glob('.github/**/*.yaml', recursive=True):
+              with open(path) as f:
+                  yaml.safe_load(f)
+              print('Valid YAML:', path)
+          "
+
+  backend-ci:
+    name: Backend CI (FastAPI / Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if backend/ exists
+        id: check
+        run: |
+          if [ -d "backend" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Notice: backend/ not initialized yet (pending SA-7). Skipping backend checks."
+          fi
+
+      - name: Set up Python 3.12
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv & dependencies
+        if: steps.check.outputs.exists == 'true'
+        working-directory: backend
+        run: |
+          pip install --quiet uv ruff pytest
+          if [ -f "pyproject.toml" ]; then
+            uv sync --dev || pip install -e .
+          elif [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Run Ruff lint
+        if: steps.check.outputs.exists == 'true'
+        working-directory: backend
+        run: ruff check .
+
+      - name: Run pytest
+        if: steps.check.outputs.exists == 'true'
+        working-directory: backend
+        run: |
+          if [ -d "tests" ] || find . -maxdepth 3 -name "test_*.py" | grep -q .; then
+            pytest -q
+          else
+            echo "No tests found yet — skipping pytest."
+          fi
+
+  frontend-ci:
+    name: Frontend CI (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if frontend/package.json exists
+        id: check
+        run: |
+          if [ -f "frontend/package.json" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Notice: frontend/ not initialized yet (pending SA-8). Skipping frontend checks."
+          fi
+
+      - name: Set up Node.js 20
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        working-directory: frontend
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run lint & build
+        if: steps.check.outputs.exists == 'true'
+        working-directory: frontend
+        run: |
+          npm run lint --if-present
+          npm run build --if-present
+

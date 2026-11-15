@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Local pre-push hook — runs BEFORE git push sends commits to GitHub.
+# Enable once per clone with: git config core.hooksPath .githooks
+# =============================================================================
+
+set -euo pipefail
+
+echo "==> [pre-push] Running local checks before push..."
+
+# 1. Block accidental .env commits
+if git ls-files | grep -E '(^|/)\.env(\..*)?$' | grep -v '\.env\.example$'; then
+  echo "ERROR: A .env file is tracked in git! Unstage/remove it before pushing."
+  exit 1
+fi
+
+# 2. Validate shell scripts
+for f in scripts/*.sh .githooks/*; do
+  if [ -f "$f" ]; then
+    bash -n "$f"
+  fi
+done
+
+# 3. Backend checks (when backend/ exists)
+if [ -d "backend" ]; then
+  echo "==> [pre-push] Checking backend/..."
+  if command -v ruff >/dev/null 2>&1; then
+    (cd backend && ruff check .)
+  fi
+  if command -v pytest >/dev/null 2>&1 && { [ -d "backend/tests" ] || find backend -maxdepth 3 -name "test_*.py" | grep -q .; }; then
+    (cd backend && pytest -q)
+  fi
+fi
+
+# 4. Frontend checks (when frontend/package.json exists)
+if [ -f "frontend/package.json" ] && command -v npm >/dev/null 2>&1; then
+  echo "==> [pre-push] Checking frontend/..."
+  (cd frontend && npm run lint --if-present)
+fi
+
+echo "==> [pre-push] All checks passed!"
+
