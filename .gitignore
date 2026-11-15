@@ -57,3 +57,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# ── Local agent context & scratch diagram tests ──
+.agents/
+test_*.puml
