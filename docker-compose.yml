@@ -61,7 +61,8 @@ services:
     container_name: smartcampus_backend
     restart: unless-stopped
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://smartcampus:smartcampus_secret@postgres:5432/smartcampus_db}
@@ -89,7 +90,8 @@ services:
     container_name: smartcampus_frontend
     restart: unless-stopped
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
     ports:
