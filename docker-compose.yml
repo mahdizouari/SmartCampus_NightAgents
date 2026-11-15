@@ -1,0 +1,116 @@
+# =============================================================================
+# SmartCampus AI — Docker Compose (Development)
+# Starts: PostgreSQL 16 (pgvector) · Redis 7 · FastAPI backend · Next.js frontend
+#
+# Usage:
+#   cp .env.example .env        # (once) fill your secrets
+#   docker compose up -d        # start all services
+#   docker compose logs -f      # follow logs
+#   docker compose down         # stop all services
+# =============================================================================
+
+services:
+
+  # ── PostgreSQL 16 + pgvector (vector search for RAG) ───────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: smartcampus_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-smartcampus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartcampus_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-smartcampus_db}
+    ports:
+      # Host port 5433 → container port 5432 (avoids conflict with any local PostgreSQL)
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartcampus} -d ${POSTGRES_DB:-smartcampus_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - smartcampus_net
+
+  # ── Redis 7 (hot sessions + conversational memory) ──────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: smartcampus_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - smartcampus_net
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartcampus_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://smartcampus:smartcampus_secret@postgres:5432/smartcampus_db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Hot-reload: local backend/ code changes are reflected instantly in the container
+      - ./backend:/app
+      # Prevent host .venv from overriding the container's installed packages
+      - /app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smartcampus_net
+
+  # ── Next.js Frontend ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smartcampus_frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Hot-reload: local frontend/ code changes are reflected instantly
+      - ./frontend:/app
+      # Prevent host node_modules from overriding the container's packages
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - smartcampus_net
+
+# ── Named volumes (data persisted across container restarts) ──────────────────
+volumes:
+  postgres_data:
+  redis_data:
+
+# ── Internal network (services communicate by container name) ─────────────────
+networks:
+  smartcampus_net:
+    driver: bridge
+

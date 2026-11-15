@@ -1,0 +1,36 @@
+# Python cache & virtual env
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Docker build context (no need to copy these)
+Dockerfile
+.dockerignore
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Data files
+*.dump
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
