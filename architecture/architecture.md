@@ -139,3 +139,4 @@ SmartCampus_NightAgents/
 - `TODO(open-question U5/U6)`: Exact 7–8B open-source LLM, VLM, embedding model, Whisper size, and hosted API fallback provider.
 - `TODO(open-question S1)`: Confirm whether **ISA** is in active Sprint scope or remains an announced extension.
 - `TODO(open-question U11)`: Target deployment environment (local Docker vs cloud GPU).
+
