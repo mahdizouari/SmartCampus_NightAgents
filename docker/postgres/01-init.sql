@@ -67,7 +67,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA core, iit, isb, isa, knowledge
     GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO smartcampus_app;
 
 -- -----------------------------------------------------------------------------
--- 5. Create Security Roles (For Row-Level Security in SA-5 / SA-11)
+-- 5. Create Security Roles (For Row-Level Security in SA-5 / SA-11 / SA-17)
 -- -----------------------------------------------------------------------------
 DO $$
 BEGIN
@@ -80,9 +80,18 @@ BEGIN
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'nau_responsable') THEN
         CREATE ROLE nau_responsable NOLOGIN;
     END IF;
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'direction') THEN
+        CREATE ROLE direction NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'platform_admin') THEN
+        CREATE ROLE platform_admin NOLOGIN;
+    END IF;
 END
 $$;
 
+-- Allow the runtime application user to assume request-scoped RLS roles via SET LOCAL ROLE
+GRANT authenticated_student, human_rh, nau_responsable, direction, platform_admin TO smartcampus_app;
+
 -- Grant schema usage to security roles
-GRANT USAGE ON SCHEMA core, knowledge TO authenticated_student, human_rh, nau_responsable;
-GRANT USAGE ON SCHEMA iit, isb, isa TO human_rh, nau_responsable;
+GRANT USAGE ON SCHEMA core, knowledge TO authenticated_student, human_rh, nau_responsable, direction, platform_admin;
+GRANT USAGE ON SCHEMA iit, isb, isa TO authenticated_student, human_rh, nau_responsable, direction, platform_admin;

@@ -34,7 +34,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # ── AI artefacts (models, adapters, datasets, audio) ──
-models/
+/models/
 checkpoints/
 *.safetensors
 *.bin
