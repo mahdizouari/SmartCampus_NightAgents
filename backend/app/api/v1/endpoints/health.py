@@ -1,7 +1,8 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from app.core.config import settings
-from app.schemas.health import HealthResponse
+from app.core.database import check_db_health
+from app.schemas.health import DatabaseHealthResponse, HealthResponse
 
 router = APIRouter()
 
@@ -21,3 +22,18 @@ async def get_health() -> HealthResponse:
         environment=settings.ENVIRONMENT,
     )
 
+
+@router.get(
+    "/health/db",
+    response_model=DatabaseHealthResponse,
+    summary="Database & pgvector Health Check",
+    description=(
+        "Verifies connection to PostgreSQL 16, pgvector extension, "
+        "required schemas (core, iit, isb, isa, knowledge), and connection pooling status."
+    ),
+)
+async def get_database_health(response: Response) -> DatabaseHealthResponse:
+    health_data = await check_db_health()
+    if health_data.get("status") == "disconnected":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return DatabaseHealthResponse(**health_data)
