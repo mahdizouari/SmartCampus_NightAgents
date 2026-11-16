@@ -22,7 +22,9 @@ class PgVectorInfo(BaseModel):
 
 
 class SchemasInfo(BaseModel):
-    expected: list[str] = Field(..., description="Expected schemas (core, iit, isb, isa, knowledge)")
+    expected: list[str] = Field(
+        ..., description="Expected schemas (core, iit, isb, isa, knowledge)"
+    )
     found: list[str] = Field(..., description="Schemas found in database")
     all_present: bool = Field(..., description="Whether all expected schemas are present")
 

@@ -60,7 +60,10 @@ app.add_api_route(
     methods=["GET"],
     tags=["Health"],
     summary="Root Database Health Check",
-    description="Verifies PostgreSQL connection, pgvector extension, schemas, and connection pool status.",
+    description=(
+        "Verifies PostgreSQL connection, pgvector extension, "
+        "schemas, and connection pool status."
+    ),
 )
 
 # Include v1 API routes
