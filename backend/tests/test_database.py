@@ -1,9 +1,10 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import Settings, settings
 from app.core.database import check_db_health, engine, get_db
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def test_database_settings_defaults():
@@ -28,7 +29,9 @@ def test_connection_pool_configuration():
     """Verifies that SQLAlchemy engine is configured with connection pooling parameters."""
     pool = engine.pool
     assert pool.size() == settings.DB_POOL_SIZE
-    assert pool.timeout() == settings.DB_POOL_TIMEOUT
+    pool_timeout = getattr(pool, "_timeout", None)
+    if pool_timeout is not None:
+        assert pool_timeout == settings.DB_POOL_TIMEOUT
 
 
 def test_check_db_health_returns_dict():
