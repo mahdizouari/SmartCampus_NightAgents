@@ -1,9 +1,25 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints.health import get_health
+from app.api.v1.endpoints.health import get_database_health, get_health
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.database import close_db_pool
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manages application lifecycle: startup and graceful shutdown."""
+    logger.info("Starting up %s (env: %s)...", settings.PROJECT_NAME, settings.ENVIRONMENT)
+    yield
+    logger.info("Shutting down %s, closing database connection pool...", settings.PROJECT_NAME)
+    await close_db_pool()
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -15,6 +31,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Configure CORS Middleware
@@ -27,17 +44,29 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_headers=["*"],
     )
 
-# Root-level /health endpoint (Acceptance Criteria: GET /health returns 200 OK)
+# Root-level health check endpoints
 app.add_api_route(
     "/health",
     get_health,
     methods=["GET"],
     tags=["Health"],
     summary="Root Health Check",
-    description="Direct health check endpoint returning 200 OK.",
+    description="Direct service health check endpoint returning 200 OK.",
 )
 
-# Include v1 API routes (e.g. /api/v1/health, and future /api/v1/programs, /api/v1/auth, etc.)
+app.add_api_route(
+    "/health/db",
+    get_database_health,
+    methods=["GET"],
+    tags=["Health"],
+    summary="Root Database Health Check",
+    description=(
+        "Verifies PostgreSQL connection, pgvector extension, "
+        "schemas, and connection pool status."
+    ),
+)
+
+# Include v1 API routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
@@ -47,5 +76,6 @@ async def root():
         "message": f"Welcome to {settings.PROJECT_NAME} API",
         "docs": "/docs",
         "health": "/health",
+        "health_db": "/health/db",
         "api_v1": settings.API_V1_STR,
     }

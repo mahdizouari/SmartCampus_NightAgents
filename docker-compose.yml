@@ -25,6 +25,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartcampus} -d ${POSTGRES_DB:-smartcampus_db}"]
       interval: 10s
@@ -65,7 +66,7 @@ services:
         required: false
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://smartcampus:smartcampus_secret@postgres:5432/smartcampus_db}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${APP_DB_USER:-smartcampus_app}:${APP_DB_PASSWORD:-smartcampus_app_secret}@postgres:5432/${POSTGRES_DB:-smartcampus_db}}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "8000:8000"

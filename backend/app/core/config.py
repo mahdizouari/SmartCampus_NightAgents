@@ -18,6 +18,36 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
+    # Database Settings (PostgreSQL 16 + pgvector)
+    POSTGRES_SERVER: str = "postgres"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "smartcampus_app"
+    POSTGRES_PASSWORD: str = "smartcampus_app_secret"
+    POSTGRES_DB: str = "smartcampus_db"
+    DATABASE_URL: str | None = None
+
+    # Connection pooling parameters (SA-16)
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
+    DB_ECHO: bool = False
+
+    @property
+    def async_database_url(self) -> str:
+        """Returns the async database URL, formatted for asyncpg driver."""
+        if self.DATABASE_URL:
+            url = self.DATABASE_URL
+            if url.startswith("postgresql://"):
+                return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgres://"):
+                return url.replace("postgres://", "postgresql+asyncpg://", 1)
+            return url
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: str | list[str]) -> list[str]:
