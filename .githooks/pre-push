@@ -43,13 +43,13 @@ if [ -d "backend" ]; then
   fi
 fi
 
-# 4. Frontend checks (when frontend/node_modules is installed locally)
+# 4. Frontend checks (when frontend/node_modules/.bin/eslint is installed locally)
 if [ -f "frontend/package.json" ] && command -v npm >/dev/null 2>&1; then
-  if [ -d "frontend/node_modules" ]; then
+  if [ -x "frontend/node_modules/.bin/eslint" ]; then
     echo "==> [pre-push] Checking frontend/..."
     (cd frontend && npm run lint --if-present)
   else
-    echo "Notice: frontend/node_modules not installed — skipping local lint (GitHub CI will run it)."
+    echo "Notice: frontend/node_modules not installed locally — skipping local lint (GitHub CI will run it)."
   fi
 fi
 
