@@ -23,28 +23,47 @@ from scripts.seed_db import (
 
 
 def test_seed_catalog_definitions():
-    """Verify in-memory seed catalogs conform to DB constraints and requirements."""
+    """Verify in-memory seed catalogs conform to DB constraints and domain requirements."""
     # 3 official NAU schools
     assert len(SCHOOLS) == 3
     school_codes = {s["code"] for s in SCHOOLS}
     assert school_codes == {"iit", "isb", "isa"}
+
+    # Verify ISA is Institut Supérieur d'Architecture
+    isa_school = next(s for s in SCHOOLS if s["code"] == "isa")
+    assert isa_school["name"] == "Institut Supérieur d'Architecture"
 
     # 5 roles
     assert len(ROLES) == 5
     role_codes = {r["code"] for r in ROLES}
     assert role_codes == {"admin", "responsable", "rh", "direction", "student"}
 
-    # 10 programs with valid levels and duration
-    assert len(PROGRAMS) == 10
+    # 16 programs with valid levels and duration
+    assert len(PROGRAMS) == 16
     valid_levels = {"licence", "prepa", "cycle_ingenieur", "master"}
+    program_codes = {p["code"] for p in PROGRAMS}
+
+    # Verify IIT engineering specialties
+    assert "IIT-ING-GLID" in program_codes
+    assert "IIT-ING-ARSI" in program_codes
+    assert "IIT-ING-DSIA" in program_codes
+    assert "IIT-ING-MECA" in program_codes
+    assert "IIT-ING-INDUS" in program_codes
+    assert "IIT-ING-ENER" in program_codes
+    assert "IIT-ING-CIVIL" in program_codes
+
+    # Verify ISA architecture programs
+    assert "ISA-ARCHI-1" in program_codes
+    assert "ISA-ARCHI-2" in program_codes
+
     for p in PROGRAMS:
         assert p["school_code"] in school_codes
         assert p["degree_level"] in valid_levels
         assert 1 <= p["duration_years"] <= 6
         assert len(p["study_modes"]) > 0
 
-    # 6 demo accounts
-    assert len(DEMO_ACCOUNTS) == 6
+    # 7 demo accounts (including ISA responsable)
+    assert len(DEMO_ACCOUNTS) == 7
     account_roles = {a["role_code"] for a in DEMO_ACCOUNTS}
     assert "admin" in account_roles
     assert "responsable" in account_roles
@@ -63,13 +82,13 @@ async def test_seed_execution_and_idempotency():
         await seed_schools(session)
         await seed_roles(session)
         prog_ids = await seed_programs(session)
-        assert len(prog_ids) == 10
+        assert len(prog_ids) == 16
 
         await seed_program_fees(session, prog_ids)
         await seed_program_prerequisites(session, prog_ids)
         await seed_admission_campaigns(session)
         account_ids = await seed_accounts_and_roles(session)
-        assert len(account_ids) == 6
+        assert len(account_ids) == 7
 
         cand_id = await seed_candidate_and_grades(session, account_ids)
         assert cand_id is not None
@@ -83,10 +102,12 @@ async def test_seed_execution_and_idempotency():
         assert res_roles.scalar() == 5
 
         res_programs = await session.execute(text("SELECT count(*) FROM core.program"))
-        assert res_programs.scalar() == 10
+        count_programs_1 = res_programs.scalar()
+        assert count_programs_1 == 16
 
         res_accounts = await session.execute(text("SELECT count(*) FROM core.accounts"))
-        assert res_accounts.scalar() == 6
+        count_accounts_1 = res_accounts.scalar()
+        assert count_accounts_1 == 7
 
         res_slots = await session.execute(text("SELECT count(*) FROM core.slot"))
         count_slots_1 = res_slots.scalar()
@@ -112,10 +133,10 @@ async def test_seed_execution_and_idempotency():
         assert res_schools_2.scalar() == 3
 
         res_programs_2 = await session.execute(text("SELECT count(*) FROM core.program"))
-        assert res_programs_2.scalar() == 10
+        assert res_programs_2.scalar() == count_programs_1
 
         res_accounts_2 = await session.execute(text("SELECT count(*) FROM core.accounts"))
-        assert res_accounts_2.scalar() == 6
+        assert res_accounts_2.scalar() == count_accounts_1
 
         res_slots_2 = await session.execute(text("SELECT count(*) FROM core.slot"))
         assert res_slots_2.scalar() == count_slots_1

@@ -1,24 +1,33 @@
 """
 SA-18 — Seed script: Alimenter la base avec des données de démonstration.
 
-Insère des données (réelles ou fictives) permettant de tester les premières
-fonctionnalités de SmartCampus AI :
-  - Établissements (IIT, ISB, ISA)
-  - Rôles utilisateurs (admin, responsable, rh, direction, student)
-  - Programmes pédagogiques, spécialités, tarifs, prérequis d'admission
-  - Campagnes d'admission 2026-2027
-  - Comptes responsables, RH, admin et candidat de démonstration
-  - Candidat avec profil et matières déclarées (Maths, Info, etc.)
-  - Créneaux d'entretien (slots) pour les responsables IIT et ISB
+Données initiales conformes aux spécifications du campus NAU :
+  - Établissements :
+      * IIT : Institut International de Technologie
+      * ISB : International School of Business
+      * ISA : Institut Supérieur d'Architecture
+  - Spécialités d'ingénierie IIT :
+      * Génie Logiciel & Informatique Décisionnelle (GLID)
+      * Administration Réseaux & Sécurité Informatique (ARSI)
+      * Data Science & Intelligence Artificielle (DSIA)
+      * Génie Mécanique, Génie Industriel, Génie Énergétique, Génie Civil
+      * Classes Préparatoires Intégrées & Licence en Informatique
+  - Formations Architecture ISA :
+      * Diplôme du Premier Cycle d'Études en Architecture
+      * Diplôme National d'Architecte (Deuxième Cycle)
+      * Licence en Architecture d'Intérieur & Design d'Espace
+  - Formations Gestion & Business ISB :
+      * Licences Administration des Affaires, Finance, Marketing Digital
+      * Master Management Stratégique & International
+  - Grilles tarifaires 2026-2027 et échéanciers de paiement
+  - Prérequis d'admission Gatekeeper (bac, prépa, licence, passerelle)
+  - Comptes responsables de chaque filière (IIT, ISB, ISA), RH, Admin et Candidat
+  - Candidat de test avec profil Bac et matières/notes déclarées
+  - Créneaux d'entretien (slots) pour les responsables des 3 écoles
 
-IDEMPOTENT : peut être exécuté plusieurs fois sans dupliquer la moindre ligne.
-  - Utilise ON CONFLICT DO UPDATE / DO NOTHING pour les tables avec clés uniques.
-  - Utilise WHERE NOT EXISTS pour les tables sans contrainte d'unicité naturelle.
+IDEMPOTENT : exécutable à volonté sans créer de doublons.
 
-Usage (depuis backend/) :
-    python scripts/seed_db.py
-
-Ou via Docker :
+Usage :
     docker exec smartcampus_backend python scripts/seed_db.py
 """
 
@@ -64,7 +73,7 @@ SCHOOLS = [
     },
     {
         "code": "isa",
-        "name": "Institut Supérieur des Arts",
+        "name": "Institut Supérieur d'Architecture",
         "is_extension": True,
     },
 ]
@@ -104,81 +113,138 @@ ROLES = [
 # ---------------------------------------------------------------------------
 # 3. Programmes — core.program
 #    degree_level : 'licence', 'prepa', 'cycle_ingenieur', 'master'
-#    source_document : placeholder corpus — TODO(corpus) doc officiel
 # ---------------------------------------------------------------------------
 PROGRAMS = [
-    # ── IIT ──────────────────────────────────────────────────────────────────
+    # ── IIT : Génie Informatique & Technologies ──────────────────────────────
     {
-        "code": "IIT-CI-INFO",
+        "code": "IIT-ING-GLID",
         "school_code": "iit",
-        "title": "Cycle Ingénieur — Informatique",
+        "title": "Cycle Ingénieur — Génie Logiciel & Informatique Décisionnelle",
         "degree_level": "cycle_ingenieur",
-        "degree_title": "Ingénieur en Informatique",
+        "degree_title": "Ingénieur en Génie Logiciel & Informatique Décisionnelle (GLID)",
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation d'ingénieur en informatique couvrant l'IA, les systèmes "
-            "distribués, le cloud computing et la cybersécurité."
+            "Formation d'ingénieurs concepteurs de solutions logicielles avancées, "
+            "architectures microservices, DevOps et systèmes décisionnels (BI)."
         ),
-        "source_document": "TODO(corpus): IIT_brochure_2026.pdf",
+        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
     },
     {
-        "code": "IIT-CI-GL",
+        "code": "IIT-ING-ARSI",
         "school_code": "iit",
-        "title": "Cycle Ingénieur — Génie Logiciel",
+        "title": "Cycle Ingénieur — Administration Réseaux & Sécurité Informatique",
         "degree_level": "cycle_ingenieur",
-        "degree_title": "Ingénieur en Génie Logiciel",
+        "degree_title": "Ingénieur en Réseaux & Sécurité Informatique (ARSI)",
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation ingénieur orientée architecture logicielle moderne, DevOps, "
-            "microservices et gestion de projets agiles."
+            "Spécialité dédiée à la cyber-sécurité, aux infrastructures cloud, "
+            "à la sécurisation des réseaux d'entreprise et à l'administration système."
         ),
-        "source_document": "TODO(corpus): IIT_brochure_2026.pdf",
+        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
     },
     {
-        "code": "IIT-CI-TELECOM",
+        "code": "IIT-ING-DSIA",
         "school_code": "iit",
-        "title": "Cycle Ingénieur — Télécommunications",
+        "title": "Cycle Ingénieur — Data Science & Intelligence Artificielle",
         "degree_level": "cycle_ingenieur",
-        "degree_title": "Ingénieur en Télécommunications",
+        "degree_title": "Ingénieur en Data Science & Intelligence Artificielle (DSIA)",
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation ingénieur couvrant les réseaux 5G, protocoles IoT, "
-            "systèmes embarqués et télécoms."
+            "Formation d'excellence en apprentissage automatique (Machine Learning), "
+            "Deep Learning, traitement du langage naturel (NLP) et Big Data."
         ),
-        "source_document": "TODO(corpus): IIT_brochure_2026.pdf",
+        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
     },
+    # ── IIT : Autres Filières d'Ingénierie ────────────────────────────────────
+    {
+        "code": "IIT-ING-MECA",
+        "school_code": "iit",
+        "title": "Cycle Ingénieur — Génie Mécanique",
+        "degree_level": "cycle_ingenieur",
+        "degree_title": "Ingénieur en Génie Mécanique",
+        "duration_years": 3,
+        "study_modes": ["PRESENTIEL"],
+        "description": (
+            "Formation en conception mécanique assistée par ordinateur (CAO), "
+            "mécatronique, robotique industrielle et fabrication avancée."
+        ),
+        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+    },
+    {
+        "code": "IIT-ING-INDUS",
+        "school_code": "iit",
+        "title": "Cycle Ingénieur — Génie Industriel",
+        "degree_level": "cycle_ingenieur",
+        "degree_title": "Ingénieur en Génie Industriel & Supply Chain",
+        "duration_years": 3,
+        "study_modes": ["PRESENTIEL"],
+        "description": (
+            "Optimisation des processus industriels, logistique, chaîne "
+            "d'approvisionnement (Supply Chain), lean manufacturing et industrie 4.0."
+        ),
+        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+    },
+    {
+        "code": "IIT-ING-ENER",
+        "school_code": "iit",
+        "title": "Cycle Ingénieur — Génie Énergétique & Environnement",
+        "degree_level": "cycle_ingenieur",
+        "degree_title": "Ingénieur en Génie Énergétique",
+        "duration_years": 3,
+        "study_modes": ["PRESENTIEL"],
+        "description": (
+            "Efficacité énergétique, énergies renouvelables (solaire, éolien), "
+            "systèmes thermiques, transition écologique et bilans carbone."
+        ),
+        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+    },
+    {
+        "code": "IIT-ING-CIVIL",
+        "school_code": "iit",
+        "title": "Cycle Ingénieur — Génie Civil",
+        "degree_level": "cycle_ingenieur",
+        "degree_title": "Ingénieur en Génie Civil & Bâtiment",
+        "duration_years": 3,
+        "study_modes": ["PRESENTIEL"],
+        "description": (
+            "Calcul des structures béton armé et métallique, géotechnique, "
+            "conduite de chantiers de BTP, modélisation BIM et infrastructures."
+        ),
+        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+    },
+    # ── IIT : Cycle Préparatoire & Licence ────────────────────────────────────
     {
         "code": "IIT-PREPA",
         "school_code": "iit",
         "title": "Classes Préparatoires Intégrées",
         "degree_level": "prepa",
-        "degree_title": "Préparatoire Sciences et Technologies",
+        "degree_title": "Cycle Préparatoire Scientifique et Technologique",
         "duration_years": 2,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Deux années préparatoires d'excellence en mathématiques, physique "
-            "et algorithmique avant le cycle ingénieur IIT."
+            "Deux années intensives en mathématiques, physique appliquée et "
+            "algorithmique préparant à l'intégration directe en cycle ingénieur IIT."
         ),
-        "source_document": "TODO(corpus): IIT_brochure_2026.pdf",
+        "source_document": "TODO(corpus): IIT_brochure_prepa_2026.pdf",
     },
     {
         "code": "IIT-LIC-INFO",
         "school_code": "iit",
-        "title": "Licence Informatique",
+        "title": "Licence en Sciences de l'Informatique",
         "degree_level": "licence",
         "degree_title": "Licence en Sciences Informatiques",
         "duration_years": 3,
         "study_modes": ["PRESENTIEL", "DISTANCIEL"],
         "description": (
-            "Licence fondamentale — bases de données, génie logiciel, réseaux "
-            "et développement web/mobile."
+            "Formation fondamentale en développement logiciel, bases de données, "
+            "systèmes d'exploitation, réseaux et applications web/mobiles."
         ),
-        "source_document": "TODO(corpus): IIT_brochure_2026.pdf",
+        "source_document": "TODO(corpus): IIT_brochure_licence_2026.pdf",
     },
-    # ── ISB ──────────────────────────────────────────────────────────────────
+    # ── ISB : Management, Finance & Marketing ────────────────────────────────
     {
         "code": "ISB-LIC-BUSINESS",
         "school_code": "isb",
@@ -188,10 +254,10 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation en management international, entrepreneuriat, stratégie "
-            "commerciale et marketing dispensée en français et anglais."
+            "Management international, entrepreneuriat, stratégie commerciale "
+            "et leadership d'entreprise dispensés en français et anglais."
         ),
-        "source_document": "TODO(corpus): ISB_brochure_2026.pdf",
+        "source_document": "TODO(corpus): ISB_catalogue_2026.pdf",
     },
     {
         "code": "ISB-LIC-FINANCE",
@@ -202,10 +268,10 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation en analyse financière, marchés financiers, comptabilité "
-            "d'entreprise et audit."
+            "Analyse financière, finance d'entreprise, comptabilité générale, "
+            "fiscalité, marchés boursiers et audit comptable."
         ),
-        "source_document": "TODO(corpus): ISB_brochure_2026.pdf",
+        "source_document": "TODO(corpus): ISB_catalogue_2026.pdf",
     },
     {
         "code": "ISB-LIC-MARKETING",
@@ -216,10 +282,10 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation en marketing digital, stratégie d'influence, brand content "
-            "et data analytics pour le commerce."
+            "Stratégie digitale, brand content, communication multicanale, "
+            "SEO/SEM, réseaux sociaux et data analytics pour le commerce."
         ),
-        "source_document": "TODO(corpus): ISB_brochure_2026.pdf",
+        "source_document": "TODO(corpus): ISB_catalogue_2026.pdf",
     },
     {
         "code": "ISB-MASTER-MGMT",
@@ -230,25 +296,53 @@ PROGRAMS = [
         "duration_years": 2,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Master orienté direction d'entreprise, transformation numérique, "
-            "leadership et gestion d'équipes pluridisciplinaires."
+            "Direction d'entreprises, pilotage de la transformation numérique, "
+            "négociation internationale et management des organisations."
         ),
-        "source_document": "TODO(corpus): ISB_brochure_2026.pdf",
+        "source_document": "TODO(corpus): ISB_catalogue_2026.pdf",
     },
-    # ── ISA ──────────────────────────────────────────────────────────────────
+    # ── ISA : Institut Supérieur d'Architecture ──────────────────────────────
     {
-        "code": "ISA-LIC-DESIGN",
+        "code": "ISA-ARCHI-1",
         "school_code": "isa",
-        "title": "Licence Design Graphique & Numérique",
+        "title": "Diplôme du Premier Cycle d'Études en Architecture",
         "degree_level": "licence",
-        "degree_title": "Bachelor en Design Graphique",
+        "degree_title": "Diplôme du Premier Cycle en Architecture",
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation en création visuelle, UI/UX design, motion design "
-            "et identité de marque numérique."
+            "Cycle initial d'études en architecture : initiation au projet architectural, "
+            "théorie de l'espace, dessin technique, géométrie et histoire de l'architecture."
         ),
-        "source_document": "TODO(corpus): ISA_brochure_2026.pdf",
+        "source_document": "TODO(corpus): ISA_catalogue_architecture_2026.pdf",
+    },
+    {
+        "code": "ISA-ARCHI-2",
+        "school_code": "isa",
+        "title": "Deuxième Cycle — Diplôme National d'Architecte",
+        "degree_level": "master",
+        "degree_title": "Diplôme National d'Architecte (DNA)",
+        "duration_years": 2,
+        "study_modes": ["PRESENTIEL"],
+        "description": (
+            "Cycle supérieur menant au titre officiel d'architecte : urbanisme, "
+            "conception bioclimatique, sauvegarde du patrimoine et projet de fin d'études."
+        ),
+        "source_document": "TODO(corpus): ISA_catalogue_architecture_2026.pdf",
+    },
+    {
+        "code": "ISA-LIC-DESIGN",
+        "school_code": "isa",
+        "title": "Licence en Architecture d'Intérieur & Design d'Espace",
+        "degree_level": "licence",
+        "degree_title": "Bachelor en Architecture d'Intérieur",
+        "duration_years": 3,
+        "study_modes": ["PRESENTIEL"],
+        "description": (
+            "Formation en aménagement d'espaces résidentiels et professionnels, "
+            "design d'environnement, mobilier, matériaux innovants et rendu 3D."
+        ),
+        "source_document": "TODO(corpus): ISA_catalogue_design_2026.pdf",
     },
 ]
 
@@ -268,7 +362,7 @@ DEMO_ACCOUNTS = [
         "email": "responsable.iit@smartcampus.tn",
         "full_name": "Dr. Mohamed Ben Salah (Resp. IIT)",
         "auth_provider": "EMAIL_OTP",
-        "department": "Département Informatique & Télécoms IIT",
+        "department": "Département Ingénierie & Technologies IIT",
         "role_code": "responsable",
         "school_scope": "iit",
     },
@@ -276,9 +370,17 @@ DEMO_ACCOUNTS = [
         "email": "responsable.isb@smartcampus.tn",
         "full_name": "Dr. Leila Trabelsi (Resp. ISB)",
         "auth_provider": "EMAIL_OTP",
-        "department": "Département Gestion & Finance ISB",
+        "department": "Département Gestion, Finance & Marketing ISB",
         "role_code": "responsable",
         "school_scope": "isb",
+    },
+    {
+        "email": "responsable.isa@smartcampus.tn",
+        "full_name": "Arch. Karim Mansour (Resp. ISA)",
+        "auth_provider": "EMAIL_OTP",
+        "department": "Département Architecture & Urbanisme ISA",
+        "role_code": "responsable",
+        "school_scope": "isa",
     },
     {
         "email": "rh@smartcampus.tn",
@@ -308,12 +410,12 @@ DEMO_ACCOUNTS = [
 
 
 # ===========================================================================
-# Seed functions (toutes strictement idempotentes)
+# Seed functions (strictement idempotentes)
 # ===========================================================================
 
 
 async def seed_schools(session: AsyncSession) -> None:
-    """Insère les 3 écoles (IIT, ISB, ISA) — idempotent."""
+    """Insère ou met à jour les 3 écoles (IIT, ISB, ISA) — idempotent."""
     log.info("── Seeding core.school …")
     for s in SCHOOLS:
         await session.execute(
@@ -354,7 +456,7 @@ async def seed_roles(session: AsyncSession) -> None:
 
 
 async def seed_programs(session: AsyncSession) -> dict[str, str]:
-    """Insère les 10 programmes pédagogiques. Retourne {code -> uuid}."""
+    """Insère les programmes pédagogiques. Retourne {code -> uuid}."""
     log.info("── Seeding core.program …")
     program_ids: dict[str, str] = {}
 
@@ -400,7 +502,7 @@ async def seed_programs(session: AsyncSession) -> dict[str, str]:
 async def seed_program_fees(
     session: AsyncSession, program_ids: dict[str, str]
 ) -> None:
-    """Insère les tarifs annuels par programme — idempotent."""
+    """Insère les grilles tarifaires annuelles par programme — idempotent."""
     log.info("── Seeding core.program_fee …")
 
     fees_by_degree = {
@@ -417,6 +519,10 @@ async def seed_program_fees(
             continue
 
         amount = fees_by_degree.get(prog["degree_level"], 5000.00)
+        # ISA Architecture a une grille spécialisée
+        if "ARCHI" in prog["code"]:
+            amount = 8900.00 if prog["degree_level"] == "master" else 6800.00
+
         await session.execute(
             text(
                 """
@@ -450,23 +556,39 @@ async def seed_program_fees(
 async def seed_program_prerequisites(
     session: AsyncSession, program_ids: dict[str, str]
 ) -> None:
-    """Insère les prérequis d'admission (Gatekeeper) — idempotent."""
+    """Insère les règles d'éligibilité Gatekeeper pour chaque filière — idempotent."""
     log.info("── Seeding core.program_prerequisite …")
 
     prereqs = [
-        ("IIT-CI-INFO", "bac", "Baccalauréat Mathématiques / Sciences", 12.00),
-        ("IIT-CI-INFO", "prepa", "Concours National d'Entrée aux Écoles d'Ingénieurs", 10.00),
-        ("IIT-CI-GL", "bac", "Baccalauréat Mathématiques / Informatique", 12.00),
-        ("IIT-CI-GL", "prepa", "Prépa Intégrée ou Concours National", 10.00),
-        ("IIT-CI-TELECOM", "bac", "Baccalauréat Sciences / Technique", 11.50),
-        ("IIT-CI-TELECOM", "prepa", "Prépa MP/PC/PT", 10.00),
+        # IIT Génie Info (GLID, ARSI, DSIA)
+        ("IIT-ING-GLID", "bac", "Baccalauréat Mathématiques / Sciences / Info", 12.00),
+        ("IIT-ING-GLID", "prepa", "Concours National aux Écoles d'Ingénieurs", 10.00),
+        ("IIT-ING-GLID", "passerelle", "Licence Informatique ou équivalent (Bac+3)", 12.00),
+        ("IIT-ING-ARSI", "bac", "Baccalauréat Mathématiques / Sciences / Technique", 11.50),
+        ("IIT-ING-ARSI", "prepa", "Prépa Intégrée ou Concours National", 10.00),
+        ("IIT-ING-DSIA", "bac", "Baccalauréat Mathématiques ou Sciences", 12.50),
+        ("IIT-ING-DSIA", "prepa", "Concours National aux Écoles d'Ingénieurs", 10.00),
+        ("IIT-ING-DSIA", "passerelle", "Licence Data / Info / Mathématiques appliquées", 12.50),
+        # IIT Autres Génies (Mécanique, Industriel, Énergétique, Civil)
+        ("IIT-ING-MECA", "bac", "Baccalauréat Technique, Maths ou Sciences", 11.50),
+        ("IIT-ING-MECA", "prepa", "Prépa MP / PC / PT ou Concours National", 10.00),
+        ("IIT-ING-INDUS", "bac", "Baccalauréat Scientifique ou Technique", 11.50),
+        ("IIT-ING-INDUS", "prepa", "Prépa Scientifique ou Concours National", 10.00),
+        ("IIT-ING-ENER", "bac", "Baccalauréat Sciences, Maths ou Technique", 11.50),
+        ("IIT-ING-CIVIL", "bac", "Baccalauréat Sciences, Maths ou Technique", 12.00),
+        ("IIT-ING-CIVIL", "prepa", "Prépa MP / PC / PT ou Concours National", 10.00),
+        # IIT Prépa & Licence
         ("IIT-PREPA", "bac", "Baccalauréat Sciences, Maths ou Technique", 12.50),
         ("IIT-LIC-INFO", "bac", "Baccalauréat toutes filières scientifiques", 10.00),
+        # ISB Business & Management
         ("ISB-LIC-BUSINESS", "bac", "Baccalauréat Économie / Gestion ou Général", 11.00),
         ("ISB-LIC-FINANCE", "bac", "Baccalauréat Économie / Gestion ou Maths", 11.50),
         ("ISB-LIC-MARKETING", "bac", "Baccalauréat toutes filières", 10.00),
         ("ISB-MASTER-MGMT", "licence", "Licence en Sciences de Gestion / Économie", 12.50),
         ("ISB-MASTER-MGMT", "passerelle", "Diplôme Bac+3 équivalent avec entretien", 12.00),
+        # ISA Architecture
+        ("ISA-ARCHI-1", "bac", "Baccalauréat Sciences, Maths ou Technique", 11.50),
+        ("ISA-ARCHI-2", "passerelle", "Diplôme 1er Cycle Architecture (Bac+3)", 12.00),
         ("ISA-LIC-DESIGN", "bac", "Baccalauréat toutes filières + entretien artistique", 10.00),
     ]
 
@@ -590,7 +712,6 @@ async def seed_accounts_and_roles(session: AsyncSession) -> dict[str, str]:
     account_ids: dict[str, str] = {}
 
     for acc in DEMO_ACCOUNTS:
-        # 1. Insérer ou mettre à jour le compte
         await session.execute(
             text(
                 """
@@ -620,14 +741,12 @@ async def seed_accounts_and_roles(session: AsyncSession) -> dict[str, str]:
         account_id = str(acc_id_row.scalar_one())
         account_ids[acc["email"]] = account_id
 
-        # 2. Récupérer l'ID du rôle
         role_result = await session.execute(
             text("SELECT id FROM core.roles WHERE code = :code"),
             {"code": acc["role_code"]},
         )
         role_id = role_result.scalar_one()
 
-        # 3. Assigner le rôle (idempotent)
         existing_role = await session.execute(
             text(
                 """
@@ -668,14 +787,12 @@ async def seed_accounts_and_roles(session: AsyncSession) -> dict[str, str]:
 async def seed_candidate_and_grades(
     session: AsyncSession, account_ids: dict[str, str]
 ) -> str:
-    """Insère un candidat de démonstration avec son profil et ses matières déclarées.
-    Permet de tester immédiatement le dialogue, le scoring et les relevés de notes.
-    """
+    """Insère un candidat de démonstration avec profil et matières déclarées."""
     log.info("── Seeding candidate de test + matières déclarées …")
 
     student_account_id = account_ids.get("candidat.test@gmail.com")
 
-    # 1. Créer le candidat
+    # 1. Candidat
     await session.execute(
         text(
             """
@@ -699,7 +816,7 @@ async def seed_candidate_and_grades(
     )
     candidate_id = str(cand_row.scalar_one())
 
-    # 2. Profil du candidat
+    # 2. Profil
     await session.execute(
         text(
             """
@@ -721,7 +838,7 @@ async def seed_candidate_and_grades(
         {"candidate_id": candidate_id},
     )
 
-    # 3. Matières déclarées (notes du Bac)
+    # 3. Matières déclarées (Baccalauréat)
     grades = [
         ("Mathématiques", 15.50, 20.00, 4.0),
         ("Sciences Physiques", 14.00, 20.00, 4.0),
@@ -774,28 +891,29 @@ async def seed_candidate_and_grades(
 async def seed_slots(
     session: AsyncSession, account_ids: dict[str, str]
 ) -> None:
-    """Insère 12 créneaux d'entretien FREE — idempotent via ON CONFLICT DO NOTHING.
-    6 créneaux pour le responsable IIT, 6 pour le responsable ISB.
-    """
+    """Insère 12 créneaux d'entretien FREE pour IIT, ISB et ISA — idempotent."""
     log.info("── Seeding core.slot …")
 
-    responsable_iit_id = account_ids.get("responsable.iit@smartcampus.tn")
-    responsable_isb_id = account_ids.get("responsable.isb@smartcampus.tn")
-
-    if not responsable_iit_id or not responsable_isb_id:
-        log.warning("   ⚠ Responsables introuvables — slots ignorés")
-        return
+    responsables = [
+        ("responsable.iit@smartcampus.tn", "iit", "Salle Entretiens IIT — Bâtiment A, Bureau 102"),
+        ("responsable.isb@smartcampus.tn", "isb", "Salle Entretiens ISB — Bâtiment B, Bureau 204"),
+        ("responsable.isa@smartcampus.tn", "isa", "Atelier Architecture ISA — Bureau 301"),
+    ]
 
     base_date = date.today() + timedelta(days=3)
 
-    for week_offset in range(2):
-        for day_offset in range(3):
-            slot_date = base_date + timedelta(weeks=week_offset, days=day_offset * 2)
+    for email, school_code, location in responsables:
+        resp_id = account_ids.get(email)
+        if not resp_id:
+            continue
 
-            # Slot matin IIT (09h00 - 09h30)
-            start_iit = datetime(
-                slot_date.year, slot_date.month, slot_date.day, 9, 0, tzinfo=UTC
+        for day_offset in range(4):
+            slot_date = base_date + timedelta(days=day_offset * 2)
+            start_hour = 9 if school_code == "iit" else (11 if school_code == "isa" else 14)
+            start_time = datetime(
+                slot_date.year, slot_date.month, slot_date.day, start_hour, 0, tzinfo=UTC
             )
+
             await session.execute(
                 text(
                     """
@@ -803,38 +921,17 @@ async def seed_slots(
                         (responsable_id, school_code, start_time, end_time,
                          room_or_link, status)
                     VALUES
-                        (:responsable_id, 'iit', :start_time, :end_time,
-                         'Salle Entretiens IIT — Bâtiment A, Bureau 102', 'FREE')
+                        (:responsable_id, :school_code, :start_time, :end_time,
+                         :location, 'FREE')
                     ON CONFLICT (responsable_id, start_time) DO NOTHING
                     """
                 ),
                 {
-                    "responsable_id": responsable_iit_id,
-                    "start_time": start_iit,
-                    "end_time": start_iit + timedelta(minutes=30),
-                },
-            )
-
-            # Slot après-midi ISB (14h00 - 14h30)
-            start_isb = datetime(
-                slot_date.year, slot_date.month, slot_date.day, 14, 0, tzinfo=UTC
-            )
-            await session.execute(
-                text(
-                    """
-                    INSERT INTO core.slot
-                        (responsable_id, school_code, start_time, end_time,
-                         room_or_link, status)
-                    VALUES
-                        (:responsable_id, 'isb', :start_time, :end_time,
-                         'Salle Entretiens ISB — Bâtiment B, Bureau 204', 'FREE')
-                    ON CONFLICT (responsable_id, start_time) DO NOTHING
-                    """
-                ),
-                {
-                    "responsable_id": responsable_isb_id,
-                    "start_time": start_isb,
-                    "end_time": start_isb + timedelta(minutes=30),
+                    "responsable_id": resp_id,
+                    "school_code": school_code,
+                    "start_time": start_time,
+                    "end_time": start_time + timedelta(minutes=30),
+                    "location": location,
                 },
             )
 
@@ -857,7 +954,7 @@ async def main() -> None:
     async_session = async_sessionmaker(engine, expire_on_commit=False)
 
     async with async_session() as session:
-        # 1. Vérification que la structure existe
+        # Vérification préalable
         result = await session.execute(
             text(
                 "SELECT COUNT(*) FROM information_schema.tables "
@@ -865,12 +962,9 @@ async def main() -> None:
             )
         )
         if not result.scalar():
-            log.error(
-                "❌ Tables introuvables. Appliquez d'abord les migrations Alembic."
-            )
+            log.error("❌ Tables introuvables. Appliquez d'abord les migrations.")
             sys.exit(1)
 
-        # 2. Exécution ordonnée du seed
         await seed_schools(session)
         await seed_roles(session)
         program_ids = await seed_programs(session)
@@ -885,15 +979,15 @@ async def main() -> None:
 
     log.info("=" * 65)
     log.info("  ✅ SEED COMPLET & VALIDÉ AVEC SUCCÈS")
-    log.info("  - 3 écoles NAU (IIT, ISB, ISA)")
+    log.info("  - 3 écoles NAU (IIT, ISB, ISA - Institut Supérieur d'Architecture)")
     log.info("  - 5 rôles RBAC (admin, responsable, rh, direction, student)")
-    log.info("  - %d programmes & formations (spécialités)", len(PROGRAMS))
-    log.info("  - Grilles tarifaires officielles & échéanciers")
-    log.info("  - Prérequis d'admission Gatekeeper (bac, prépa, licence)")
-    log.info("  - 3 campagnes d'admission actives 2026-2027")
-    log.info("  - 6 comptes de démo avec profils assignés")
-    log.info("  - 1 candidat témoin avec profil & 6 matières/notes")
-    log.info("  - 12 créneaux d'entretien (slots) disponibles")
+    log.info("  - %d programmes pédagogiques & spécialités", len(PROGRAMS))
+    log.info("  - Grilles tarifaires 2026-2027 configurées")
+    log.info("  - Règles de prérequis Gatekeeper configurées")
+    log.info("  - 3 campagnes d'admission actives")
+    log.info("  - %d comptes utilisateurs et responsables", len(DEMO_ACCOUNTS))
+    log.info("  - 1 candidat témoin avec relevé de notes")
+    log.info("  - 12 créneaux d'entretien (IIT, ISB, ISA)")
     log.info("=" * 65)
 
 
