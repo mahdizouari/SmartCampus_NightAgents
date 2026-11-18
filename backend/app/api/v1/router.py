@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, catalog_management, health
+from app.api.v1.endpoints import auth, catalog, catalog_management, health
 
 api_router = APIRouter()
 
@@ -14,10 +14,16 @@ api_router.include_router(
     tags=["Authentication"],
 )
 
+# Include public catalog consultation endpoints under /api/v1/catalog (SA-21)
+api_router.include_router(
+    catalog.router,
+    prefix="/catalog",
+    tags=["Catalog Consultation"],
+)
+
 # Include admin catalog management endpoints under /api/v1/catalog (SA-20)
 api_router.include_router(
     catalog_management.router,
     prefix="/catalog",
     tags=["Catalog Management"],
 )
-

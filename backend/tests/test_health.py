@@ -26,4 +26,5 @@ def test_root_endpoint(client):
     assert "message" in data
     assert "docs" in data
     assert "health" in data
+    assert "health_redis" in data
 
