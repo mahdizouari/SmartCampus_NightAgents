@@ -5,9 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.core.config import Settings, settings
+from app.core.config import Settings
 from app.core.redis import check_redis_health
-from app.schemas.session import MessageTurn
 from app.services.redis_service import (
     GuestSessionService,
     HotConversationService,
