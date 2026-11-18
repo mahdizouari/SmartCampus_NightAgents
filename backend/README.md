@@ -14,7 +14,9 @@ backend/
 │   ├── core/
 │   │   ├── __init__.py
 │   │   ├── config.py            # Pydantic Settings, DB config & chargement .env
-│   │   └── database.py          # SQLAlchemy async engine, connection pool & get_db (SA-16)
+│   │   ├── database.py          # SQLAlchemy async engine, connection pool & get_db (SA-16)
+│   │   ├── deps.py              # Dépendances RBAC et JWT
+│   │   └── redis.py             # Client Redis async, pool de connexions & check_redis_health
 │   ├── models/                  # Modèles ORM SQLAlchemy 2.0 multi-schémas (SA-17)
 │   ├── api/
 │   │   ├── __init__.py
@@ -23,12 +25,17 @@ backend/
 │   │       ├── router.py        # Agrégateur des routes v1
 │   │       └── endpoints/
 │   │           ├── __init__.py
-│   │           └── health.py    # GET /health & /api/v1/health/db
+│   │           ├── catalog_management.py # CRUD catalogue administrateur (SA-20)
+│   │           └── health.py    # GET /health, /health/db & /health/redis
 │   ├── schemas/
 │   │   ├── __init__.py
-│   │   └── health.py            # Schémas de validation Pydantic (Health & DatabaseHealth)
+│   │   ├── catalog_management.py # Schémas Pydantic du catalogue
+│   │   ├── health.py            # Schémas de validation (Health, DatabaseHealth & RedisHealth)
+│   │   └── session.py           # Schémas MessageTurn, HotConversation & GuestSession
 │   └── services/
-│       └── __init__.py          # Services métier et intégrations
+│       ├── __init__.py
+│       ├── catalog_management_service.py # Logique métier catalogue
+│       └── redis_service.py     # Hot conversation (8 turns, 7d TTL) & Guest session (24h TTL)
 ├── alembic/                     # Migrations PostgreSQL asynchrone + RLS (SA-17)
 │   ├── env.py
 │   └── versions/
@@ -39,6 +46,8 @@ backend/
 │   ├── conftest.py              # Fixtures Pytest (TestClient)
 │   ├── test_health.py           # Tests unitaires pour /health
 │   ├── test_database.py         # Tests unitaires pool, DB config & /health/db (SA-16)
+│   ├── test_redis_service.py    # Tests unitaires Redis List/Hash, TTL & pipeline
+│   ├── test_catalog_management.py # Tests API catalogue & RBAC (SA-20)
 │   └── test_migrations.py       # Tests offline métadonnées, ENUMs, FKs et SQL Alembic (SA-17)
 ├── alembic.ini                  # Configuration Alembic
 ├── .env.example                 # Modèle de variables d'environnement
