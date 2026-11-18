@@ -4,10 +4,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints.health import get_database_health, get_health
+from app.api.v1.endpoints.health import (
+    get_database_health,
+    get_health,
+    get_redis_health,
+)
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import close_db_pool
+from app.core.redis import close_redis_pool
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +22,9 @@ async def lifespan(app: FastAPI):
     """Manages application lifecycle: startup and graceful shutdown."""
     logger.info("Starting up %s (env: %s)...", settings.PROJECT_NAME, settings.ENVIRONMENT)
     yield
-    logger.info("Shutting down %s, closing database connection pool...", settings.PROJECT_NAME)
+    logger.info("Shutting down %s, closing database & redis pools...", settings.PROJECT_NAME)
     await close_db_pool()
+    await close_redis_pool()
 
 
 app = FastAPI(
@@ -66,6 +72,15 @@ app.add_api_route(
     ),
 )
 
+app.add_api_route(
+    "/health/redis",
+    get_redis_health,
+    methods=["GET"],
+    tags=["Health"],
+    summary="Root Redis Health Check",
+    description="Verifies Redis 7 connection and memory usage.",
+)
+
 # Include v1 API routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
@@ -77,5 +92,6 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "health_db": "/health/db",
+        "health_redis": "/health/redis",
         "api_v1": settings.API_V1_STR,
     }

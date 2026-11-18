@@ -51,3 +51,16 @@ class DatabaseHealthResponse(BaseModel):
         default_factory=lambda: datetime.now(UTC),
         description="Timestamp of the health check in UTC",
     )
+
+
+class RedisHealthResponse(BaseModel):
+    """Schema for Redis connection health response."""
+
+    status: str = Field(..., description="Redis status (connected, degraded, disconnected)")
+    ping: bool | None = Field(None, description="Whether ping succeeded")
+    used_memory_human: str | None = Field(None, description="Memory used by Redis")
+    error: str | None = Field(None, description="Error message if disconnected")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        description="Timestamp of the health check in UTC",
+    )
