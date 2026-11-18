@@ -38,8 +38,9 @@ class RateLimitDecision:
 
 
 def clear_rate_limit_store_for_tests() -> None:
-    """Clear in-memory rate-limit counters between automated tests."""
+    """Clear in-memory rate-limit counters and isolate test runs from shared live Redis buckets."""
     _LOCAL_RATE_STORE.clear()
+    mark_redis_unavailable_temporarily(60.0)
 
 
 def mark_redis_unavailable_temporarily(backoff_seconds: float = 30.0) -> None:
