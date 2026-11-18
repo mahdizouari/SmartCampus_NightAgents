@@ -28,8 +28,9 @@ MOCK_DISCONNECTED_HEALTH = {
 }
 
 
-def test_database_settings_defaults():
+def test_database_settings_defaults(monkeypatch):
     """Verifies that database connection and pooling settings load with correct defaults."""
+    monkeypatch.delenv("POSTGRES_USER", raising=False)
     cfg = Settings()
     assert cfg.POSTGRES_USER == "smartcampus_app"
     assert cfg.POSTGRES_DB == "smartcampus_db"
