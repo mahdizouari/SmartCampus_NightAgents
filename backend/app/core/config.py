@@ -18,6 +18,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
+    # Security / JWT Settings (shared with SA-28 Auth)
+    SECRET_KEY: str = "change_me_in_production_use_a_long_random_string"
+    JWT_ALGORITHM: str = "HS256"
+
     # Database Settings (PostgreSQL 16 + pgvector)
     POSTGRES_SERVER: str = "postgres"
     POSTGRES_PORT: int = 5432
