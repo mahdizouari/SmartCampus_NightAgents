@@ -9,10 +9,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import get_db
+from app.schemas.session import GuestSessionIssuedResponse
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 _DEFAULT_INSECURE_SECRET = "change_me_in_production_use_a_long_random_string"
@@ -219,3 +222,36 @@ async def require_catalog_admin(
             detail="PLATFORM_ADMIN privileges are required to modify the academic catalog.",
         )
     return actor
+
+
+async def get_current_guest_session(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> GuestSessionIssuedResponse:
+    """Validate the visitor's signed guest session cookie/header and refresh its 7-day TTL."""
+    from app.services.guest_session_service import validate_and_touch_guest_session
+
+    return await validate_and_touch_guest_session(
+        request,
+        response,
+        db=db,
+        auto_create=False,
+    )
+
+
+async def get_or_create_guest_session(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> GuestSessionIssuedResponse:
+    """Validate existing guest session or auto-create a signed 7-day session when starting chat."""
+    from app.services.guest_session_service import validate_and_touch_guest_session
+
+    return await validate_and_touch_guest_session(
+        request,
+        response,
+        db=db,
+        auto_create=True,
+    )
+

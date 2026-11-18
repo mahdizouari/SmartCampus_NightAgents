@@ -1,6 +1,6 @@
-"""Authentication, OTP, Google OAuth 2.0, JWT refresh, and INPDP consent REST endpoints (SA-28)."""
+"""Authentication, Guest Sessions, OTP, Google OAuth 2.0, JWT, and INPDP consent (SA-25 & SA-28)."""
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -16,9 +16,98 @@ from app.schemas.auth import (
     OtpVerifyRequest,
     RefreshTokenRequest,
 )
+from app.schemas.session import (
+    GuestSessionCreateRequest,
+    GuestSessionDeleteResponse,
+    GuestSessionIssuedResponse,
+    GuestSessionUpdateRequest,
+)
 from app.services import auth_service as svc
+from app.services import guest_session_service as guest_svc
 
 router = APIRouter()
+
+
+@router.post(
+    "/guest-session",
+    response_model=GuestSessionIssuedResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Issue or refresh a signed anonymous guest session (7-day sliding TTL)",
+)
+async def create_guest_session(
+    request: Request,
+    response: Response,
+    payload: GuestSessionCreateRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> GuestSessionIssuedResponse:
+    return await guest_svc.create_or_refresh_guest_session(
+        request,
+        response,
+        payload=payload,
+        db=db,
+    )
+
+
+@router.get(
+    "/guest-session",
+    response_model=GuestSessionIssuedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Validate signed anonymous guest session cookie and refresh its 7-day sliding TTL",
+)
+async def get_guest_session(
+    request: Request,
+    response: Response,
+    auto_create: bool = Query(
+        default=False,
+        description="Automatically create a temporary session if no cookie/header is present",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> GuestSessionIssuedResponse:
+    return await guest_svc.validate_and_touch_guest_session(
+        request,
+        response,
+        db=db,
+        auto_create=auto_create,
+    )
+
+
+@router.patch(
+    "/guest-session",
+    response_model=GuestSessionIssuedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update anonymous guest session state (language, step, facts) and refresh 7-day TTL",
+)
+async def patch_guest_session(
+    payload: GuestSessionUpdateRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> GuestSessionIssuedResponse:
+    return await guest_svc.update_guest_session(
+        request,
+        response,
+        payload,
+        db=db,
+    )
+
+
+@router.delete(
+    "/guest-session",
+    response_model=GuestSessionDeleteResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Terminate anonymous guest session, purge Redis state, and clear signed cookie",
+)
+async def delete_guest_session(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> GuestSessionDeleteResponse:
+    return await guest_svc.terminate_guest_session(
+        request,
+        response,
+        db=db,
+    )
+
 
 
 @router.post(
