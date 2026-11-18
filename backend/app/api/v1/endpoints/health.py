@@ -2,7 +2,12 @@ from fastapi import APIRouter, Response, status
 
 from app.core.config import settings
 from app.core.database import check_db_health
-from app.schemas.health import DatabaseHealthResponse, HealthResponse
+from app.core.redis import check_redis_health
+from app.schemas.health import (
+    DatabaseHealthResponse,
+    HealthResponse,
+    RedisHealthResponse,
+)
 
 router = APIRouter()
 
@@ -37,3 +42,16 @@ async def get_database_health(response: Response) -> DatabaseHealthResponse:
     if health_data.get("status") == "disconnected":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return DatabaseHealthResponse(**health_data)
+
+
+@router.get(
+    "/health/redis",
+    response_model=RedisHealthResponse,
+    summary="Redis Health Check",
+    description="Verifies connection to Redis 7 instance and memory usage.",
+)
+async def get_redis_health(response: Response) -> RedisHealthResponse:
+    health_data = await check_redis_health()
+    if health_data.get("status") == "disconnected":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return RedisHealthResponse(**health_data)

@@ -37,6 +37,24 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800
     DB_ECHO: bool = False
 
+    # Redis Settings (Hot memory & session store)
+    REDIS_HOST: str = "redis"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str | None = None
+    REDIS_URL: str | None = None
+    REDIS_CHAT_HISTORY_TTL: int = 604800  # 7 days in seconds
+    REDIS_CHAT_MAX_MESSAGES: int = 16  # 8 turns (16 messages max)
+    REDIS_GUEST_SESSION_TTL: int = 86400  # 24 hours in seconds
+
+    @property
+    def effective_redis_url(self) -> str:
+        """Returns the Redis connection URL."""
+        if self.REDIS_URL:
+            return self.REDIS_URL
+        auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+        return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
     @property
     def async_database_url(self) -> str:
         """Returns the async database URL, formatted for asyncpg driver."""
