@@ -6,7 +6,11 @@ from app.schemas.health import (
     RedisHealthResponse,
 )
 from app.schemas.session import (
+    GuestSessionCreateRequest,
+    GuestSessionDeleteResponse,
+    GuestSessionIssuedResponse,
     GuestSessionResponse,
+    GuestSessionUpdateRequest,
     HotConversationResponse,
     MessageTurn,
 )
@@ -18,5 +22,9 @@ __all__ = [
     "MessageTurn",
     "HotConversationResponse",
     "GuestSessionResponse",
+    "GuestSessionCreateRequest",
+    "GuestSessionUpdateRequest",
+    "GuestSessionIssuedResponse",
+    "GuestSessionDeleteResponse",
 ]
 

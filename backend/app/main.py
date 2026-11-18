@@ -12,6 +12,7 @@ from app.api.v1.endpoints.health import (
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import close_db_pool
+from app.core.rate_limit import RateLimitMiddleware
 from app.core.redis import close_redis_pool
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,9 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Enforce per-session and per-IP rate limiting with IETF RateLimit-* headers (SA-25)
+app.add_middleware(RateLimitMiddleware)
 
 # Root-level health check endpoints
 app.add_api_route(
