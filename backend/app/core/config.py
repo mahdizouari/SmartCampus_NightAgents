@@ -18,9 +18,13 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    # Security / JWT Settings (shared with SA-28 Auth)
+    # Security / JWT / OAuth Settings (SA-20 & SA-28)
     SECRET_KEY: str = "change_me_in_production_use_a_long_random_string"
     JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    OTP_EXPIRE_SECONDS: int = 300
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
 
     # Database Settings (PostgreSQL 16 + pgvector)
     POSTGRES_SERVER: str = "postgres"
