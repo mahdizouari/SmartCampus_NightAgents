@@ -1,0 +1,702 @@
+[
+  {
+    "id": "FR-01",
+    "language_group": "french",
+    "query": "Quelles sont les filières d'ingénieur disponibles à l'IIT ?",
+    "intent": "program_catalog",
+    "target_school": "iit",
+    "expected_language": "Français",
+    "ground_truth": "L'Institut International de Technologie (IIT) propose plusieurs formations d'ingénieur accréditées : Génie Logiciel et Informatique Décisionnelle (GLID), Science des Données et Intelligence Artificielle (SDIA), Administration Réseau et Sécurité Informatique (ARSI), Génie Mécanique, Génie Industriel et Génie Civil.",
+    "evaluation_criteria": "Doit citer au moins GLID, SDIA, ARSI, Mécanique, Industriel, Civil sans inventer d'autres écoles."
+  },
+  {
+    "id": "FR-02",
+    "language_group": "french",
+    "query": "Quel type de baccalauréat est requis pour intégrer le cycle préparatoire de l'IIT ?",
+    "intent": "admission_prerequisites",
+    "target_school": "iit",
+    "expected_language": "Français",
+    "ground_truth": "Le cycle préparatoire intégré de l'IIT est ouvert aux bacheliers des sections scientifiques : Mathématiques, Sciences Expérimentales, Sciences Techniques et Informatique.",
+    "evaluation_criteria": "Sections scientifiques obligatoires mentionnées. Pas d'admission directe avec Bac Lettres."
+  },
+  {
+    "id": "FR-03",
+    "language_group": "french",
+    "query": "Est-ce que l'ISB propose une licence en Finance et quels en sont les débouchés ?",
+    "intent": "program_details",
+    "target_school": "isb",
+    "expected_language": "Français",
+    "ground_truth": "Oui, l'International School of Business (ISB) propose une Licence en Finance & Ingénierie Financière. Elle prépare aux métiers de la banque, de l'analyse financière, de la gestion de portefeuille et du contrôle de gestion, ou à une poursuite en Master.",
+    "evaluation_criteria": "Confirmation de l'existence du programme à l'ISB et mention de débouchés financiers cohérents."
+  },
+  {
+    "id": "FR-04",
+    "language_group": "french",
+    "query": "J'ai un diplôme Bac+3 en informatique. Puis-je intégrer le cycle ingénieur GLID en passerelle ?",
+    "intent": "eligibility_gateway",
+    "target_school": "iit",
+    "expected_language": "Français",
+    "ground_truth": "Oui, les titulaires d'une Licence en informatique ou diplôme équivalent (Bac+3) peuvent candidater en première année du cycle d'ingénieur en Génie informatique, et Ensuite en Génie Logiciel sur étude de dossier et relevés de notes. La décision finale relève de la commission d'admission.",
+    "evaluation_criteria": "Validation de la passerelle Bac+3 -> 1ère année ingénieur. Précision que l'admission définitive est humaine."
+  },
+  {
+    "id": "FR-05",
+    "language_group": "french",
+    "query": "Quelle est la durée des études à l'Institut Supérieur d'Architecture (ISA) pour devenir architecte ?",
+    "intent": "program_duration",
+    "target_school": "isa",
+    "expected_language": "Français",
+    "ground_truth": "Le cursus académique s’étale sur six (6) années réparties sur deux cycles d’étude (deux années au premier cycle et 4 années au deuxième cycle) qui seront couronnées par l’obtention du Diplôme National d’Architecte.",
+    "evaluation_criteria": "Mention des 6 ans (2 ans 1er cycle + 4 ans 2ème cycle) pour le Diplôme National d'Architecte."
+  },
+  {
+    "id": "FR-06",
+    "language_group": "french",
+    "query": "Quels sont les documents obligatoires à fournir pour constituer mon dossier de préinscription ?",
+    "intent": "required_documents",
+    "target_school": "all",
+    "expected_language": "Français",
+    "ground_truth": "Pour déposer votre dossier, vous devez fournir : une copie de votre pièce d'identité (CIN ou Passeport), votre relevé de notes du Baccalauréat, votre diplôme ou attestation de réussite, ainsi que les relevés de notes des années universitaires précédentes pour les admissions par équivalence/passerelle.",
+    "evaluation_criteria": "Liste claire : CIN/Passeport, relevé Bac, diplômes/relevés universitaires."
+  },
+  {
+    "id": "FR-07",
+    "language_group": "french",
+    "query": "Y a-t-il des licences à l'IIT ?",
+    "intent": "program_catalog",
+    "target_school": "iit",
+    "expected_language": "Français",
+    "ground_truth": "Oui, l'IIT propose des licences  après l'obtention du baccalauréat.",
+    "evaluation_criteria": "Mention des licences proposées à l'IIT."
+  },
+  {
+    "id": "FR-08",
+    "language_group": "french",
+    "query": "Est-ce qu'une intelligence artificielle peut accepter ou rejeter mon inscription ?",
+    "intent": "admission_governance",
+    "target_school": "all",
+    "expected_language": "Français",
+    "ground_truth": "Non, l'agent IA SmartCampus effectue uniquement une pré-évaluation déclarative et de l'orientation. Toutes les décisions officielles d'admission, de liste d'attente ou de refus sont prises exclusivement par des jurys et responsables académiques humains (Human-in-the-Loop).",
+    "evaluation_criteria": "Règle HITL stricte : interdiction pour l'IA d'admettre, l'humain décide toujours."
+  },
+  {
+    "id": "FR-09",
+    "language_group": "french",
+    "query": "Quelles sont les spécialités de Master disponibles à l'ISB ?",
+    "intent": "program_details",
+    "target_school": "isb",
+    "expected_language": "Français",
+    "ground_truth": "L'ISB propose notamment Master In Business Administration (MBA) (ENG), Master In Digital Marketing (FR), Master's Degree In Accounting (FR), Master's Degree In Corporate Finance And Financial Engineering (FR), Master Of Science (MSc) In Digital Marketing (ENG), Master Of Science (MSc) In Finance (ENG), Co-Constructed Professional Master's Degree In Business Law",
+    "evaluation_criteria": "Mention des Masters disponibles à l'ISB."
+  },
+  {
+    "id": "FR-10",
+    "language_group": "french",
+    "query": "J'hésite entre Génie Logiciel (GLID) et Data Science (SDIA) à l'IIT. Comment choisir ?",
+    "intent": "advisory_comparison",
+    "target_school": "iit",
+    "expected_language": "Français",
+    "ground_truth": "Le Génie Logiciel (GLID) est une filière du département d’informatique de l’IIT qui forme des ingénieurs aptes à concevoir, développer, tester, déployer et maintenir des systèmes informatiques complexes. La filière Sciences de Données et Intelligence Artificielle (SDIA) forme des ingénieurs aptes à collecter, traiter, analyser et exploiter de grands volumes de données, ainsi qu'à concevoir et déployer des solutions basées sur l’intelligence artificielle. Choisissez GLID si vous préférez la conception de systèmes logiciels complets, ou SDIA si vous êtes attiré par les statistiques et l'intelligence artificielle.",
+    "evaluation_criteria": "Différenciation claire des deux cursus selon le corpus officiel."
+  },
+  {
+    "id": "FR-11",
+    "language_group": "french",
+    "query": "Est-ce que je peux commencer mon inscription en tant qu'invité sans créer de compte ?",
+    "intent": "guest_session_policy",
+    "target_school": "all",
+    "expected_language": "Français",
+    "ground_truth": "Oui, vous pouvez découvrir les programmes, dialoguer avec l'agent et évaluer votre éligibilité en tant que visiteur anonyme. Votre session est sauvegardée temporairement pendant 7 jours et sera automatiquement fusionnée si vous décidez de créer un compte.",
+    "evaluation_criteria": "Conformité avec le principe 'Give or Keep' et session anonyme temporaire."
+  },
+  {
+    "id": "FR-12",
+    "language_group": "french",
+    "query": "Existe-t-il une filière Génie Civil à l'IIT et que permet-elle d'apprendre ?",
+    "intent": "program_details",
+    "target_school": "iit",
+    "expected_language": "Français",
+    "ground_truth": "Oui, l'IIT propose le diplôme d'ingénieur en Génie Civil. Il forme aux calculs de structures, à la géotechnique, aux travaux publics, au béton armé et à la gestion de chantiers de construction.",
+    "evaluation_criteria": "Confirmation de l'existence du Génie Civil à l'IIT."
+  },
+  {
+    "id": "FR-13",
+    "language_group": "french",
+    "query": "Comment planifier un entretien d'orientation avec un conseiller pédagogique ?",
+    "intent": "appointment_scheduling",
+    "target_school": "all",
+    "expected_language": "Français",
+    "ground_truth": "Vous pouvez demander la prise de rendez-vous directement via la plateforme après avoir finalisé votre profil préliminaire. Un créneau vous sera proposé avec le responsable pédagogique ou le service des admissions de l'établissement concerné (IIT, ISB ou ISA).",
+    "evaluation_criteria": "Explication de la prise de RDV humain / conseiller pédagogique."
+  },
+  {
+    "id": "FR-14",
+    "language_group": "french",
+    "query": "L'IIT est-elle située à Sfax ou à Tunis ?",
+    "intent": "campus_location",
+    "target_school": "iit",
+    "expected_language": "Français",
+    "ground_truth": "L'Institut International de Technologie (IIT), tout comme l'ISB et l'ISA au sein du réseau NAU, est situé à Sfax, en Tunisie.",
+    "evaluation_criteria": "Emplacement exact : Sfax, Tunisie."
+  },
+  {
+    "id": "FR-15",
+    "language_group": "french",
+    "query": "Quelles licences en gestion et commerce propose l'ISB pour les nouveaux bacheliers ?",
+    "intent": "program_catalog",
+    "target_school": "isb",
+    "expected_language": "Français",
+    "ground_truth": "L'ISB propose trois licences majeures post-bac : Licence en Business Administration, Licence en Business Intelligence, et Licence en Business Economics",
+    "evaluation_criteria": "Citation des 3 licences : Business Administration, Finance, Marketing."
+  },
+  {
+    "id": "AR-01",
+    "language_group": "fusha",
+    "query": "ما هي الاختصاصات الهندسية المتوفرة في معهد تكنولوجيا الهندسة الدولي (IIT)؟",
+    "intent": "program_catalog",
+    "target_school": "iit",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "يقدم المعهد الدولي للتكنولوجيا (IIT) سبعة برامج وطنية معتمدة لتكوين المهندسين: هندسة البرمجيات والمعلوماتية القرارية (GLID)، علوم البيانات والذكاء الاصطناعي (SDIA)، الآلية والروبوتات في الأنظمة الصناعية (ARSI)، الهندسة الميكانيكية، الهندسة الصناعية، الهندسة الطاقية، والهندسة المدنية.",
+    "evaluation_criteria": "إجابة حصرية باللغة العربية الفصحى. ذكر الاختصاصات الهندسية المعتمدة بدقة دون خلط مع مدارس أخرى."
+  },
+  {
+    "id": "AR-02",
+    "language_group": "fusha",
+    "query": "ما هي شروط القبول المسبق في المرحلة التحضيرية المندمجة بالمعهد الدولي للتكنولوجيا؟",
+    "intent": "admission_prerequisites",
+    "target_school": "iit",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "يشترط للالتحاق بالمرحلة التحضيرية المندمجة أن يكون المترشح حاصلاً على شهادة البكالوريا في إحدى الشعب العلمية: الرياضيات، العلوم التجريبية، العلوم التقنية، أو علوم الإعلامية.",
+    "evaluation_criteria": "عربية فصحى سليمة، تحديد الشعب العلمية المطلوبة بدقة."
+  },
+  {
+    "id": "AR-03",
+    "language_group": "fusha",
+    "query": "هل تقدم مدرسة الأعمال الدولية (ISB) شهادات الإجازة في المحاسبة والمالية؟",
+    "intent": "program_details",
+    "target_school": "isb",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "نعم، تقدم مدرسة الأعمال الدولية (ISB) شهادة الإجازة في المالية والهندسة المالية، بالإضافة إلى الإجازة في إدارة الأعمال والإجازة في التسويق والتجارة الرقمية.",
+    "evaluation_criteria": "لغة فصحى مع حصر الإجازات المتاحة فعلياً بالمدرسة."
+  },
+  {
+    "id": "AR-04",
+    "language_group": "fusha",
+    "query": "هل تمنح الجامعة شهادة مهندس معماري معترف بها عبر معهد العمارة (ISA)؟",
+    "intent": "accreditation",
+    "target_school": "isa",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "نعم، يمتد المسار الأكاديمي بالمعهد العالي للهندسة المعمارية (ISA) على مدى ست (6) سنوات موزعة على مرحلتين (سنتان في المرحلة الأولى وأربع سنوات في المرحلة الثانية) لنيل الشهادة الوطنية لمهندس معماري.",
+    "evaluation_criteria": "تأكيد الشهادة الوطنية والتنظيم الأكاديمي الممتد على 6 سنوات (سنتان + 4 سنوات)."
+  },
+  {
+    "id": "AR-05",
+    "language_group": "fusha",
+    "query": "ما هي الوثائق الرسمية المطلوبة لاستكمال ملف التسجيل الأولي؟",
+    "intent": "required_documents",
+    "target_school": "all",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "يتطلب ملف التسجيل الأولي إرفاق نسخة من بطاقة التعريف الوطنية أو جواز السفر، كشف علامات امتحان البكالوريا، شهادة النجاح أو التخرج، وكشوف العلامات للسنوات الجامعية السابقة بالنسبة للطلبة المترشحين لمسار المعابر والتسوية.",
+    "evaluation_criteria": "قائمة وثائق رسمية واضحة بالفصحى."
+  },
+  {
+    "id": "AR-06",
+    "language_group": "fusha",
+    "query": "أحمل إجازة في الإعلامية، هل يمكنني الترشح مباشرة للسنة الأولى بمرحلة المهندسين؟",
+    "intent": "eligibility_gateway",
+    "target_school": "iit",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "نعم، يحق للطلبة الحاصلين على إجازة علمية في الإعلامية الترشح للالتحاق بالسنة الأولى من مرحلة تكوين المهندسين في هندسة البرمجيات (GLID) أو علوم البيانات (DSIA)، ويخضع القبول النهائي لتقييم اللجنة العلمية والبيداغوجية.",
+    "evaluation_criteria": "تأكيد إمكانية مسار المعابر مع التنصيص على سلطة قرار اللجنة البشرية."
+  },
+  {
+    "id": "AR-07",
+    "language_group": "fusha",
+    "query": "هل يتخذ نظام الذكاء الاصطناعي القرار النهائي في قبول المترشحين أو رفضهم؟",
+    "intent": "admission_governance",
+    "target_school": "all",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "كلا، لا يملك نظام الذكاء الاصطناعي أي صلاحية لاتخاذ قرارات القبول أو الرفض أو الإدراج في قائمة الانتظار. دوره يقتصر على التوجيه والاستفسار المبدئي، في حين تعود كافة القرارات المصيرية حصراً للجان الأكاديمية والمسؤولين البشريين.",
+    "evaluation_criteria": "التأكيد القطعي على مبدأ القرار البشري (HITL) وعدم انفراد الذكاء الاصطناعي بالقرار."
+  },
+  {
+    "id": "AR-08",
+    "language_group": "fusha",
+    "query": "ما الفرق الأكاديمي بين الإجازة في إدارة الأعمال والإجازة في التسويق بمدرسة ISB؟",
+    "intent": "advisory_comparison",
+    "target_school": "isb",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "تركز الإجازة في إدارة الأعمال (Business Administration) على التسيير العام للمؤسسات، الإدارة الإستراتيجية والموارد البشرية، بينما تركز الإجازة في التسويق (Marketing & Digital Business) على دراسة الأسواق، التسويق الإلكتروني، إدارة العلامات التجارية والعلاقة مع الزبائن.",
+    "evaluation_criteria": "شرح مقارن واضح وموجز بالفصحى."
+  },
+  {
+    "id": "AR-09",
+    "language_group": "fusha",
+    "query": "هل يشترط إجراء اختبار قبول أو مقابلة شفوية للتسجيل في المعهد العالي للهندسة المعمارية؟",
+    "intent": "admission_prerequisites",
+    "target_school": "isa",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "نعم، يشمل القبول في المعهد العالي للهندسة المعمارية (ISA) دراسة الملف الأكاديمي واجتياز اختبار تقييمي أو مقابلة توجيهية تهدف إلى قياس الميول الفنية والمهارات المكانية للمترشح.",
+    "evaluation_criteria": "بيان إجراءات المقابلة والاختبار التقييمي لـ ISA."
+  },
+  {
+    "id": "AR-10",
+    "language_group": "fusha",
+    "query": "أين تقع مقرات كليات ومعاهد المجمع الأكاديمي؟",
+    "intent": "campus_location",
+    "target_school": "all",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "تقع مؤسسات المجمع الجامعي (المعهد الدولي للتكنولوجيا IIT، مدرسة الأعمال الدولية ISB، ومعهد العمارة ISA) في مدينة صفاقس بالجمهورية التونسية.",
+    "evaluation_criteria": "تحديد الموقع الرسمي: صفاقس، تونس."
+  },
+  {
+    "id": "AR-11",
+    "language_group": "fusha",
+    "query": "ما هي الآفاق المهنية لخريجي هندسة الأنظمة الذكية والروبوتات (ARSI)؟",
+    "intent": "program_details",
+    "target_school": "iit",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "يؤهل تخصص الروبوتات والأنظمة الآلية (ARSI) للعمل في مجالات الأتمتة الصناعية، خطوط الإنتاج الذكية، صيانة المنظومات الروبوتية، هندسة الأنظمة المدمجة ومشاريع الثورة الصناعية الرابعة (Industry 4.0).",
+    "evaluation_criteria": "آفاق مهنية منطقية ومطابقة للأنظمة الآلية والروبوتات."
+  },
+  {
+    "id": "AR-12",
+    "language_group": "fusha",
+    "query": "هل تضمن المنصة حماية بياناتي الشخصية طبقاً للتشريعات الجاري بها العمل؟",
+    "intent": "data_privacy",
+    "target_school": "all",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "نعم، تحترم المنصة بشكل صارم مقتضيات الهيئة الوطنية لحماية المعطيات الشخصية (INPDP) ومبادئ حماية الخصوصية، حيث لا يتم تدوين المعطيات الشخصية في القواعد الدائمة إلا بموافقة صريحة من المترشح.",
+    "evaluation_criteria": "ذكر معايير حماية المعطيات (INPDP) والشفافية."
+  },
+  {
+    "id": "AR-13",
+    "language_group": "fusha",
+    "query": "ما هي اختصاصات الماستر المهني المتاحة في مدرسة ISB؟",
+    "intent": "program_catalog",
+    "target_school": "isb",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "توفر مدرسة الأعمال الدولية (ISB) برنامج ماستر مهني في التصرف واستراتيجية المؤسسات (Management & Stratégie d'Entreprise) الموجه للطلبة والمهنيين الراغبين في الارتقاء الإداري.",
+    "evaluation_criteria": "إشارة دقيقة لبرنامج الماستر المهني في التصرف."
+  },
+  {
+    "id": "AR-14",
+    "language_group": "fusha",
+    "query": "كيف يمكن للمترشح طلب موعد مع مسؤول التوجيه أو مصلحة التسجيل؟",
+    "intent": "appointment_scheduling",
+    "target_school": "all",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "يمكنكم حجز موعد استشاري أو مقابلة توجيهية مباشرة عبر واجهة المنصة بعد استكمال تعمير المعطيات التوجيهية، لاختيار التوقيت الأنسب المتاح مع الفريق الإداري والبيداغوجي.",
+    "evaluation_criteria": "توضيح إجراءات حجز المقابلة بلغة عربية فصحى راقية."
+  },
+  {
+    "id": "AR-15",
+    "language_group": "fusha",
+    "query": "هل تقدم الجامعة مرحلة تحضيرية منفصلة أم مدمجة بالدراسات الهندسية؟",
+    "intent": "program_details",
+    "target_school": "iit",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "يقدم المعهد الدولي للتكنولوجيا (IIT) مرحلة تحضيرية مندمجة تمتد على سنتين تمكن الطالب بعد اجتيازها بنجاح من العبور المباشر إلى أحد الاختصاصات الهندسية دون الحاجة لاجتياز المناظرة الوطنية العمومية.",
+    "evaluation_criteria": "توضيح مفهوم المرحلة التحضيرية المندمجة (سنتان)."
+  },
+  {
+    "id": "TN-01",
+    "language_group": "derja_arabic",
+    "query": "شنوة الاختصاصات متاع الهندسة اللي عندكم في الـ IIT ؟",
+    "intent": "program_catalog",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "في الـ IIT عنا 7 برامج تكوين مهندسين معتمدة: جيني لوجيسيال وتطوير البرمجيات (GLID)، داتا ساينس وذكاء اصطناعي (DSIA)،  إدارة الشبكات وأمن المعلومات (ARSI)، جيني ميكانيك، جيني أندستريال، جيني أنرجيتيك، وجيني سيفيل.",
+    "evaluation_criteria": "لهجة تونسية طبيعية بالحرف العربي، بدون تكلّف ولا خلط فصحى. ذكر الشعب السبع بدقة."
+  },
+  {
+    "id": "TN-02",
+    "language_group": "derja_arabic",
+    "query": "أنا ماخذ باك تكنيك بمعدل 12، نجم نعمل بريبا إنتغري في الـ IIT ؟",
+    "intent": "eligibility_evaluation",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "أي تنجم تترشح، الباك تكنيك مقبول في البريبا إنتغري متاع الـ IIT كيفو كيف المات والعلوم والإعلامية. المعدل متاعك يخليك إيليجيبل بش تدفع دوسيك ومسؤولي الترسيم يدرسوه ويعطيوك القرار النهائي.",
+    "evaluation_criteria": "دارجة تونسية واضحة، تأكيد أهلية باك تكنيك، التذكير بأن القرار النهائي للإدارة."
+  },
+  {
+    "id": "TN-03",
+    "language_group": "derja_arabic",
+    "query": "بربي شنوة ليزانفورماسيون على ليسونس الفينونس في الـ ISB وشنوة تخدّم ؟",
+    "intent": "program_details",
+    "target_school": "isb",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "الـ ISB عندها ليسونس باهية برشا في الفينونس والأنترناسيونال فاينانس على 3 سنين. تخدمك في البنوك، شركات التأمين، إدارة الحسابات والمالية في الشركات وإلا تكمّل باها ماستير تصرف ومناجمونت.",
+    "evaluation_criteria": "دارجة تونسية عفوية ومفهومة مع تقديم معلومات واقعية عن ليسونس المالية."
+  },
+  {
+    "id": "TN-04",
+    "language_group": "derja_arabic",
+    "query": "قداش تدوم قراية الأركيتكتور في الـ ISA بش ناخو ديبلومي ؟",
+    "intent": "program_duration",
+    "target_school": "isa",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": " يمتد المسار الأكاديمي على مدى ست (6) سنوات موزعة على مرحلتين دراسيتين (سنتان في المرحلة الأولى وأربع سنوات في المرحلة الثانية)، وتُختتم بالحصول على الشهادة الوطنية في الهندسة المعمارية.",
+    "evaluation_criteria": "دارجة تونسية، تحديد 6 سنين (4 + 2)."
+  },
+  {
+    "id": "TN-05",
+    "language_group": "derja_arabic",
+    "query": "عندي ليسونس إعلامية باك+3، نجم ندخل نقرا أنجينيور GLID طول في العام الأول ؟",
+    "intent": "eligibility_gateway",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "أي بالمرتاح، أصحاب ليسونس لانفورماتيك ينجمو يقدمو على باسرال يدخلو باها طول للسنة الأولى في سيكل الأنجينيور GLID. يدرسو الريلڤيات متاعك ولجنة القبول في الـ IIT هيا اللي تصححلك الترسيم.",
+    "evaluation_criteria": "دارجة تونسية صحيحة، تأكيد الباسرال مع إسناد القبول للإدارة البشرية."
+  },
+  {
+    "id": "TN-06",
+    "language_group": "derja_arabic",
+    "query": "شنوة الأوراق اللازمة اللي لازمني نحضرهم بش نقيد دوسيا ؟",
+    "intent": "required_documents",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "الدوكيمونات الأساسية ساهلين: نسخة من بطاقة التعريف الوطنية (وإلا الباسبور)، رولفي نوت الباك مع شهادة النجاح، والريلڤيات متاع سنين لافاك إذا كانك عامل ليسونس وناوي على باسرال.",
+    "evaluation_criteria": "دارجة تونسية سلسة وقائمة أوراق واضحة."
+  },
+  {
+    "id": "TN-07",
+    "language_group": "derja_arabic",
+    "query": "حاير بين جيني لوجيسيال والداتا ساينس، شنوة الفرق بيناتهم ؟",
+    "intent": "advisory_comparison",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "الـ GLID موجهة للبرمجة وتطوير ليزابليكاسيون ويب وموبايل، الكلاود والـ DevOps. أما الـ DSIA تركز أكثر على المات، الذكاء الاصطناعي، وتحليل البيانات الكبيرة (Big Data) وتدريب الموديلات. كانك مغروم بالديفليكاسيون كود اختار GLID وكان تحب لالجوريتم والموديلات اختار DSIA.",
+    "evaluation_criteria": "مقارنة مضبوطة ومبسطة بالدارجة التونسية."
+  },
+  {
+    "id": "TN-08",
+    "language_group": "derja_arabic",
+    "query": "زعمة الروبو هذا ينجم يرفضلي تسجيلي ولا يقبلني مريقل ؟",
+    "intent": "admission_governance",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "لا ماهوش الروبو اللي يقرر، أنا لهنا فقط بش نجاوبك ونعاونك تختار ونشوفو إيليجيبيليتي متاعك. القبول والرفض الرسمي يقعد ديما عند مسؤولي الجامعة واللجنة البيداغوجية متاع الـ IIT والـ ISB.",
+    "evaluation_criteria": "التشديد بالدارجة التونسية أن الذكاء الاصطناعي لا يقرر في القبول."
+  },
+  {
+    "id": "TN-09",
+    "language_group": "derja_arabic",
+    "query": "نجم نتسجل ونحكي معاكم من غير ما نعمل كونت توة ؟",
+    "intent": "guest_session_policy",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "أي أكيد، تنجم تسأل وتختار وتجرب السيسيون متاعك كإنفيتي من غير ما تعمل كونت، والسيستام يخبيلك الحديث متاعك مدة 7 أيام كاملين. وقت اللي تحب ترسم، تعمل كونت وتتنقل معطياتك أوتوماتيك.",
+    "evaluation_criteria": "لهجة تونسية، توضيح مبدأ الزائر ومدة 7 أيام."
+  },
+  {
+    "id": "TN-10",
+    "language_group": "derja_arabic",
+    "query": "شنيما الفروع متاع الليسونس اللي موجودين في الـ ISB ؟",
+    "intent": "program_catalog",
+    "target_school": "isb",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "في الـ ISB تلقى 3 ليسونسات معروفين: ليسونس في إدارة الأعمال (Business Administration)، ليسونس في المالية (Finance)، وليسونس في التسويق والبيزنس ديجيتال (Marketing).",
+    "evaluation_criteria": "دارجة تونسية واضحة وحصر الاختصاصات الثلاثة."
+  },
+  {
+    "id": "TN-11",
+    "language_group": "derja_arabic",
+    "query": "الفاك وين بالضبط جاية، في تونس العاصمة ولا في صفاقس ؟",
+    "intent": "campus_location",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "مؤسسات الـ NAU لكلها، يعني الـ IIT والـ ISB والـ ISA، موجودين في مدينة صفاقس في تونس.",
+    "evaluation_criteria": "تحديد المكان بدقة بالدارجة التونسية: صفاقس."
+  },
+  {
+    "id": "TN-12",
+    "language_group": "derja_arabic",
+    "query": "فما ليسونس ديزاين وإلا ديكور داخلي في معهد الأرشيتكتور ؟",
+    "intent": "program_catalog",
+    "target_school": "isa",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "لا، في معهد الـ ISA ما فماش ليسونس ديزاين، فما كان شعبة الهندسة المعمارية (Architecture) اللي تدوم 6 سنين كاملين.",
+    "evaluation_criteria": "لهجة تونسية طبيعية بالكامل، نفي وجود ليسونس ديزاين في معهد الأركيتكتور والتأكيد على أن التكوين المتاح هو الهندسة المعمارية الذي يدوم 6 سنوات."
+  },
+  {
+    "id": "TN-13",
+    "language_group": "derja_arabic",
+    "query": "كيفاش نجم نبرمج رونديفو مع موجه بش نتفاهمو في الترسيم ؟",
+    "intent": "appointment_scheduling",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "ساهلة برشا، بعد ما تعمر المعطيات متاعك على البلاتفورم تنجم تطلب رونديفو وتختار النهار والوقت اللي يساعدك، وتقعد مع مسؤول بيداغوجي وإلا مستشار توجيه يفسرلك كل شي بالباهي.",
+    "evaluation_criteria": "دارجة تونسية دافئة وواضحة لتحديد موعد."
+  },
+  {
+    "id": "TN-14",
+    "language_group": "derja_arabic",
+    "query": "شنوة الفرق بين بريبا الـ IIT والبريبا متاع الدولة ؟",
+    "intent": "program_details",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "بريبا الـ IIT إنتغري (مندمجة)، معناها تقرا عامين وتتعدى طول تكمل أنجينيور في الشعبة اللي تحب عليها في الـ IIT على حساب مراقبة مستمرة وماكش مجبر تعدي الكونكور الوطني متاع الدولة والستريس متاعو.",
+    "evaluation_criteria": "دارجة تونسية وشرح دقيق لميزة البريبا المندمجة."
+  },
+  {
+    "id": "TN-15",
+    "language_group": "derja_arabic",
+    "query": "نحب نعرف شنية الآفاق متاع جيني ميكانيك في الـ IIT ؟",
+    "intent": "program_details",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "مهندس الميكانيك في الـ IIT يتكون في الكونسيبسيون والتصنيع، الآليات والمواد، وعندو شانس باهية في معامل السيارات وقطاع الطيران والمعامل الصناعية الكبيرة في تونس وخارجها.",
+    "evaluation_criteria": "دارجة تونسية وآفاق وظيفية منطقية للهندسة الميكانيكية."
+  },
+  {
+    "id": "AB-01",
+    "language_group": "arabizi",
+    "query": "chnoma les branches d'ingénieurs eli 3andkom fel IIT ?",
+    "intent": "program_catalog",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "fel IIT 3anna 7 filières ingénieurs reconnues: Génie Logiciel (GLID), Data Science w IA (SDIA), Administration Réseau et Sécurité Informatique (ARSI), Génie Mécanique, Génie Industriel, Génie Energétique, w Génie Civil.",
+    "evaluation_criteria": "Réponse en Derja tunisienne naturelle (avec vocabulaire local). Interdiction de répondre en arabe classique. Citer les 7 filières."
+  },
+  {
+    "id": "AB-02",
+    "language_group": "arabizi",
+    "query": "bellehi 3andi bac math b 11.5, najem nod5el prépa intégrée fel IIT ?",
+    "intent": "eligibility_evaluation",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ayh tnajem t9adem sans problème! bac math ykhalik éligible lel prépa intégrée fel IIT. tsob dossier mte3ek w ychoufou el relevé de notes, w el décision finale tkoun 3and el commission d'admission.",
+    "evaluation_criteria": "Réponse en derja tunisienne naturelle. Confirmer l'éligibilité du Bac Math et mentionner la décision humaine."
+  },
+  {
+    "id": "AB-03",
+    "language_group": "arabizi",
+    "query": "fama licence finance fel ISB ? w chnowa t5adem ba3d 3 snin ?",
+    "intent": "program_details",
+    "target_school": "isb",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ayh mawjouda licence Finance & Ingénierie Financière fel ISB 3la 3 snin. t5admek fel les banques, les assurances, gestion de trésorerie w cabinet de conseil, walla tkamel biha master fel management.",
+    "evaluation_criteria": "Réponse en Derja tunisienne. Confirmer la licence Finance et citer des débouchés bancaires/financiers réels."
+  },
+  {
+    "id": "AB-04",
+    "language_group": "arabizi",
+    "query": "9adech men 3am 9rayet el architecture fel ISA bech net5arej architecte ?",
+    "intent": "program_duration",
+    "target_school": "isa",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "9rayet el architecture fel ISA fihom 6 snin: premier cycle fih 2 ans w deuxième cycle fih 4 ans bech te5ou le diplôme national d'architecte.",
+    "evaluation_criteria": "Derja naturelle, préciser exactement 6 ans (2 ans + 4 ans)."
+  },
+  {
+    "id": "AB-05",
+    "language_group": "arabizi",
+    "query": "3andi licence informatique fel fac public, najem na3mel passerelle l 1ère année génie logiciel ?",
+    "intent": "eligibility_gateway",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ey akid, les diplômés bac+3 en informatique ynajmou ya3mlou passerelle direct l 1ère année cycle ingénieur GLID. ythabtou fel relevés mte3ek w el comité bédagogique houwa eli ya3ti el confirmation.",
+    "evaluation_criteria": "Réponse en derja tunisienne, valider la passerelle Bac+3 et rappeler la validation humaine."
+  },
+  {
+    "id": "AB-06",
+    "language_group": "arabizi",
+    "query": "chnouma les papiers lezmin bech n3amer el dossier mte3i ?",
+    "intent": "required_documents",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "lezmek copie mel CIN walla el passeport, relevé de notes mte3 el bac, w kenek 3amel fac relevés de notes mte3 les années universitaires précédentes.",
+    "evaluation_criteria": "Liste claire des documents en Derja."
+  },
+  {
+    "id": "AB-07",
+    "language_group": "arabizi",
+    "query": "kifeh n5ayar bin GLID w SDIA ? ena n7eb el programmation w chwaya maths",
+    "intent": "advisory_comparison",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ken ghramek bel développement web, mobile, architecture logicielle w devops emchi GLID. ken t7eb el machine learning, el intelligence artificielle w analyse de données w statistiques emchi SDIA. lezouz fihom programmation ama SDIA fiha akther maths w data.",
+    "evaluation_criteria": "Comparaison claire GLID vs DSIA adaptée au profil en Derja naturelle."
+  },
+  {
+    "id": "AB-08",
+    "language_group": "arabizi",
+    "query": "za3ma l'IA mte3kom tnajem trfadhnii fel inscription ?",
+    "intent": "admission_governance",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "la el IA houni juste t3awnek fel orientation w techra7lek el parcours. l'acceptation walla le refus el rasmi ma ya3mlou ken l'humain ya3ni les jurys w les responsables pédagogiques fel IIT w l'ISB.",
+    "evaluation_criteria": "Interdiction pour l'IA d'admettre ou refuser, rappel du principe HITL en Derja."
+  },
+  {
+    "id": "AB-09",
+    "language_group": "arabizi",
+    "query": "najem net7adeth m3akom en mode guest men ghir ma na3mel compte taw ?",
+    "intent": "guest_session_policy",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ayh bien sur, tnajem t9oul kol chay en tant que visiteur anonyme, el session to93od msajla 7 ayem bel mémoire chaude. wa9teli t7eb tvalidi dossier mte3ek ta3mel compte w yet3adew ma3loumatek el kol auto.",
+    "evaluation_criteria": "Derja naturelle, explication de la session anonyme et du TTL 7 jours."
+  },
+  {
+    "id": "AB-10",
+    "language_group": "arabizi",
+    "query": "win mawjouda el fac بالضبط ? fel 3asma walla fi Sfax ?",
+    "intent": "campus_location",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "les écoles mte3 NAU el kol (el IIT, l'ISB, w l'ISA) mawjoudin fi Sfax fi tounes.",
+    "evaluation_criteria": "Emplacement exact à Sfax, en Derja naturelle."
+  },
+  {
+    "id": "AB-11",
+    "language_group": "arabizi",
+    "query": "fama design intérieur w déko fel ISA ?",
+    "intent": "program_catalog",
+    "target_school": "isa",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "la, fel ISA ma famach licence design espace walla déco, fama ken filière architecture eli fiha 6 snin kemlin.",
+    "evaluation_criteria": "Derja naturelle, clarification qu'il n'y a pas de licence design à l'ISA et confirmation de l'architecture sur 6 ans."
+  },
+  {
+    "id": "AB-12",
+    "language_group": "arabizi",
+    "query": "kifeh na5ou rendez-vous m3a conseiller pédagogique bech nestafsar akther ?",
+    "intent": "appointment_scheduling",
+    "target_school": "all",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ba3d ma t3abi les informations de base mte3ek tnajem tcliki 3la prise de rendez-vous w ta5tar le créneau eli yse3dek m3a el responsable d'admission walla conseiller pédagogique.",
+    "evaluation_criteria": "Procédure de prise de RDV humain expliquée en Derja."
+  },
+  {
+    "id": "AB-13",
+    "language_group": "arabizi",
+    "query": "fama génie civil fel IIT w chnowa ya9raw fih ?",
+    "intent": "program_details",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ayh mawjoud cycle ingénieur Génie Civil fel IIT, te9raw fih calcul de structures, béton armé, géotechnique, travaux publics w gestion de chantiers.",
+    "evaluation_criteria": "Confirmation du Génie Civil et description de la formation en Derja."
+  },
+  {
+    "id": "AB-14",
+    "language_group": "arabizi",
+    "query": "fama master professionnel fel ISB ?",
+    "intent": "program_catalog",
+    "target_school": "isb",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "ayh fel ISB fama Master In Business Administration (MBA) (ENG), Master In Digital Marketing (FR), Master's Degree In Accounting (FR), Master's Degree In Corporate Finance And Financial Engineering (FR), Master Of Science (MSc) In Digital Marketing (ENG), Master Of Science (MSc) In Finance (ENG), Co-Constructed Professional Master's Degree In Business LawMaster In Business Administration (MBA) (ENG), Master In Digital Marketing (FR), Master's Degree In Accounting (FR), Master's Degree In Corporate Finance And Financial Engineering (FR), Master Of Science (MSc) In Digital Marketing (ENG), Master Of Science (MSc) In Finance (ENG), Co-Constructed Professional Master's Degree In Business Law",
+    "evaluation_criteria": "Mention du Master Professionnel en Management à l'ISB."
+  },
+  {
+    "id": "AB-15",
+    "language_group": "arabizi",
+    "query": "chnowa el far9 bin prépa fel IIT w el prépa classique ?",
+    "intent": "program_details",
+    "target_school": "iit",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "el prépa te9ra 3amin fel IIT w tet3ada direct lel cycle ingénieur 3la 7seb el contrôle continu men ghir stress el concours national mte3 el prépa classique, w tnajem taadi concours.",
+    "evaluation_criteria": "Explication claire de l'avantage du contrôle continu sans concours national."
+  },
+  {
+    "id": "TR-01",
+    "language_group": "trap_french",
+    "query": "Pouvez-vous me donner les frais d'inscription et le programme de la Faculté de Médecine de l'IIT ?",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Français",
+    "ground_truth": "L'IIT ne propose pas de Faculté de Médecine ni d'études médicales. L'offre de l'IIT est exclusivement axée sur les sciences de l'ingénieur et technologies (Génie Logiciel, Data Science, Mécanique, Civil, etc.), tandis que l'ISB couvre le management/finance et l'ISA l'architecture. Nous ne pouvons pas inventer de cursus médical.",
+    "evaluation_criteria": "Refus strict d'inventer. Notification claire que la médecine n'existe pas dans le corpus NAU."
+  },
+  {
+    "id": "TR-02",
+    "language_group": "trap_fusha",
+    "query": "كم تبلغ معاليم التسجيل في كلية طب الأسنان والصيدلة التابعة لمجمعكم الجامعي؟",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "لا تتوفر بمجمعنا الجامعي (IIT / ISB / ISA) أي دراسات في طب الأسنان أو الصيدلة أو التخصصات الطبية، حيث يختص المعهد الدولي للتكنولوجيا بالعلوم الهندسية، ومدرسة الأعمال بالمالية والتصرف، ومعهد العمارة بالهندسة المعمارية والتصميم. يرجى تجنب طلب معلومات خارجة عن التخصصات المتاحة.",
+    "evaluation_criteria": "رفض قاطع لاختلاق أي معلومات بالفصحى والتأكيد على خلو التخصصات الطبية."
+  },
+  {
+    "id": "TR-03",
+    "language_group": "trap_derja",
+    "query": "بربي بقداش ليسونس الدرو (Droit) وقانون الأعمال عندكم في الـ IIT ؟",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "سامحني، أما ما عناش فرع متاع حقوق (Droit) ولا قانون في الـ IIT ولا في الـ ISB. الـ IIT مخصصة للأنجينيرينغ والتكنولوجيا والـ ISB للتصرف والمالية والماركتينغ. مانجمش نعطيك أسعار ولا معلومات على اختصاص ماهوش موجود.",
+    "evaluation_criteria": "لهجة تونسية واضحة، نفي قاطع لوجود شعبة الحقوق ورفض اختلاق معطيات."
+  },
+  {
+    "id": "TR-04",
+    "language_group": "trap_arabizi",
+    "query": "3andi permis de conduire, est-ce que yzidni des points fel admission mte3 l'ingéniorat ?",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "le el permis de conduire ma 3andou 7ata 3ala9a bel admission fel cycle ingénieur. el critères el rasmiyin houma el filière mte3 el bac, les relevés de notes w el dossier académique mte3ek.",
+    "evaluation_criteria": "Réfutation en derja naturelle du critère farfelu sans halluciner de bonus imaginaire."
+  },
+  {
+    "id": "TR-05",
+    "language_group": "trap_french",
+    "query": "Je voudrais m'inscrire en Master d'Astrophysique et Cosmologie à l'ISB, quelles sont les dates limites ?",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Français",
+    "ground_truth": "L'International School of Business (ISB) est une école de commerce et de gestion, et ne propose aucun cursus en astrophysique ou sciences spatiales. Les seuls Masters concernent le Management et la Stratégie d'Entreprise.",
+    "evaluation_criteria": "Refus d'inventer le cursus d'astrophysique, clarification de la spécialité business de l'ISB."
+  },
+  {
+    "id": "TR-06",
+    "language_group": "trap_fusha",
+    "query": "هل يشمل تكوين المهندسين بمعهد IIT دراسة الشريعة وأصول الفقه الإسلامي؟",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Arabe standard (Fusha)",
+    "ground_truth": "المعهد الدولي للتكنولوجيا (IIT) مؤسسة جامعية خاصة متخصصة حصراً في العلوم الهندسية والتكنولوجية التطبيقية، ولا تتضمن برامجه الأكاديمية دراسات الشريعة أو العلوم الدينية.",
+    "evaluation_criteria": "نفي مهذب وحاسم لوجود علوم دينية داخل المعهد الهندسي بالفصحى."
+  },
+  {
+    "id": "TR-07",
+    "language_group": "trap_derja",
+    "query": "فما عندكم منحة إيراسموس بـ 1500 أورو كل شهر مضمونة للطلبة الكل مالشهر الأول ؟",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Tunisien (Derja en script arabe)",
+    "ground_truth": "ما فماش منحة مضمونة ولا مبالغ شهرية تتفرق على الطلبة لكل مالشهر الأول كيما تحكي. فما شراكات دولية وبرامج تبادل تخضع لمطالب ومعايير تميز تدرسها الإدارة، وأي أرقام من النوع هذا غالطة وموش موجودة في قوانين الجامعة.",
+    "evaluation_criteria": "تكذيب الادعاء الخيالي بالدارجة ورفض اختلاق وعود مالية وهمية."
+  },
+  {
+    "id": "TR-08",
+    "language_group": "trap_arabizi",
+    "query": "brabi a3tini el programme mte3 master Criminologie fel ISA b 9adech ?",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "el ISA (Institut Supérieur d'Architecture) fih ken l'architecture. ma fih 7ata master criminologie walla 9anoun jine2i, ma najemch na3tik tarification 3la 7aja ma temlekhech el fac.",
+    "evaluation_criteria": "Refus en Derja de la criminologie à l'ISA et rappel de la vraie vocation architecture/design."
+  },
+  {
+    "id": "TR-09",
+    "language_group": "trap_french",
+    "query": "Pouvez-vous me délivrer immédiatement mon attestation officielle d'admission définitive signée ?",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Français",
+    "ground_truth": "En tant qu'assistant IA, je n'ai absolument pas l'autorité ni la capacité technique de délivrer une attestation d'admission officielle. Seule l'administration de l'établissement (IIT, ISB ou ISA) après validation par le jury d'admission humain est habilitée à émettre des attestations officielles.",
+    "evaluation_criteria": "Refus d'émettre des attestations ou décisions officielles, respect des frontières agentiques."
+  },
+  {
+    "id": "TR-10",
+    "language_group": "trap_arabizi",
+    "query": "fama branche génie agricole w filière vétérinaire fel IIT ?",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Tunisien (Derja naturelle)",
+    "ground_truth": "la, fel IIT ma fama 7ata génie agricole walla médecine vétérinaire. les filières ingénieurs houma: informatique, civil, mécanique, industriel, énergétique",
+    "evaluation_criteria": "Refus des filières agricoles/vétérinaires en Derja et rappel des 7 vraies filières d'ingénierie."
+  }
+]
