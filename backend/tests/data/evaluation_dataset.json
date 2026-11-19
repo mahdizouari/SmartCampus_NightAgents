@@ -6,8 +6,8 @@
     "intent": "program_catalog",
     "target_school": "iit",
     "expected_language": "Français",
-    "ground_truth": "L'Institut International de Technologie (IIT) propose plusieurs formations d'ingénieur accréditées : Génie Logiciel et Informatique Décisionnelle (GLID), Science des Données et Intelligence Artificielle (SDIA), Administration Réseau et Sécurité Informatique (ARSI), Génie Mécanique, Génie Industriel et Génie Civil.",
-    "evaluation_criteria": "Doit citer au moins GLID, SDIA, ARSI, Mécanique, Industriel, Civil sans inventer d'autres écoles."
+    "ground_truth": "L'Institut International de Technologie (IIT) propose plusieurs formations d'ingénieur accréditées : Génie Logiciel et Informatique Décisionnelle (GLID), Science des Données et Intelligence Artificielle (SDIA), Administration Réseau et Sécurité Informatique (ARSI), Génie Mécanique, Génie Industriel, Génie Énergétique et Génie Civil.",
+    "evaluation_criteria": "Doit citer les 7 filières : GLID, SDIA, ARSI, Mécanique, Industriel, Énergétique, Civil — sans inventer d'autres écoles."
   },
   {
     "id": "FR-02",
@@ -66,8 +66,8 @@
     "intent": "program_catalog",
     "target_school": "iit",
     "expected_language": "Français",
-    "ground_truth": "Oui, l'IIT propose des licences  après l'obtention du baccalauréat.",
-    "evaluation_criteria": "Mention des licences proposées à l'IIT."
+    "ground_truth": "Oui, l'IIT propose des licences post-bac : Licence en Génie Logiciel et Informatique Décisionnelle (GLID), Licence en Science des Données et Intelligence Artificielle (SDIA), Licence en Administration Réseau et Sécurité Informatique (ARSI), ainsi que des licences en Génie Mécanique, Génie Industriel, Génie Énergétique et Génie Civil.",
+    "evaluation_criteria": "Nommer les licences disponibles à l'IIT (GLID, SDIA, ARSI, Mécanique, Industriel, Énergétique, Civil). Pas de double espace ni de formulation vague."
   },
   {
     "id": "FR-08",
@@ -146,8 +146,8 @@
     "intent": "program_catalog",
     "target_school": "isb",
     "expected_language": "Français",
-    "ground_truth": "L'ISB propose trois licences majeures post-bac : Licence en Business Administration, Licence en Business Intelligence, et Licence en Business Economics",
-    "evaluation_criteria": "Citation des 3 licences : Business Administration, Finance, Marketing."
+    "ground_truth": "L'ISB propose trois licences majeures post-bac : Licence en Business Administration, Licence en Finance & Ingénierie Financière, et Licence en Marketing & Business Digital.",
+    "evaluation_criteria": "Citation des 3 licences réelles de l'ISB : Business Administration, Finance & Ingénierie Financière, Marketing & Business Digital."
   },
   {
     "id": "AR-01",
@@ -156,8 +156,8 @@
     "intent": "program_catalog",
     "target_school": "iit",
     "expected_language": "Arabe standard (Fusha)",
-    "ground_truth": "يقدم المعهد الدولي للتكنولوجيا (IIT) سبعة برامج وطنية معتمدة لتكوين المهندسين: هندسة البرمجيات والمعلوماتية القرارية (GLID)، علوم البيانات والذكاء الاصطناعي (SDIA)، الآلية والروبوتات في الأنظمة الصناعية (ARSI)، الهندسة الميكانيكية، الهندسة الصناعية، الهندسة الطاقية، والهندسة المدنية.",
-    "evaluation_criteria": "إجابة حصرية باللغة العربية الفصحى. ذكر الاختصاصات الهندسية المعتمدة بدقة دون خلط مع مدارس أخرى."
+    "ground_truth": "يقدم المعهد الدولي للتكنولوجيا (IIT) سبعة برامج وطنية معتمدة لتكوين المهندسين: هندسة البرمجيات والمعلوماتية القرارية (GLID)، علوم البيانات والذكاء الاصطناعي (SDIA)، إدارة الشبكات وأمن المعلومات (ARSI)، الهندسة الميكانيكية، الهندسة الصناعية، الهندسة الطاقية، والهندسة المدنية.",
+    "evaluation_criteria": "إجابة حصرية باللغة العربية الفصحى. ذكر الاختصاصات الهندسية السبع المعتمدة بدقة دون خلط مع مدارس أخرى."
   },
   {
     "id": "AR-02",
@@ -206,7 +206,7 @@
     "intent": "eligibility_gateway",
     "target_school": "iit",
     "expected_language": "Arabe standard (Fusha)",
-    "ground_truth": "نعم، يحق للطلبة الحاصلين على إجازة علمية في الإعلامية الترشح للالتحاق بالسنة الأولى من مرحلة تكوين المهندسين في هندسة البرمجيات (GLID) أو علوم البيانات (DSIA)، ويخضع القبول النهائي لتقييم اللجنة العلمية والبيداغوجية.",
+    "ground_truth": "نعم، يحق للطلبة الحاصلين على إجازة علمية في الإعلامية الترشح للالتحاق بالسنة الأولى من مرحلة تكوين المهندسين في هندسة البرمجيات (GLID) أو علوم البيانات والذكاء الاصطناعي (SDIA)، ويخضع القبول النهائي لتقييم اللجنة العلمية والبيداغوجية.",
     "evaluation_criteria": "تأكيد إمكانية مسار المعابر مع التنصيص على سلطة قرار اللجنة البشرية."
   },
   {
@@ -252,12 +252,12 @@
   {
     "id": "AR-11",
     "language_group": "fusha",
-    "query": "ما هي الآفاق المهنية لخريجي هندسة الأنظمة الذكية والروبوتات (ARSI)؟",
+    "query": "ما هي الآفاق المهنية لخريجي هندسة إدارة الشبكات وأمن المعلومات (ARSI)؟",
     "intent": "program_details",
     "target_school": "iit",
     "expected_language": "Arabe standard (Fusha)",
-    "ground_truth": "يؤهل تخصص الروبوتات والأنظمة الآلية (ARSI) للعمل في مجالات الأتمتة الصناعية، خطوط الإنتاج الذكية، صيانة المنظومات الروبوتية، هندسة الأنظمة المدمجة ومشاريع الثورة الصناعية الرابعة (Industry 4.0).",
-    "evaluation_criteria": "آفاق مهنية منطقية ومطابقة للأنظمة الآلية والروبوتات."
+    "ground_truth": "يؤهل تخصص إدارة الشبكات وأمن المعلومات (ARSI) بالمعهد الدولي للتكنولوجيا للعمل في مجالات إدارة البنية التحتية المعلوماتية، الأمن السيبراني والسلامة المعلوماتية، إدارة مراكز البيانات والحوسبة السحابية (Cloud)، ومراقبة وتأمين النظم المعلوماتية بالشركات والمؤسسات.",
+    "evaluation_criteria": "إجابة بالفصحى. آفاق مهنية متوافقة مع إدارة الشبكات والسلامة المعلوماتية (أمن سيبراني، بنية تحتية، حوسبة سحابية)."
   },
   {
     "id": "AR-12",
@@ -276,8 +276,8 @@
     "intent": "program_catalog",
     "target_school": "isb",
     "expected_language": "Arabe standard (Fusha)",
-    "ground_truth": "توفر مدرسة الأعمال الدولية (ISB) برنامج ماستر مهني في التصرف واستراتيجية المؤسسات (Management & Stratégie d'Entreprise) الموجه للطلبة والمهنيين الراغبين في الارتقاء الإداري.",
-    "evaluation_criteria": "إشارة دقيقة لبرنامج الماستر المهني في التصرف."
+    "ground_truth": "توفر مدرسة الأعمال الدولية (ISB) مجموعة من برامج الماجستير المتخصصة والمهنية: ماجستير إدارة الأعمال (MBA بالإنكليزية)، ماجستير التسويق الرقمي (بالفرنسية وبالإنكليزية MSc)، ماجستير المحاسبة، ماجستير تمويل الشركات والهندسة المالية (بالفرنسية وبالإنكليزية MSc)، وماجستير مهني مبني بالشراكة في قانون الأعمال (Business Law).",
+    "evaluation_criteria": "إجابة باللغة العربية الفصحى. حصر برامج الماجستير المعتمدة بمدرسة ISB (إدارة أعمال، تسويق رقمي، محاسبة، مالية، وقانون الأعمال)."
   },
   {
     "id": "AR-14",
@@ -306,7 +306,7 @@
     "intent": "program_catalog",
     "target_school": "iit",
     "expected_language": "Tunisien (Derja en script arabe)",
-    "ground_truth": "في الـ IIT عنا 7 برامج تكوين مهندسين معتمدة: جيني لوجيسيال وتطوير البرمجيات (GLID)، داتا ساينس وذكاء اصطناعي (DSIA)،  إدارة الشبكات وأمن المعلومات (ARSI)، جيني ميكانيك، جيني أندستريال، جيني أنرجيتيك، وجيني سيفيل.",
+    "ground_truth": "في الـ IIT عنا 7 برامج تكوين مهندسين معتمدة: جيني لوجيسيال وتطوير البرمجيات (GLID)، داتا ساينس وذكاء اصطناعي (SDIA)، إدارة الشبكات وأمن المعلومات (ARSI)، جيني ميكانيك، جيني أندستريال، جيني أنرجيتيك، وجيني سيفيل.",
     "evaluation_criteria": "لهجة تونسية طبيعية بالحرف العربي، بدون تكلّف ولا خلط فصحى. ذكر الشعب السبع بدقة."
   },
   {
@@ -336,8 +336,8 @@
     "intent": "program_duration",
     "target_school": "isa",
     "expected_language": "Tunisien (Derja en script arabe)",
-    "ground_truth": " يمتد المسار الأكاديمي على مدى ست (6) سنوات موزعة على مرحلتين دراسيتين (سنتان في المرحلة الأولى وأربع سنوات في المرحلة الثانية)، وتُختتم بالحصول على الشهادة الوطنية في الهندسة المعمارية.",
-    "evaluation_criteria": "دارجة تونسية، تحديد 6 سنين (4 + 2)."
+    "ground_truth": "قراية الأركيتكتور في الـ ISA تدوم ستة (6) سنين مقسومة على مرحلتين: عامين في السيكل الأول وأربعة سنين في السيكل الثاني، وتتوج بالشهادة الوطنية لمهندس معماري.",
+    "evaluation_criteria": "دارجة تونسية طبيعية، تحديد 6 سنين (عامين سيكل أول + 4 سنين سيكل ثاني) لنيل الشهادة الوطنية لمهندس معماري."
   },
   {
     "id": "TN-05",
@@ -366,7 +366,7 @@
     "intent": "advisory_comparison",
     "target_school": "iit",
     "expected_language": "Tunisien (Derja en script arabe)",
-    "ground_truth": "الـ GLID موجهة للبرمجة وتطوير ليزابليكاسيون ويب وموبايل، الكلاود والـ DevOps. أما الـ DSIA تركز أكثر على المات، الذكاء الاصطناعي، وتحليل البيانات الكبيرة (Big Data) وتدريب الموديلات. كانك مغروم بالديفليكاسيون كود اختار GLID وكان تحب لالجوريتم والموديلات اختار DSIA.",
+    "ground_truth": "الـ GLID موجهة للبرمجة وتطوير ليزابليكاسيون ويب وموبايل، الكلاود والـ DevOps. أما الـ SDIA تركز أكثر على المات، الذكاء الاصطناعي، وتحليل البيانات الكبيرة (Big Data) وتدريب الموديلات. كانك مغروم بالديفلوبمون والكود اختار GLID وكان تحب لالجوريتم والموديلات اختار SDIA.",
     "evaluation_criteria": "مقارنة مضبوطة ومبسطة بالدارجة التونسية."
   },
   {
@@ -496,7 +496,7 @@
     "intent": "eligibility_gateway",
     "target_school": "iit",
     "expected_language": "Tunisien (Derja naturelle)",
-    "ground_truth": "ey akid, les diplômés bac+3 en informatique ynajmou ya3mlou passerelle direct l 1ère année cycle ingénieur GLID. ythabtou fel relevés mte3ek w el comité bédagogique houwa eli ya3ti el confirmation.",
+    "ground_truth": "ayh akid, les diplômés bac+3 en informatique ynajmou ya3mlou passerelle direct l 1ère année cycle ingénieur GLID. ythabtou fel relevés mte3ek w el comité pédagogique houwa eli ya3ti el confirmation.",
     "evaluation_criteria": "Réponse en derja tunisienne, valider la passerelle Bac+3 et rappeler la validation humaine."
   },
   {
@@ -517,7 +517,7 @@
     "target_school": "iit",
     "expected_language": "Tunisien (Derja naturelle)",
     "ground_truth": "ken ghramek bel développement web, mobile, architecture logicielle w devops emchi GLID. ken t7eb el machine learning, el intelligence artificielle w analyse de données w statistiques emchi SDIA. lezouz fihom programmation ama SDIA fiha akther maths w data.",
-    "evaluation_criteria": "Comparaison claire GLID vs DSIA adaptée au profil en Derja naturelle."
+    "evaluation_criteria": "Comparaison claire GLID vs SDIA adaptée au profil en Derja naturelle."
   },
   {
     "id": "AB-08",
@@ -586,8 +586,8 @@
     "intent": "program_catalog",
     "target_school": "isb",
     "expected_language": "Tunisien (Derja naturelle)",
-    "ground_truth": "ayh fel ISB fama Master In Business Administration (MBA) (ENG), Master In Digital Marketing (FR), Master's Degree In Accounting (FR), Master's Degree In Corporate Finance And Financial Engineering (FR), Master Of Science (MSc) In Digital Marketing (ENG), Master Of Science (MSc) In Finance (ENG), Co-Constructed Professional Master's Degree In Business LawMaster In Business Administration (MBA) (ENG), Master In Digital Marketing (FR), Master's Degree In Accounting (FR), Master's Degree In Corporate Finance And Financial Engineering (FR), Master Of Science (MSc) In Digital Marketing (ENG), Master Of Science (MSc) In Finance (ENG), Co-Constructed Professional Master's Degree In Business Law",
-    "evaluation_criteria": "Mention du Master Professionnel en Management à l'ISB."
+    "ground_truth": "ayh fel ISB fama plusieurs masters: Master In Business Administration (MBA) (ENG), Master In Digital Marketing (FR), Master's Degree In Accounting (FR), Master's Degree In Corporate Finance And Financial Engineering (FR), Master Of Science (MSc) In Digital Marketing (ENG), Master Of Science (MSc) In Finance (ENG), w Co-Constructed Professional Master's Degree In Business Law.",
+    "evaluation_criteria": "Mention des Masters disponibles à l'ISB (MBA, Marketing Digital, Comptabilité, Finance d'entreprise, Business Law) en Derja naturelle."
   },
   {
     "id": "AB-15",
@@ -616,7 +616,7 @@
     "intent": "out_of_corpus_trap",
     "target_school": "none",
     "expected_language": "Arabe standard (Fusha)",
-    "ground_truth": "لا تتوفر بمجمعنا الجامعي (IIT / ISB / ISA) أي دراسات في طب الأسنان أو الصيدلة أو التخصصات الطبية، حيث يختص المعهد الدولي للتكنولوجيا بالعلوم الهندسية، ومدرسة الأعمال بالمالية والتصرف، ومعهد العمارة بالهندسة المعمارية والتصميم. يرجى تجنب طلب معلومات خارجة عن التخصصات المتاحة.",
+    "ground_truth": "لا تتوفر بمجمعنا الجامعي (IIT / ISB / ISA) أي دراسات في طب الأسنان أو الصيدلة أو التخصصات الطبية، حيث يختص المعهد الدولي للتكنولوجيا بالعلوم الهندسية، ومدرسة الأعمال بالمالية والتصرف، ومعهد العمارة بالهندسة المعمارية. يرجى تجنب طلب معلومات خارجة عن التخصصات المتاحة.",
     "evaluation_criteria": "رفض قاطع لاختلاق أي معلومات بالفصحى والتأكيد على خلو التخصصات الطبية."
   },
   {
@@ -626,8 +626,8 @@
     "intent": "out_of_corpus_trap",
     "target_school": "none",
     "expected_language": "Tunisien (Derja en script arabe)",
-    "ground_truth": "سامحني، أما ما عناش فرع متاع حقوق (Droit) ولا قانون في الـ IIT ولا في الـ ISB. الـ IIT مخصصة للأنجينيرينغ والتكنولوجيا والـ ISB للتصرف والمالية والماركتينغ. مانجمش نعطيك أسعار ولا معلومات على اختصاص ماهوش موجود.",
-    "evaluation_criteria": "لهجة تونسية واضحة، نفي قاطع لوجود شعبة الحقوق ورفض اختلاق معطيات."
+    "ground_truth": "سامحني، أما ما فماش إجازة (ليسونس) في الحقوق ولا كلية حقوق في الـ IIT ولا في الـ ISB. الـ IIT مخصصة للهندسة والتكنولوجيا والـ ISB مدرسة تصرف وإدارة أعمال (فيها فقط ماستير مهني في قانون الأعمال Business Law للمتخرجين، وما فماش ليسونس حقوق). مانجمش نعطيك أسعار على ليسونس ماهيش موجودة.",
+    "evaluation_criteria": "لهجة تونسية واضحة، نفي قاطع لوجود إجازة (ليسونس) في الحقوق والتأكيد على تخصصات الهندسة وإدارة الأعمال."
   },
   {
     "id": "TR-04",
@@ -646,8 +646,8 @@
     "intent": "out_of_corpus_trap",
     "target_school": "none",
     "expected_language": "Français",
-    "ground_truth": "L'International School of Business (ISB) est une école de commerce et de gestion, et ne propose aucun cursus en astrophysique ou sciences spatiales. Les seuls Masters concernent le Management et la Stratégie d'Entreprise.",
-    "evaluation_criteria": "Refus d'inventer le cursus d'astrophysique, clarification de la spécialité business de l'ISB."
+    "ground_truth": "L'International School of Business (ISB) est une école de commerce et de gestion, et ne propose aucun cursus en astrophysique ou sciences spatiales. Les Masters de l'ISB sont dédiés à la gestion (MBA), au marketing digital, à la finance, à la comptabilité et au droit des affaires (Business Law). Nous ne pouvons pas inventer de cursus spatial.",
+    "evaluation_criteria": "Refus d'inventer le cursus d'astrophysique, clarification des filières de Master réelles de l'ISB."
   },
   {
     "id": "TR-06",
@@ -677,7 +677,7 @@
     "target_school": "none",
     "expected_language": "Tunisien (Derja naturelle)",
     "ground_truth": "el ISA (Institut Supérieur d'Architecture) fih ken l'architecture. ma fih 7ata master criminologie walla 9anoun jine2i, ma najemch na3tik tarification 3la 7aja ma temlekhech el fac.",
-    "evaluation_criteria": "Refus en Derja de la criminologie à l'ISA et rappel de la vraie vocation architecture/design."
+    "evaluation_criteria": "Refus en Derja de la criminologie à l'ISA et rappel de la vraie vocation architecture (l'ISA forme exclusivement en architecture sur 6 ans)."
   },
   {
     "id": "TR-09",
@@ -696,7 +696,7 @@
     "intent": "out_of_corpus_trap",
     "target_school": "none",
     "expected_language": "Tunisien (Derja naturelle)",
-    "ground_truth": "la, fel IIT ma fama 7ata génie agricole walla médecine vétérinaire. les filières ingénieurs houma: informatique, civil, mécanique, industriel, énergétique",
+    "ground_truth": "la, fel IIT ma fama 7ata génie agricole walla médecine vétérinaire. les 7 filières ingénieurs houma: Génie Logiciel (GLID), Data Science & IA (SDIA), Réseaux & Sécurité (ARSI), Génie Mécanique, Génie Industriel, Génie Energétique, w Génie Civil.",
     "evaluation_criteria": "Refus des filières agricoles/vétérinaires en Derja et rappel des 7 vraies filières d'ingénierie."
   }
 ]
