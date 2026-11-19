@@ -623,16 +623,16 @@ async def merge_guest_session_to_candidate(
                 if header_sid:
                     try:
                         h_uuid = UUID(header_sid.strip())
-                        if h_uuid != target_sid:
-                            raise HTTPException(
-                                status_code=status.HTTP_403_FORBIDDEN,
-                                detail="Ownership verification failed: header does not match.",
-                            )
-                    except Exception as exc:
+                    except ValueError as exc:
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Invalid X-Session-ID header format.",
                         ) from exc
+                    if h_uuid != target_sid:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Ownership verification failed: header does not match.",
+                        )
     else:
         if request is None:
             raise HTTPException(

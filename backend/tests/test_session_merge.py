@@ -290,6 +290,49 @@ def test_merge_session_ownership_verification_cookie_mismatch_rejected(
     assert "ownership verification failed" in resp.json()["detail"].lower()
 
 
+def test_merge_session_ownership_verification_header_mismatch_rejected(
+    merge_client: TestClient,
+    fake_merge_db: FakeMergeAsyncSession,
+):
+    """
+    Security check:
+    If client presents an X-Session-ID header for session A, but asks to merge session B,
+    the request must be rejected with 403 Forbidden.
+    """
+    _, _, token = _create_authenticated_student(fake_merge_db)
+
+    sess_a = uuid4()
+    sess_b = uuid4()
+    resp = merge_client.post(
+        "/api/v1/auth/merge-session",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Session-ID": str(sess_a),
+        },
+        json={"anonymous_session_id": str(sess_b), "consent_explicit": True},
+    )
+    assert resp.status_code == 403
+    assert "ownership verification failed" in resp.json()["detail"].lower()
+
+
+def test_merge_session_invalid_header_format_rejected(
+    merge_client: TestClient,
+    fake_merge_db: FakeMergeAsyncSession,
+):
+    """If client presents an invalid X-Session-ID header format, returns 401."""
+    _, _, token = _create_authenticated_student(fake_merge_db)
+    sess_b = uuid4()
+    resp = merge_client.post(
+        "/api/v1/auth/merge-session",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Session-ID": "not-a-valid-uuid",
+        },
+        json={"anonymous_session_id": str(sess_b), "consent_explicit": True},
+    )
+    assert resp.status_code == 401
+
+
 def test_merge_session_double_merge_rejected_with_409(
     merge_client: TestClient,
     fake_merge_db: FakeMergeAsyncSession,
