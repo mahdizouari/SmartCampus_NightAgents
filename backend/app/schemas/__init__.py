@@ -13,6 +13,8 @@ from app.schemas.session import (
     GuestSessionUpdateRequest,
     HotConversationResponse,
     MessageTurn,
+    SessionMergeRequest,
+    SessionMergeResponse,
 )
 
 __all__ = [
@@ -26,5 +28,7 @@ __all__ = [
     "GuestSessionUpdateRequest",
     "GuestSessionIssuedResponse",
     "GuestSessionDeleteResponse",
+    "SessionMergeRequest",
+    "SessionMergeResponse",
 ]
 

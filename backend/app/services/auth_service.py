@@ -336,6 +336,30 @@ async def verify_otp(db: AsyncSession, payload: OtpVerifyRequest) -> AuthTokenRe
         )
     )
     await db.commit()
+
+    if payload.anonymous_session_id is not None:
+        try:
+            from app.schemas.session import SessionMergeRequest
+            from app.services.guest_session_service import merge_guest_session_to_candidate
+
+            merge_actor = CurrentActor(
+                account_id=str(account.id),
+                role=role_code,
+                school_scope=school_scope,
+                candidate_id=str(candidate.id) if candidate else None,
+                email=account.email,
+            )
+            await merge_guest_session_to_candidate(
+                db,
+                actor=merge_actor,
+                payload=SessionMergeRequest(
+                    anonymous_session_id=payload.anonymous_session_id,
+                    consent_explicit=payload.consent_merge,
+                ),
+            )
+        except Exception:
+            pass
+
     return _build_token_response(account, role_code, school_scope, candidate)
 
 
@@ -406,6 +430,30 @@ async def authenticate_google_oauth(
         )
     )
     await db.commit()
+
+    if payload.anonymous_session_id is not None:
+        try:
+            from app.schemas.session import SessionMergeRequest
+            from app.services.guest_session_service import merge_guest_session_to_candidate
+
+            merge_actor = CurrentActor(
+                account_id=str(account.id),
+                role=role_code,
+                school_scope=school_scope,
+                candidate_id=str(candidate.id) if candidate else None,
+                email=account.email,
+            )
+            await merge_guest_session_to_candidate(
+                db,
+                actor=merge_actor,
+                payload=SessionMergeRequest(
+                    anonymous_session_id=payload.anonymous_session_id,
+                    consent_explicit=payload.consent_merge,
+                ),
+            )
+        except Exception:
+            pass
+
     return _build_token_response(account, role_code, school_scope, candidate)
 
 

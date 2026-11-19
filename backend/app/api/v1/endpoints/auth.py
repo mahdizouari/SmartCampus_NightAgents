@@ -21,6 +21,8 @@ from app.schemas.session import (
     GuestSessionDeleteResponse,
     GuestSessionIssuedResponse,
     GuestSessionUpdateRequest,
+    SessionMergeRequest,
+    SessionMergeResponse,
 )
 from app.services import auth_service as svc
 from app.services import guest_session_service as guest_svc
@@ -106,6 +108,28 @@ async def delete_guest_session(
         request,
         response,
         db=db,
+    )
+
+
+@router.post(
+    "/merge-session",
+    response_model=SessionMergeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Associer une session anonyme (historique Redis + profil) au compte candidat (SA-29)",
+)
+async def merge_session(
+    payload: SessionMergeRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    actor: CurrentActor = Depends(get_current_actor),
+) -> SessionMergeResponse:
+    return await guest_svc.merge_guest_session_to_candidate(
+        db,
+        actor=actor,
+        payload=payload,
+        request=request,
+        response=response,
     )
 
 

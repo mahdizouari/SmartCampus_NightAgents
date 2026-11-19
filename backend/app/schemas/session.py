@@ -91,3 +91,29 @@ class GuestSessionDeleteResponse(BaseModel):
     status: Literal["EXPIRED"] = "EXPIRED"
     expired: bool = True
     message: str = "Anonymous guest session terminated and cookie cleared."
+
+
+class SessionMergeRequest(BaseModel):
+    """Payload to associate an anonymous guest session with a candidate account (SA-29)."""
+
+    anonymous_session_id: UUID | None = Field(
+        default=None,
+        description="ID of anonymous session. If omitted, resolved from cookie or X-Session-ID.",
+    )
+    consent_explicit: bool = Field(
+        default=True,
+        description="Explicit candidate agreement to merge the guest session into their account.",
+    )
+
+
+class SessionMergeResponse(BaseModel):
+    """Result of merging guest session into candidate account (api_contract.md §1.4)."""
+
+    candidate_id: UUID
+    account_id: UUID
+    anonymous_session_id: UUID
+    turns_merged: int
+    declared_profile_synced: bool
+    current_status: str
+    merged_at: datetime
+    message: str = "Conversation et profil invité associés avec succès au compte candidat."
