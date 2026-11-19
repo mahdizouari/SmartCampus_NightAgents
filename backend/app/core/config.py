@@ -49,7 +49,18 @@ class Settings(BaseSettings):
     REDIS_URL: str | None = None
     REDIS_CHAT_HISTORY_TTL: int = 604800  # 7 days in seconds
     REDIS_CHAT_MAX_MESSAGES: int = 16  # 8 turns (16 messages max)
-    REDIS_GUEST_SESSION_TTL: int = 86400  # 24 hours in seconds
+    REDIS_GUEST_SESSION_TTL: int = 86400  # 24 hours in seconds (SA-26 default)
+
+    # Signed Anonymous Guest Session & Rate Limiting Settings (SA-25)
+    GUEST_SESSION_COOKIE_NAME: str = "smartcampus_guest_session"
+    GUEST_SESSION_TTL_SECONDS: int = 604800  # 7-day sliding TTL after last activity
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_GUEST_IP_PER_MINUTE: int = 30
+    RATE_LIMIT_GUEST_SESSION_PER_MINUTE: int = 30
+    RATE_LIMIT_GUEST_CHAT_PER_MINUTE: int = 15
+    RATE_LIMIT_STUDENT_PER_MINUTE: int = 120
+    RATE_LIMIT_STAFF_PER_MINUTE: int = 300
 
     @property
     def effective_redis_url(self) -> str:
