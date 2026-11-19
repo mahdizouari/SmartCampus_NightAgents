@@ -47,6 +47,14 @@ class OtpVerifyRequest(BaseModel):
     email: str | None = Field(default=None, min_length=3, max_length=255)
     code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
     full_name: str | None = Field(default=None, min_length=2, max_length=255)
+    anonymous_session_id: UUID | None = Field(
+        default=None,
+        description="Optional guest session to automatically associate upon login/signup (SA-29)",
+    )
+    consent_merge: bool = Field(
+        default=True,
+        description="Explicit agreement to associate guest conversation upon verification",
+    )
 
     @model_validator(mode="after")
     def resolve_destination(self) -> "OtpVerifyRequest":
@@ -63,6 +71,14 @@ class GoogleOAuthRequest(BaseModel):
     """Google OAuth 2.0 ID token exchange request."""
 
     id_token: str = Field(..., min_length=10)
+    anonymous_session_id: UUID | None = Field(
+        default=None,
+        description="Optional guest session to automatically associate upon Google sign-in (SA-29)",
+    )
+    consent_merge: bool = Field(
+        default=True,
+        description="Explicit agreement to associate guest conversation upon Google sign-in",
+    )
 
 
 class RefreshTokenRequest(BaseModel):

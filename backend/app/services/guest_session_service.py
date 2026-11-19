@@ -2,25 +2,29 @@
 
 import time
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, Request, Response, status
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import decode_hs256_jwt, encode_hs256_jwt
+from app.core.deps import CurrentActor, decode_hs256_jwt, encode_hs256_jwt
 from app.core.rate_limit import (
     is_redis_temporarily_unavailable,
     mark_redis_unavailable_temporarily,
 )
-from app.models.users import GuestSession
+from app.models.users import AuditLog, Candidate, CandidateProfile, GuestSession
 from app.schemas.session import (
     GuestSessionCreateRequest,
     GuestSessionDeleteResponse,
     GuestSessionIssuedResponse,
     GuestSessionUpdateRequest,
+    SessionMergeRequest,
+    SessionMergeResponse,
 )
 from app.services.redis_service import GuestSessionService, HotConversationService
 
@@ -557,4 +561,246 @@ async def terminate_guest_session(
         session_id=sid,
         status="EXPIRED",
         expired=True,
+    )
+
+
+async def merge_guest_session_to_candidate(
+    db: AsyncSession,
+    *,
+    actor: CurrentActor,
+    payload: SessionMergeRequest,
+    request: Request | None = None,
+    response: Response | None = None,
+    redis_client: Redis | None = None,
+) -> SessionMergeResponse:
+    """
+    Associate an anonymous guest session (Redis conversation history + declared profile)
+    with an authenticated candidate account (SA-29 / api_contract.md §1.4).
+
+    Verifies caller ownership via signed cookie or X-Session-ID header, validates explicit
+    consent, merges declared facts into core.candidate_profile, marks core.guest_sessions
+    as MERGED, appends Redis hot turns to the candidate's conversation history, logs audit
+    trail, and cleans up the anonymous cookie.
+    """
+    if not payload.consent_explicit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Explicit consent is required to associate guest conversation with profile.",
+        )
+
+    acc_uuid = UUID(actor.account_id)
+    cand_uuid = UUID(actor.candidate_id) if actor.candidate_id else None
+    candidate: Candidate | None = None
+    if cand_uuid:
+        candidate = await db.get(Candidate, cand_uuid)
+
+    if candidate is None:
+        cand_stmt = select(Candidate).where(Candidate.account_id == acc_uuid)
+        res = await db.execute(cand_stmt)
+        candidate = res.scalar_one_or_none()
+
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authenticated user does not have an active candidate profile.",
+        )
+
+    # 1. Resolve session ID & verify ownership
+    target_sid: UUID
+    if payload.anonymous_session_id is not None:
+        target_sid = payload.anonymous_session_id
+        if request is not None:
+            cookie_token = request.cookies.get(settings.GUEST_SESSION_COOKIE_NAME)
+            if cookie_token:
+                cookie_sid = verify_signed_guest_cookie_token(cookie_token)
+                if cookie_sid != target_sid:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Ownership verification failed: cookie does not match session.",
+                    )
+            else:
+                header_sid = request.headers.get("x-session-id")
+                if header_sid:
+                    try:
+                        h_uuid = UUID(header_sid.strip())
+                        if h_uuid != target_sid:
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Ownership verification failed: header does not match.",
+                            )
+                    except Exception as exc:
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid X-Session-ID header format.",
+                        ) from exc
+    else:
+        if request is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either anonymous_session_id or signed cookie/header is required.",
+            )
+        resolved = _resolve_session_id_from_request(request, allow_missing=False)
+        assert resolved is not None
+        target_sid = resolved
+
+    # 2. Check guest session existence & status
+    guest_rec = await db.get(GuestSession, target_sid)
+    guest_state = await _load_guest_state(target_sid, redis_client=redis_client)
+
+    if guest_rec is None and guest_state is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Guest session '{target_sid}' not found or expired.",
+        )
+
+    if (
+        (guest_rec and guest_rec.status == "MERGED")
+        or (guest_state and guest_state.get("status") == "MERGED")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Guest session '{target_sid}' has already been merged to a candidate profile.",
+        )
+
+    if (
+        (guest_rec and guest_rec.status == "EXPIRED")
+        or (guest_state and guest_state.get("status") == "EXPIRED")
+        or str(target_sid) in _EXPIRED_SESSION_IDS
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Guest session '{target_sid}' has expired.",
+        )
+
+    sid_str = str(target_sid)
+    cand_str = str(candidate.id)
+    now = datetime.now(UTC)
+
+    # 3. Transfer hot conversation history in Redis
+    chat_svc = HotConversationService(redis_client=redis_client)
+    turns_merged = 0
+    try:
+        turns = await chat_svc.get_history(sid_str)
+        if turns:
+            await chat_svc.add_turns(cand_str, turns)
+            if str(actor.account_id) != cand_str:
+                await chat_svc.add_turns(str(actor.account_id), turns)
+            turns_merged = len(turns)
+    except Exception:
+        turns_merged = 0
+
+    # 4. Sync profile & declared facts in PostgreSQL
+    profile = await db.get(CandidateProfile, candidate.id)
+    if profile is None:
+        profile = CandidateProfile(
+            candidate_id=candidate.id,
+            facts={},
+            summary="",
+        )
+        db.add(profile)
+
+    state_data = guest_state or {}
+    declared_facts = state_data.get("declared_facts")
+    if isinstance(declared_facts, dict) and declared_facts:
+        merged_facts = dict(profile.facts or {})
+        merged_facts.update(declared_facts)
+        profile.facts = merged_facts
+
+        if "current_education_level" in declared_facts and not profile.current_education_level:
+            profile.current_education_level = str(declared_facts["current_education_level"])
+        if "current_specialty" in declared_facts and not profile.current_specialty:
+            profile.current_specialty = str(declared_facts["current_specialty"])
+        if "declared_overall_avg" in declared_facts and profile.declared_overall_avg is None:
+            try:
+                profile.declared_overall_avg = Decimal(str(declared_facts["declared_overall_avg"]))
+            except Exception:
+                pass
+
+    lang = state_data.get("preferred_language") or (
+        guest_rec.preferred_language if guest_rec else None
+    )
+    if lang and not profile.preferred_language:
+        profile.preferred_language = lang
+
+    target_school = state_data.get("school_target")
+    if target_school and not candidate.school_target:
+        candidate.school_target = target_school
+
+    if candidate.status in {"ANONYMOUS", "PROFILING", "ELIGIBLE", "ORIENTED"}:
+        candidate.status = "AUTHENTICATED"
+
+    candidate.updated_at = now
+    profile.updated_at = now
+
+    # 5. Mark guest session as MERGED in PostgreSQL & Redis
+    if guest_rec is None:
+        guest_rec = GuestSession(
+            id=target_sid,
+            status="MERGED",
+            preferred_language=lang,
+            merged_candidate_id=candidate.id,
+            merged_at=now,
+            last_activity_at=now,
+            expires_at=now + timedelta(days=7),
+            created_at=now,
+        )
+        db.add(guest_rec)
+    else:
+        guest_rec.status = "MERGED"
+        guest_rec.merged_candidate_id = candidate.id
+        guest_rec.merged_at = now
+        guest_rec.last_activity_at = now
+
+    guest_svc = GuestSessionService(redis_client=redis_client)
+    try:
+        await guest_svc.update_fields(
+            sid_str,
+            {
+                "status": "MERGED",
+                "merged_candidate_id": cand_str,
+                "merged_at": now.isoformat(),
+            },
+        )
+        await guest_svc.migrate_session(sid_str, cand_str)
+    except Exception:
+        pass
+
+    if sid_str in _LOCAL_GUEST_STORE:
+        loc_data, loc_exp = _LOCAL_GUEST_STORE[sid_str]
+        loc_data["status"] = "MERGED"
+        loc_data["merged_candidate_id"] = cand_str
+        loc_data["merged_at"] = now.isoformat()
+        _LOCAL_GUEST_STORE[sid_str] = (loc_data, loc_exp)
+
+    # 6. Audit logging
+    db.add(
+        AuditLog(
+            actor_type="STUDENT",
+            actor_id=str(actor.account_id),
+            action="GUEST_SESSION_MERGED",
+            entity_type="GUEST_SESSION",
+            entity_id=target_sid,
+            event_metadata={
+                "candidate_id": cand_str,
+                "turns_merged": turns_merged,
+                "status": "MERGED",
+            },
+            created_at=now,
+        )
+    )
+    await db.commit()
+
+    # 7. Clean up anonymous cookie
+    if response is not None:
+        clear_guest_cookie(response)
+
+    return SessionMergeResponse(
+        candidate_id=candidate.id,
+        account_id=acc_uuid,
+        anonymous_session_id=target_sid,
+        turns_merged=turns_merged,
+        declared_profile_synced=True,
+        current_status=candidate.status,
+        merged_at=now,
+        message="Conversation et profil invité associés avec succès au compte candidat.",
     )
