@@ -42,7 +42,7 @@ class ChatMessageRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "message": "slm brbi 3tini hedhi mte3 lfac",
+                "message": "3aslema, chnowa les filières d'ingénieur fel IIT ?",
                 "language_hint": "auto",
             }
         }

@@ -110,8 +110,8 @@ _FUSHA_ARABIC_RE = re.compile(
 )
 
 _VAGUE_ARABIZI_OR_DERJA_RE = re.compile(
-    r"\b(hedhi|hedha|heki|kfh|n3ml|9dh|3slm|lfac|l3am|jey|x9z2)\b|"
-    r"(هكا متاع القراية|شنوة نعمل فيه)",
+    r"\b(hedhi|hedha|heki|kfh|n3ml|9dh|3slm)\b|"
+    r"(?<![\u0600-\u06FF])(هكا|هاكي|هذي)(?![\u0600-\u06FF])",
     re.IGNORECASE,
 )
 _NOISE_GIBBERISH_RE = re.compile(r"\b(?=[a-z]*\d)(?=[0-9]*[a-z])[a-z0-9]{3,}\b", re.IGNORECASE)
@@ -127,7 +127,8 @@ _DOMAIN_ANCHOR_RE = re.compile(
     r"médecine|medecine|طب|صيدلة|pharmacie|droit|درو|حقوق|astrophysique|شريعة|"
     r"criminologie|agricole|vétérinaire|veterinaire|permis de conduire|erasmus|إيراسموس|"
     r"attestation officielle|وثائق|أوراق|papiers|documents|débouchés|الآفاق|spécialité|filière|"
-    r"اختصاص|شعبة|فروع|توجيه|orient|recommand|compar|الفرق|حاير|n5ayar)",
+    r"اختصاص|شعبة|فروع|توجيه|orient|recommand|compar|الفرق|حاير|n5ayar|"
+    r"bourse|منحة|nabda|نبدا|commencer|frais|tarif|9adech|قداش)",
     re.IGNORECASE,
 )
 _GREETING_ONLY_RE = re.compile(
@@ -221,9 +222,10 @@ def assess_comprehension_confidence(
         if has_vague_markers or non_arabizi_noise:
             return 0.25, True
 
-        # Very short non-greeting dialect/Arabizi input with no recognizable academic entity
+        # Only trigger hard short-circuit for isolated single-token / unintelligible utterances;
+        # normal short questions (e.g. "fama bourse ?", "kifech nabda ?") pass through to the LLM.
         word_count = len(re.findall(r"[\w\u0600-\u06FF]+", stripped))
-        if lang_code in {"ar-TN", "ar-TN-arabizi"} and word_count <= 4:
+        if lang_code in {"ar-TN", "ar-TN-arabizi"} and word_count <= 2:
             return 0.35, True
 
     return 0.80, False
@@ -241,6 +243,7 @@ def classify_intent_and_subagent(
     text: str,
     *,
     is_authenticated: bool,
+    lang_code: str | None = None,
 ) -> tuple[str, VisionSubAgent, ActionPrompt | None, list[str]]:
     """Classify student intent and target VISION sub-agent across FR, Fusha, Derja & Arabizi."""
     lower = text.lower()
@@ -251,22 +254,27 @@ def classify_intent_and_subagent(
         for k in (
             "médecine",
             "medecine",
+            "كلية طب",
             "طب الأسنان",
+            "الطب",
             "صيدلة",
             "pharmacie",
-            "ليسونس الدرو",
+            "درو",
             "(droit)",
             "faculté de droit",
+            "حقوق",
             "permis de conduire",
             "astrophysique",
             "cosmologie",
-            "الشريعة",
-            "الفقه الإسلامي",
+            "شريعة",
+            "فقه",
+            "bourse garantie",
+            "منحة مضمونة",
+            "erasmus",
             "إيراسموس",
-            "1500 أورو",
             "criminologie",
-            "attestation officielle d'admission",
-            "génie agricole",
+            "attestation officielle",
+            "agricole",
             "vétérinaire",
             "veterinaire",
         )
@@ -278,18 +286,35 @@ def classify_intent_and_subagent(
             ["Découvrir les vraies filières IIT / ISB / ISA", "Parler à un conseiller NAU"],
         )
 
-    # 2. Human-in-the-Loop (HITL) admission governance questions
-    if any(
+    # 2. Human-in-the-Loop (HITL) admission governance questions (natural AI/robot + decision stems)
+    has_ai_actor = any(
         k in lower
         for k in (
-            "intelligence artificielle peut accepter",
-            "القرار النهائي في قبول",
-            "الروبو هذا ينجم يرفضلي",
-            "trfadhnii fel inscription",
-            "acceptation finale",
+            "intelligence artificielle",
+            "l'ia",
+            "الذكاء الاصطناعي",
+            "روبو",
+            "robot",
             "jury humain",
         )
-    ):
+    )
+    has_admission_decision = any(
+        k in lower
+        for k in (
+            "accept",
+            "rejet",
+            "refus",
+            "رفض",
+            "يرفض",
+            "قبول",
+            "يقبل",
+            "trfadh",
+            "ta9bel",
+            "décision",
+            "قرار",
+        )
+    )
+    if has_ai_actor and has_admission_decision:
         return (
             "ADMISSION_GOVERNANCE",
             "1.1_Listener",
@@ -298,16 +323,12 @@ def classify_intent_and_subagent(
         )
 
     # 3. Anonymous guest session policy ("Give or Keep")
-    if any(
-        k in lower
-        for k in (
-            "en tant qu'invité",
-            "sans créer de compte",
-            "من غير ما نعمل كونت",
-            "en mode guest",
-            "men ghir ma na3mel compte",
-        )
-    ):
+    has_guest_cue = any(k in lower for k in ("invité", "guest", "anonyme", "إنفيتي"))
+    has_without_cue = any(
+        k in lower for k in ("sans créer", "sans compte", "من غير", "men ghir")
+    )
+    has_no_account_cue = has_without_cue and any(k in lower for k in ("compte", "كونت"))
+    if has_guest_cue or has_no_account_cue:
         return (
             "GUEST_SESSION_POLICY",
             "1.1_Listener",
@@ -319,10 +340,12 @@ def classify_intent_and_subagent(
     if any(
         k in lower
         for k in (
-            "حماية بياناتي الشخصية",
             "inpdp",
             "données personnelles",
             "confidentialité",
+            "حماية بيانات",
+            "معطيات شخصية",
+            "خصوصية",
         )
     ):
         return (
@@ -343,8 +366,7 @@ def classify_intent_and_subagent(
             "créneau",
             "creneau",
             "رونديفو",
-            "طلب موعد",
-            "حجز موعد",
+            "موعد",
         )
     ):
         action: ActionPrompt = "BOOK_SLOT" if is_authenticated else "AUTH_REQUIRED"
@@ -366,13 +388,14 @@ def classify_intent_and_subagent(
             "preinscription",
             "upload",
             "dossier",
-            "documents obligatoires",
-            "les papiers lezmin",
-            "الوثائق الرسمية",
-            "ملف التسجيل",
-            "الأوراق اللازمة",
+            "documents",
+            "papiers",
+            "وثائق",
+            "أوراق",
+            "ملف",
             "دوسيا",
-            "كشف علامات",
+            "كشف",
+            "رولفي",
         )
     ):
         action = "UPLOAD_RELEVE" if is_authenticated else "AUTH_REQUIRED"
@@ -387,7 +410,8 @@ def classify_intent_and_subagent(
         )
 
     # 7. Advisory track comparison & recommendation (FR, Fusha, Derja, Arabizi)
-    if any(
+    is_prepa_comparison = any(k in lower for k in ("prépa", "prepa", "بريبا"))
+    has_comparison_stem = any(
         k in lower
         for k in (
             "recommand",
@@ -396,15 +420,14 @@ def classify_intent_and_subagent(
             "hésite",
             "hesite",
             "choisir",
-            "comparer",
-            "ywalmni",
-            "ywalmouni",
+            "compar",
+            "ywalm",
             "n5ayar",
+            "نخير",
             "حاير",
-            "الفرق الأكاديمي",
-            "الفرق بيناتهم",
         )
-    ):
+    ) or ("الفرق" in lower and not is_prepa_comparison)
+    if has_comparison_stem:
         return (
             "TRACK_RECOMMENDATION",
             "1.5_Advisor",
@@ -413,28 +436,30 @@ def classify_intent_and_subagent(
         )
 
     # 8. Eligibility, prerequisites & gateways (FR, Fusha, Derja, Arabizi)
-    if any(
+    has_bac_or_degree_admission = any(
+        k in lower for k in ("bac", "باك", "بكالوريا", "إجازة", "ليسونس", "licence")
+    ) and any(
+        k in lower
+        for k in ("requis", "intégrer", "nod5el", "ندخل", "ترشح", "معدل", "moyenne", "شروط")
+    )
+    if has_bac_or_degree_admission or any(
         k in lower
         for k in (
             "éligib",
             "eligib",
             "moyenne",
+            "معدل",
             "seuil",
             "admissible",
             "score",
             "équivalence",
             "passerelle",
-            "baccalauréat est requis",
-            "diplôme bac+3",
+            "باسرال",
+            "معابر",
             "شروط القبول",
             "اختبار قبول",
-            "الترشح مباشرة",
-            "باك تكنيك بمعدل",
+            "bac+3",
             "باك+3",
-            "bac math",
-            "bac sciences",
-            "licence informatique",
-            "أحمل إجازة",
         )
     ):
         return (
@@ -453,31 +478,39 @@ def classify_intent_and_subagent(
             "prix",
             "9adech",
             "gaddech",
+            "قداش",
             "spécialité",
             "specialite",
             "filière",
             "filiere",
             "programme",
             "licence",
+            "ليسونس",
+            "إجازة",
             "ingénieur",
             "ingenieur",
+            "أنجينيور",
+            "هندسة",
             "prépa",
             "prepa",
+            "بريبا",
+            "تحضيرية",
             "master",
+            "ماستر",
+            "ماجستير",
             "iit",
             "isb",
             "isa",
             "sfax",
             "صفاقس",
             "مقرات",
-            "الفاك وين",
-            "الأرشيتكتور",
-            "الأركيتكتور",
-            "الآفاق المهنية",
-            "مرحلة تحضيرية",
-            "إدارة الشبكات",
-            "جيني ميكانيك",
-            "ليسونس ديزاين",
+            "الفاك",
+            "أرشيتكتور",
+            "أركيتكتور",
+            "عمارة",
+            "آفاق",
+            "ميكانيك",
+            "شبكات",
         )
     ):
         return (
@@ -488,9 +521,9 @@ def classify_intent_and_subagent(
         )
 
     # 10. Low-comprehension / ambiguous dialect check -> French reformulation fallback
-    lang_code, _ = detect_dialect(text)
+    resolved_lang = lang_code if lang_code is not None else detect_dialect(text)[0]
     _, needs_reformulation = assess_comprehension_confidence(
-        text, lang_code=lang_code, intent="GENERAL_ORIENTATION"
+        text, lang_code=resolved_lang, intent="GENERAL_ORIENTATION"
     )
     if needs_reformulation:
         return (
@@ -784,12 +817,16 @@ async def generate_chat_reply(
     intent, sub_agent, action_prompt, suggested_actions = classify_intent_and_subagent(
         payload.message,
         is_authenticated=is_authenticated,
-    )
-    confidence, needs_reformulation = assess_comprehension_confidence(
-        payload.message,
         lang_code=lang_code,
-        intent=intent,
     )
+    if intent == "CLARIFICATION_REQUIRED":
+        confidence, needs_reformulation = 0.25, True
+    else:
+        confidence, needs_reformulation = assess_comprehension_confidence(
+            payload.message,
+            lang_code=lang_code,
+            intent=intent,
+        )
     reformulation_msg = (
         _build_reformulation_fallback_reply(lang_code, dialect)
         if needs_reformulation

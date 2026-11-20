@@ -1,11 +1,12 @@
 """VISION dialogue and LLM backend connection REST endpoints (SA-36)."""
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.deps import decode_hs256_jwt
+from app.core.deps import CurrentActor, decode_hs256_jwt, require_roles
 from app.core.rate_limit import enforce_guest_chat_rate_limit
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse, LlmHealthResponse
 from app.services import llm_service as svc
@@ -59,9 +60,11 @@ async def post_chat_message(
 @router.get(
     "/evaluate-dialect",
     status_code=status.HTTP_200_OK,
-    summary="Run SA-34 multilingual & Arabizi comprehension benchmark (85 cases: SA-32 + SA-34)",
+    summary="Run SA-34 multilingual & Arabizi comprehension benchmark (admin/direction only)",
 )
-async def get_dialect_evaluation_benchmark() -> dict[str, Any]:
-    report = evaluate_pipeline()
+async def get_dialect_evaluation_benchmark(
+    _actor: CurrentActor = Depends(require_roles("admin", "direction")),
+) -> dict[str, Any]:
+    report = await asyncio.to_thread(evaluate_pipeline)
     return report.to_dict()
 
