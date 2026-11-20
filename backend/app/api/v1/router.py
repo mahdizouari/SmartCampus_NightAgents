@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, catalog, catalog_management, health
+from app.api.v1.endpoints import auth, catalog, catalog_management, chat, health
 
 api_router = APIRouter()
 
@@ -12,6 +12,13 @@ api_router.include_router(
     auth.router,
     prefix="/auth",
     tags=["Authentication"],
+)
+
+# Include VISION conversational AI & LLM endpoints under /api/v1/chat (SA-36)
+api_router.include_router(
+    chat.router,
+    prefix="/chat",
+    tags=["Chat & LLM"],
 )
 
 # Include public catalog consultation endpoints under /api/v1/catalog (SA-21)
