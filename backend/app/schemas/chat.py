@@ -85,6 +85,9 @@ class ChatMessageResponse(BaseModel):
     model_used: str
     latency_ms: int
     used_fallback: bool = False
+    comprehension_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    needs_reformulation: bool = False
+    reformulation_prompt: str | None = None
 
 
 class LlmHealthResponse(BaseModel):
