@@ -209,3 +209,31 @@ async def test_live_llm_100_point_rubric_scorer_and_mocked_runner(
     assert summary["models_used"] == ["openai/gpt-oss-120b"]
     assert summary["mean_score_100"] == 100.0
     assert summary["hitl_violations"] == 0
+
+
+def test_evaluate_dialect_endpoint_and_swagger_default_override(client: TestClient):
+    """Verify GET /api/v1/chat/evaluate-dialect and natural script detection over default hint."""
+    r_bench = client.get("/api/v1/chat/evaluate-dialect")
+    assert r_bench.status_code == 200
+    bench = r_bench.json()
+    assert bench["total_cases"] == 85
+    assert bench["baseline_failure_count"] == 49
+    assert bench["tuned_failure_count"] == 0
+    assert bench["tuned_overall_lang_pct"] == 100.0
+    assert bench["tuned_overall_intent_pct"] == 100.0
+
+    # Even if a client leaves detectedDialect='French' with language_hint='auto',
+    # unmistakable Arabizi tokens are still detected as Arabizi.
+    r_msg = client.post(
+        "/api/v1/chat/message",
+        json={
+            "message": "slm brbi 3tini hedhi mte3 lfac",
+            "language_hint": "auto",
+            "detectedDialect": "French",
+        },
+    )
+    assert r_msg.status_code == 200
+    body = r_msg.json()
+    assert body["detected_language"] == "ar-TN-arabizi"
+    assert body["detectedDialect"] == "Arabizi"
+    assert body["needs_reformulation"] is True

@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 LanguageHint = Literal["auto", "fr", "derja", "arabizi"]
 DetectedDialect = Literal["French", "Tunisian_Derja", "Arabizi"]
@@ -38,6 +38,15 @@ class ChatTurnInput(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     """Supports both api_contract.md (§2.1) and frontend chat-service.ts payload fields."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "message": "slm brbi 3tini hedhi mte3 lfac",
+                "language_hint": "auto",
+            }
+        }
+    )
 
     message: str = Field(..., min_length=1, max_length=4000)
     language_hint: LanguageHint = "auto"

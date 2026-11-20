@@ -153,11 +153,11 @@ def detect_dialect(
     explicit_dialect: DetectedDialect | None = None,
 ) -> tuple[str, DetectedDialect]:
     """Detect (language_code, DetectedDialect) across French, Fusha, Derja, Arabizi & FR-TN mix."""
-    if explicit_dialect == "Arabizi" or language_hint == "arabizi":
+    if language_hint == "arabizi":
         return "ar-TN-arabizi", "Arabizi"
-    if explicit_dialect == "Tunisian_Derja" or language_hint == "derja":
+    if language_hint == "derja":
         return "ar-TN", "Tunisian_Derja"
-    if explicit_dialect == "French" or language_hint == "fr":
+    if language_hint == "fr":
         return "fr", "French"
 
     has_arabic = bool(_ARABIC_SCRIPT_RE.search(text))
@@ -184,6 +184,13 @@ def detect_dialect(
 
     if arabizi_hits > 0:
         return "ar-TN-arabizi", "Arabizi"
+
+    if explicit_dialect == "Arabizi":
+        return "ar-TN-arabizi", "Arabizi"
+    if explicit_dialect == "Tunisian_Derja":
+        return "ar-TN", "Tunisian_Derja"
+    if explicit_dialect == "French":
+        return "fr", "French"
     return "fr", "French"
 
 
