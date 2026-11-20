@@ -1,4 +1,4 @@
-"""Async LLM provider connection, VISION prompt engineering, and dialect routing (SA-36)."""
+"""Async LLM provider connection, VISION prompt engineering, and dialect routing (SA-36 & SA-34)."""
 
 import logging
 import re
@@ -28,30 +28,124 @@ VISION_SYSTEM_PROMPT = (
     "au sein du groupe NAU à Sfax.\n\n"
     "RÈGLES STRICTES ET NON NÉGOCIABLES (SC V4) :\n"
     "1. Multilinguisme : Réponds toujours dans la langue ou le registre utilisé par "
-    "l'étudiant (Français, Derja tunisienne en alphabet arabe, ou Arabizi tunisien).\n"
+    "l'étudiant (Français, Arabe standard Fusha, Derja tunisienne en alphabet arabe, "
+    "ou Derja tunisienne naturelle pour une requête en Arabizi / code-switching FR-TN). "
+    "Ne réponds jamais en Arabe classique (Fusha) à une question en Derja ou Arabizi.\n"
     "2. Zéro hallucination de faits académiques : N'invente JAMAIS de frais de scolarité, "
-    "de seuils d'admission, de dates limites ou d'intitulés de cours qui ne figurent pas "
-    "explicitement dans le contexte officiel fourni. Si une donnée officielle n'est pas "
-    "fournie dans le contexte, indique honnêtement qu'elle doit être consultée dans le "
-    "catalogue officiel NAU.\n"
+    "de seuils d'admission, de dates limites, de bourses garanties ni de filières "
+    "inexistantes (ex. médecine, pharmacie, droit licence, astrophysique, criminologie, "
+    "génie agricole/vétérinaire). Si une donnée officielle n'est pas fournie dans le "
+    "contexte, indique honnêtement qu'elle doit être consultée dans le catalogue officiel NAU.\n"
     "3. Gouvernance Human-in-the-Loop (HITL) : Tu ne peux JAMAIS admettre, refuser, "
-    "mettre en liste d'attente ni promettre une admission. Seul le Responsable NAU "
-    "humain prend et signe la décision finale après entretien.\n"
+    "mettre en liste d'attente, promettre une admission ni délivrer une attestation "
+    "officielle. Seul le Responsable NAU humain prend et signe la décision finale.\n"
     "4. Règle « Give or Keep » : L'orientation et les questions-réponses sont 100 % "
-    "libres sans compte. L'authentification n'est requise qu'au moment de téléverser "
-    "un relevé de notes officiel, sauvegarder une shortlist ou soumettre une "
-    "préinscription.\n"
-    "5. Style : Sois concis, structuré, bienveillant et cite systématiquement les "
+    "libres sans compte (session anonyme temporaire de 7 jours). L'authentification n'est "
+    "requise qu'au moment de téléverser un relevé de notes officiel, sauvegarder une shortlist, "
+    "réserver un créneau d'entretien ou soumettre une préinscription.\n"
+    "5. Repli en cas d'incompréhension dialectale / Arabizi : Si le message est trop ambigu, "
+    "abrégé ou bruité pour identifier l'intention avec certitude, ne devine jamais ; demande "
+    "poliment à l'étudiant de reformuler sa question en français simple.\n"
+    "6. Style : Sois concis, structuré, bienveillant et cite systématiquement les "
     "documents sources fournis dans le contexte."
 )
 
+FRENCH_REFORMULATION_FALLBACK_ARABIZI = (
+    "Samahni, ma fhemtech bethabt chnowa t7eb ta3ref (el message fih abréviations walla "
+    "manque de précision). Tnajem t3awed tektbli sou2elek bel français clair, mathalan : "
+    "« Quelles sont les filières ingénieur à l'IIT ? » ou « Suis-je éligible avec un Bac "
+    "Mathématiques ? »\n\n"
+    "Pourriez-vous reformuler votre question en français afin que je puisse vous orienter "
+    "précisément sur l'IIT, l'ISB ou l'ISA ?"
+)
+
+FRENCH_REFORMULATION_FALLBACK_DERJA = (
+    "سامحني، ما فهمتش بالضبط شنوة تقصد في سؤالك. تنجم تعاود تكتبلي سؤالك بالفرنسية بوضوح "
+    "باش نجم نعاونك بالمعلومات الرسمية متاع IIT و ISB و ISA؟\n\n"
+    "Pourriez-vous reformuler votre question en français (par exemple en précisant l'école "
+    "IIT/ISB/ISA, la filière souhaitée ou votre diplôme actuel) ?"
+)
+
+FRENCH_REFORMULATION_FALLBACK_FR = (
+    "Je n'ai pas compris votre demande avec suffisamment de certitude pour vous répondre "
+    "sans risque d'erreur. Pourriez-vous reformuler votre question en français en précisant "
+    "l'école (IIT, ISB ou ISA), la filière visée ou votre diplôme actuel ?"
+)
+
+LOW_CONFIDENCE_THRESHOLD = 0.45
+
 _ARABIC_SCRIPT_RE = re.compile(r"[\u0600-\u06FF]")
+_ARABIC_WORD_RE = re.compile(r"[\u0600-\u06FF]+")
+_LATIN_WORD_RE = re.compile(r"[A-Za-z0-9']+")
+
 _ARABIZI_TOKEN_RE = re.compile(
-    r"\b(3aslema|aslema|mar7ba|chnowa|chnoma|chnoua|kifech|kifeh|nheb|n7eb|fama|mte3|mta3|"
-    r"barcha|2addech|9adech|gaddech|blhi|bellehi|najem|chkoun|fi|w|wala)\b",
+    r"\b("
+    r"3aslema|aslema|3slm|slm|mar7ba|marhba|chnowa|chnoma|chnoua|chnouwa|chnouma|"
+    r"kifech|kifeh|kfh|nheb|n7eb|fama|famach|mte3|mta3|mte3i|mte3ek|mte3kom|"
+    r"barcha|2addech|9adech|9dh|gaddech|blhi|bellehi|brbi|najem|tnajem|ynajmou|"
+    r"chkoun|walla|wala|fel|lel|mel|bech|bch|n3ml|na3mel|n3amer|na5ou|ne5ou|"
+    r"nod5el|net5arej|net7adeth|n5ayar|trfadhnii|za3ma|3andi|3andkom|3anna|"
+    r"t5adem|ya9raw|9rayet|ywalmni|ywalmouni|yzidni|hedhi|hedha|heki|3awenni|"
+    r"tawa|taw|win|mawjouda|chwaya|a3tini|tsob|lfac|l3am|jey|3asma|bghit|na3ref|"
+    r"ma9boul|ta3tini|m3a|m3akom|ghir|snin|3am|3amin"
+    r")\b",
     re.IGNORECASE,
 )
 _ARABIZI_DIGIT_WORD_RE = re.compile(r"\b[a-z]*[235789][a-z]+\b", re.IGNORECASE)
+
+_TUNISIAN_DERJA_ARABIC_RE = re.compile(
+    r"(شنوة|شنيما|شنية|كيفاش|قداش|بقداش|بربي|نجم|تنجم|فما|متاع|حاير|زعمة|"
+    r"برشا|توة|موش|ماكش|عسلامة|هكا|دوسيا|رونديفو|بريبا|"
+    r"باسرال|ليسونس|الفاك|كونت|ماخذ|إنتغري|تخدم|تخدّم|قراية|مريقل|يرفضلي|"
+    r"يقبلني|نتسجل|نحكي|معاكم|نبرمج|نتفاهمو|عنا|عندكم|نحب نعرف|"
+    r"مانجمش|ما فماش|إيليجيبل|جيني لوجيسيال|جيني ميكانيك|أنجينيور|أرشيتكتور|أركيتكتور)|"
+    r"(?<![\u0600-\u06FF])(الي|اللي|بش|باش)(?![\u0600-\u06FF])"
+)
+
+_FUSHA_ARABIC_RE = re.compile(
+    r"(ما هي|ما الفرق|هل تقدم|هل تمنح|هل يشترط|هل يتخذ|هل تضمن|هل يشمل|"
+    r"كم تبلغ|أين تقع|كيف يمكن|أحمل إجازة|المرحلة التحضيرية|الشهادة الوطنية|"
+    r"المعهد الدولي|مدرسة الأعمال|المجمع الأكاديمي|المترشح|التشريعات|الوثائق الرسمية|"
+    r"الآفاق المهنية|ماجستير|الماستر المهني)"
+)
+
+_VAGUE_ARABIZI_OR_DERJA_RE = re.compile(
+    r"\b(hedhi|hedha|heki|kfh|n3ml|9dh|3slm)\b|"
+    r"(?<![\u0600-\u06FF])(هكا|هاكي|هذي)(?![\u0600-\u06FF])",
+    re.IGNORECASE,
+)
+_NOISE_GIBBERISH_RE = re.compile(r"\b(?=[a-z]*\d)(?=[0-9]*[a-z])[a-z0-9]{3,}\b", re.IGNORECASE)
+_DOMAIN_ANCHOR_RE = re.compile(
+    r"(iit|isb|isa|nau|sfax|صفاقس|glid|sdia|arsi|prépa|prepa|بريبا|تحضيرية|"
+    r"licence|ليسونس|إجازة|master|ماستر|ماجستير|mba|msc|ingénieur|ingenieur|أنجينيور|هندسة|"
+    r"architecture|أركيتكتور|أرشيتكتور|عمارة|finance|فينونس|مالية|marketing|تسويق|"
+    r"business|إدارة الأعمال|mécanique|ميكانيك|civil|سيفيل|industriel|énergétique|"
+    r"bac|باك|بكالوريا|passerelle|باسرال|معابر|éligib|eligib|moyenne|معدل|شروط|"
+    r"relevé|releve|رولفي|كشف|dossier|دوسيا|ملف|préinscription|preinscription|ترسيم|تسجيل|"
+    r"rendez-vous|rdv|رونديفو|موعد|مقابلة|entretien|slot|créneau|creneau|"
+    r"guest|invité|انفيتي|كونت|compte|inpdp|données|بيانات|الروبو|intelligence artificielle|l'ia|"
+    r"médecine|medecine|طب|صيدلة|pharmacie|droit|درو|حقوق|astrophysique|شريعة|"
+    r"criminologie|agricole|vétérinaire|veterinaire|permis de conduire|erasmus|إيراسموس|"
+    r"attestation officielle|وثائق|أوراق|papiers|documents|débouchés|الآفاق|spécialité|filière|"
+    r"اختصاص|شعبة|فروع|توجيه|orient|recommand|compar|الفرق|حاير|n5ayar|"
+    r"bourse|منحة|nabda|نبدا|commencer|frais|tarif|9adech|قداش)",
+    re.IGNORECASE,
+)
+_GREETING_ONLY_RE = re.compile(
+    r"^\s*(bonjour|bonsoir|salut|coucou|hello|hi|salam|slm|3aslema|aslema|mar7ba|"
+    r"مرحبا|عسلامة|السلام عليكم|اهلا|أهلا)(\s+(vision|smartcampus))?[\s!?.]*$",
+    re.IGNORECASE,
+)
+
+
+def _expected_register_label(lang_code: str, dialect: DetectedDialect) -> str:
+    if lang_code == "ar":
+        return "Arabe standard soutenu (Fusha / الفصحى) uniquement, sans dialecte"
+    if lang_code == "ar-TN":
+        return "Derja tunisienne authentique en alphabet arabe (الدارجة التونسية), sans Fusha"
+    if lang_code == "ar-TN-arabizi" or dialect == "Arabizi":
+        return "Derja tunisienne naturelle (style conversationnel tunisien / Arabizi), sans Fusha"
+    return "Français fluide et professionnel"
 
 
 def detect_dialect(
@@ -59,29 +153,231 @@ def detect_dialect(
     language_hint: str = "auto",
     explicit_dialect: DetectedDialect | None = None,
 ) -> tuple[str, DetectedDialect]:
-    """Detect (language_code, DetectedDialect) from student message and optional hints."""
-    if explicit_dialect == "Arabizi" or language_hint == "arabizi":
+    """Detect (language_code, DetectedDialect) across French, Fusha, Derja, Arabizi & FR-TN mix."""
+    if language_hint == "arabizi":
         return "ar-TN-arabizi", "Arabizi"
-    if explicit_dialect == "Tunisian_Derja" or language_hint == "derja":
+    if language_hint == "derja":
         return "ar-TN", "Tunisian_Derja"
-    if explicit_dialect == "French" or language_hint == "fr":
+    if language_hint == "fr":
         return "fr", "French"
 
-    if _ARABIC_SCRIPT_RE.search(text):
+    has_arabic = bool(_ARABIC_SCRIPT_RE.search(text))
+    arabizi_hits = len(_ARABIZI_TOKEN_RE.findall(text)) + len(
+        _ARABIZI_DIGIT_WORD_RE.findall(text)
+    )
+
+    if has_arabic:
+        arabic_words = _ARABIC_WORD_RE.findall(text)
+        latin_words = _LATIN_WORD_RE.findall(text)
+        # Bi-script Arabizi with a stray Arabic word (e.g. AB-10 "win mawjouda el fac بالضبط ?")
+        if (
+            arabizi_hits >= 2
+            and len(arabic_words) <= 2
+            and len(latin_words) >= len(arabic_words) * 3
+        ):
+            return "ar-TN-arabizi", "Arabizi"
+        # Distinguish Tunisian Derja (Arabic script) from Modern Standard Arabic (Fusha)
+        if _TUNISIAN_DERJA_ARABIC_RE.search(text):
+            return "ar-TN", "Tunisian_Derja"
+        if _FUSHA_ARABIC_RE.search(text):
+            return "ar", "Tunisian_Derja"
         return "ar-TN", "Tunisian_Derja"
-    if _ARABIZI_TOKEN_RE.search(text) or _ARABIZI_DIGIT_WORD_RE.search(text):
+
+    if arabizi_hits > 0:
         return "ar-TN-arabizi", "Arabizi"
+
+    if explicit_dialect == "Arabizi":
+        return "ar-TN-arabizi", "Arabizi"
+    if explicit_dialect == "Tunisian_Derja":
+        return "ar-TN", "Tunisian_Derja"
+    if explicit_dialect == "French":
+        return "fr", "French"
     return "fr", "French"
+
+
+def assess_comprehension_confidence(
+    text: str,
+    *,
+    lang_code: str,
+    intent: str,
+) -> tuple[float, bool]:
+    """Estimate comprehension confidence and decide whether to request a French reformulation."""
+    stripped = text.strip()
+    if _GREETING_ONLY_RE.match(stripped):
+        return 0.95, False
+
+    has_domain_anchor = bool(_DOMAIN_ANCHOR_RE.search(stripped))
+    has_vague_markers = bool(_VAGUE_ARABIZI_OR_DERJA_RE.search(stripped))
+
+    if intent != "GENERAL_ORIENTATION" and intent != "CLARIFICATION_REQUIRED":
+        return (0.92 if has_domain_anchor else 0.85), False
+
+    if not has_domain_anchor:
+        # Check for unintelligible/noisy alphanumeric tokens or vague dialect demonstratives
+        non_arabizi_noise = [
+            tok
+            for tok in _NOISE_GIBBERISH_RE.findall(stripped)
+            if not _ARABIZI_TOKEN_RE.fullmatch(tok)
+        ]
+        if has_vague_markers or non_arabizi_noise:
+            return 0.25, True
+
+        # Only trigger hard short-circuit for isolated single-token / unintelligible utterances;
+        # normal short questions (e.g. "fama bourse ?", "kifech nabda ?") pass through to the LLM.
+        word_count = len(re.findall(r"[\w\u0600-\u06FF]+", stripped))
+        if lang_code in {"ar-TN", "ar-TN-arabizi"} and word_count <= 2:
+            return 0.35, True
+
+    return 0.80, False
+
+
+def _build_reformulation_fallback_reply(lang_code: str, dialect: DetectedDialect) -> str:
+    if lang_code == "ar-TN-arabizi" or dialect == "Arabizi":
+        return FRENCH_REFORMULATION_FALLBACK_ARABIZI
+    if lang_code in {"ar-TN", "ar"}:
+        return FRENCH_REFORMULATION_FALLBACK_DERJA
+    return FRENCH_REFORMULATION_FALLBACK_FR
 
 
 def classify_intent_and_subagent(
     text: str,
     *,
     is_authenticated: bool,
+    lang_code: str | None = None,
 ) -> tuple[str, VisionSubAgent, ActionPrompt | None, list[str]]:
-    """Classify the high-level student intent and target VISION sub-agent."""
+    """Classify student intent and target VISION sub-agent across FR, Fusha, Derja & Arabizi."""
     lower = text.lower()
 
+    # 1. Out-of-corpus traps & prohibited official attestations (zero-hallucination guardrail)
+    if any(
+        k in lower
+        for k in (
+            "médecine",
+            "medecine",
+            "كلية طب",
+            "طب الأسنان",
+            "الطب",
+            "صيدلة",
+            "pharmacie",
+            "درو",
+            "(droit)",
+            "faculté de droit",
+            "حقوق",
+            "permis de conduire",
+            "astrophysique",
+            "cosmologie",
+            "شريعة",
+            "فقه",
+            "bourse garantie",
+            "منحة مضمونة",
+            "erasmus",
+            "إيراسموس",
+            "criminologie",
+            "attestation officielle",
+            "agricole",
+            "vétérinaire",
+            "veterinaire",
+        )
+    ):
+        return (
+            "OUT_OF_CORPUS_TRAP",
+            "1.1_Listener",
+            None,
+            ["Découvrir les vraies filières IIT / ISB / ISA", "Parler à un conseiller NAU"],
+        )
+
+    # 2. Human-in-the-Loop (HITL) admission governance questions (natural AI/robot + decision stems)
+    has_ai_actor = any(
+        k in lower
+        for k in (
+            "intelligence artificielle",
+            "l'ia",
+            "الذكاء الاصطناعي",
+            "روبو",
+            "robot",
+            "jury humain",
+        )
+    )
+    has_admission_decision = any(
+        k in lower
+        for k in (
+            "accept",
+            "rejet",
+            "refus",
+            "رفض",
+            "يرفض",
+            "قبول",
+            "يقبل",
+            "trfadh",
+            "ta9bel",
+            "décision",
+            "قرار",
+        )
+    )
+    if has_ai_actor and has_admission_decision:
+        return (
+            "ADMISSION_GOVERNANCE",
+            "1.1_Listener",
+            None,
+            ["Comprendre le processus d'admission humaine", "Consulter le catalogue IIT / ISB"],
+        )
+
+    # 3. Anonymous guest session policy ("Give or Keep")
+    has_guest_cue = any(k in lower for k in ("invité", "guest", "anonyme", "إنفيتي"))
+    has_without_cue = any(
+        k in lower for k in ("sans créer", "sans compte", "من غير", "men ghir")
+    )
+    has_no_account_cue = has_without_cue and any(k in lower for k in ("compte", "كونت"))
+    if has_guest_cue or has_no_account_cue:
+        return (
+            "GUEST_SESSION_POLICY",
+            "1.1_Listener",
+            None,
+            ["Découvrir les formations sans compte", "Simuler mon éligibilité"],
+        )
+
+    # 4. Data privacy & INPDP compliance
+    if any(
+        k in lower
+        for k in (
+            "inpdp",
+            "données personnelles",
+            "confidentialité",
+            "حماية بيانات",
+            "معطيات شخصية",
+            "خصوصية",
+        )
+    ):
+        return (
+            "DATA_PRIVACY",
+            "1.1_Listener",
+            None,
+            ["Consulter la politique INPDP", "Découvrir les formations IIT / ISB"],
+        )
+
+    # 5. Interview appointment scheduling (FR, Fusha, Derja, Arabizi)
+    if any(
+        k in lower
+        for k in (
+            "rendez-vous",
+            "rdv",
+            "entretien",
+            "slot",
+            "créneau",
+            "creneau",
+            "رونديفو",
+            "موعد",
+        )
+    ):
+        action: ActionPrompt = "BOOK_SLOT" if is_authenticated else "AUTH_REQUIRED"
+        return (
+            "INTERVIEW_SCHEDULING",
+            "1.6_Registrar",
+            action,
+            ["Consulter les créneaux disponibles", "Préparer le QCM d'entretien"],
+        )
+
+    # 6. Pre-inscription documents & transcript upload (FR, Fusha, Derja, Arabizi)
     if any(
         k in lower
         for k in (
@@ -92,9 +388,17 @@ def classify_intent_and_subagent(
             "preinscription",
             "upload",
             "dossier",
+            "documents",
+            "papiers",
+            "وثائق",
+            "أوراق",
+            "ملف",
+            "دوسيا",
+            "كشف",
+            "رولفي",
         )
     ):
-        action: ActionPrompt = "UPLOAD_RELEVE" if is_authenticated else "AUTH_REQUIRED"
+        action = "UPLOAD_RELEVE" if is_authenticated else "AUTH_REQUIRED"
         first_action = (
             "Téléverser mon relevé" if is_authenticated else "Créer un compte / Se connecter"
         )
@@ -102,35 +406,60 @@ def classify_intent_and_subagent(
             "PREINSCRIPTION_AND_RELEVE",
             "1.6_Registrar",
             action,
-            [
-                first_action,
-                "Voir les pièces requises",
-            ],
+            [first_action, "Voir les pièces requises"],
         )
 
-    if any(
+    # 7. Advisory track comparison & recommendation (FR, Fusha, Derja, Arabizi)
+    is_prepa_comparison = any(k in lower for k in ("prépa", "prepa", "بريبا"))
+    has_comparison_stem = any(
         k in lower
-        for k in ("rendez-vous", "rdv", "entretien", "slot", "créneau", "creneau")
-    ):
-        action = "BOOK_SLOT" if is_authenticated else "AUTH_REQUIRED"
+        for k in (
+            "recommand",
+            "conseil",
+            "orient",
+            "hésite",
+            "hesite",
+            "choisir",
+            "compar",
+            "ywalm",
+            "n5ayar",
+            "نخير",
+            "حاير",
+        )
+    ) or ("الفرق" in lower and not is_prepa_comparison)
+    if has_comparison_stem:
         return (
-            "INTERVIEW_SCHEDULING",
-            "1.6_Registrar",
-            action,
-            ["Consulter les créneaux disponibles", "Préparer le QCM d'entretien"],
+            "TRACK_RECOMMENDATION",
+            "1.5_Advisor",
+            "CONFIRM_SHORTLIST",
+            ["Comparer les filières IIT / ISB", "Sauvegarder ma shortlist"],
         )
 
-    if any(
+    # 8. Eligibility, prerequisites & gateways (FR, Fusha, Derja, Arabizi)
+    has_bac_or_degree_admission = any(
+        k in lower for k in ("bac", "باك", "بكالوريا", "إجازة", "ليسونس", "licence")
+    ) and any(
+        k in lower
+        for k in ("requis", "intégrer", "nod5el", "ندخل", "ترشح", "معدل", "moyenne", "شروط")
+    )
+    if has_bac_or_degree_admission or any(
         k in lower
         for k in (
             "éligib",
             "eligib",
             "moyenne",
+            "معدل",
             "seuil",
             "admissible",
             "score",
-            "najem",
             "équivalence",
+            "passerelle",
+            "باسرال",
+            "معابر",
+            "شروط القبول",
+            "اختبار قبول",
+            "bac+3",
+            "باك+3",
         )
     ):
         return (
@@ -140,17 +469,7 @@ def classify_intent_and_subagent(
             ["Simuler mon éligibilité", "Obtenir une recommandation de parcours"],
         )
 
-    if any(
-        k in lower
-        for k in ("recommand", "conseil", "orient", "hésite", "hesite", "choisir", "ywalmni")
-    ):
-        return (
-            "TRACK_RECOMMENDATION",
-            "1.5_Advisor",
-            "CONFIRM_SHORTLIST",
-            ["Comparer les filières IIT / ISB", "Sauvegarder ma shortlist"],
-        )
-
+    # 9. Program catalog, details, duration, accreditation & campus location
     if any(
         k in lower
         for k in (
@@ -159,20 +478,39 @@ def classify_intent_and_subagent(
             "prix",
             "9adech",
             "gaddech",
+            "قداش",
             "spécialité",
             "specialite",
             "filière",
             "filiere",
             "programme",
             "licence",
+            "ليسونس",
+            "إجازة",
             "ingénieur",
             "ingenieur",
+            "أنجينيور",
+            "هندسة",
             "prépa",
             "prepa",
+            "بريبا",
+            "تحضيرية",
             "master",
+            "ماستر",
+            "ماجستير",
             "iit",
             "isb",
             "isa",
+            "sfax",
+            "صفاقس",
+            "مقرات",
+            "الفاك",
+            "أرشيتكتور",
+            "أركيتكتور",
+            "عمارة",
+            "آفاق",
+            "ميكانيك",
+            "شبكات",
         )
     ):
         return (
@@ -180,6 +518,23 @@ def classify_intent_and_subagent(
             "1.2_Librarian",
             None,
             ["Consulter le catalogue IIT / ISB", "Vérifier les conditions d'accès"],
+        )
+
+    # 10. Low-comprehension / ambiguous dialect check -> French reformulation fallback
+    resolved_lang = lang_code if lang_code is not None else detect_dialect(text)[0]
+    _, needs_reformulation = assess_comprehension_confidence(
+        text, lang_code=resolved_lang, intent="GENERAL_ORIENTATION"
+    )
+    if needs_reformulation:
+        return (
+            "CLARIFICATION_REQUIRED",
+            "1.1_Listener",
+            None,
+            [
+                "Reformuler ma question en français",
+                "Découvrir les formations IIT & ISB",
+                "Vérifier mon éligibilité Bac / Passerelle",
+            ],
         )
 
     return (
@@ -214,14 +569,24 @@ def _build_citations(context_chunks: list[dict[str, Any]] | None) -> list[ChatCi
 
 def _build_messages(
     payload: ChatMessageRequest,
+    lang_code: str,
     detected_dialect: DetectedDialect,
     intent: str,
 ) -> list[dict[str, str]]:
+    register_instruction = _expected_register_label(lang_code, detected_dialect)
     system_content = VISION_SYSTEM_PROMPT + (
         f"\n\n[MÉTADONNÉES TOUR COURANT]\n"
+        f"- Code langue détecté : {lang_code}\n"
         f"- Dialecte détecté : {detected_dialect}\n"
+        f"- Registre de réponse obligatoire : {register_instruction}\n"
         f"- Intention détectée : {intent}\n"
     )
+    if intent == "OUT_OF_CORPUS_TRAP":
+        system_content += (
+            "- ALERTE GARDE-FOU : La requête semble porter sur une filière hors-catalogue "
+            "ou une attestation/promesse interdite. Refuse poliment sans rien inventer et "
+            "rappelle uniquement les vraies écoles NAU (IIT, ISB, ISA).\n"
+        )
     if payload.context_chunks:
         formatted_chunks = "\n".join(
             f"- [{c.get('source_document', 'Corpus_NAU')}] "
@@ -247,12 +612,76 @@ def _build_messages(
 
 def _generate_deterministic_fallback_reply(
     *,
+    lang_code: str,
     dialect: DetectedDialect,
     intent: str,
     is_authenticated: bool,
     citations: list[ChatCitation],
 ) -> str:
     """Safe, zero-hallucination fallback reply when no external LLM API key is configured."""
+    if intent == "CLARIFICATION_REQUIRED":
+        return _build_reformulation_fallback_reply(lang_code, dialect)
+
+    if intent == "OUT_OF_CORPUS_TRAP":
+        if lang_code == "ar":
+            return (
+                "عذراً، هذا التخصص أو الطلب غير متوفر ضمن برامج المجمع الأكاديمي NAU. "
+                "تقتصر مؤسساتنا على الهندسة والتكنولوجيا (IIT)، إدارة الأعمال والمالية (ISB)، "
+                "والهندسة المعمارية (ISA)، ولا يمكن للذكاء الاصطناعي إصدار شهادات قبول رسمية."
+            )
+        if lang_code == "ar-TN":
+            return (
+                "سامحني، الاختصاص ولا الطلب هذا موش موجود في مؤسسات الـ NAU. "
+                "عنا كان الـ IIT للهندسة والتكنولوجيا، الـ ISB للتصرف والمالية، و الـ ISA "
+                "للهندسة المعمارية، وما نجموش نخترعو برامج ولا نعطيو قرارات قبول رسمية."
+            )
+        if lang_code == "ar-TN-arabizi" or dialect == "Arabizi":
+            return (
+                "Samahni, el filière walla el talab hedha mahouch mawjoud fel NAU. "
+                "3anna ken l'IIT (Ingénierie & Tech), l'ISB (Business & Finance) w l'ISA "
+                "(Architecture 6 ans), w ma najemch na5tare3 programmes walla attestation."
+            )
+        return (
+            "Ce programme ou cette demande ne relève pas de l'offre officielle du groupe NAU "
+            "(IIT pour l'ingénierie/technologie, ISB pour le management/finance, ISA pour "
+            "l'architecture). En tant qu'assistant IA, je ne peux ni inventer de cursus ni "
+            "délivrer d'attestation officielle d'admission."
+        )
+
+    if intent == "ADMISSION_GOVERNANCE":
+        if lang_code == "ar":
+            return (
+                "كلا، يقتصر دور الذكاء الاصطناعي على التوجيه فقط. تعود قرارات القبول أو "
+                "الرفض أو قائمة الانتظار حصراً للجان الأكاديمية والمسؤولين البشريين (HITL)."
+            )
+        if lang_code == "ar-TN":
+            return (
+                "لا، الروبو ما يقررش القبول ولا الرفض. دوري كان التوجيه، والقرار النهائي "
+                "يقعد ديما عند مسؤولي الجامعة واللجنة البشرية."
+            )
+        if lang_code == "ar-TN-arabizi" or dialect == "Arabizi":
+            return (
+                "La, l'IA juste t3awnek fel orientation. El décision finale (acceptation, "
+                "liste d'attente walla refus) ta3melha ken el commission humaine (IIT/ISB/ISA)."
+            )
+        return (
+            "Non : conformément à notre gouvernance Human-in-the-Loop (HITL), aucune IA ne "
+            "peut admettre, mettre en liste d'attente ni refuser un candidat. Seul le "
+            "Responsable NAU humain décide après étude du dossier et entretien."
+        )
+
+    if lang_code == "ar":
+        if intent == "PREINSCRIPTION_AND_RELEVE" and not is_authenticated:
+            return (
+                "مرحباً بك في SmartCampus AI. لرفع كشف الأعداد أو استكمال ملف التسجيل الأولي، "
+                "يرجى تسجيل الدخول عبر رمز OTP أو Google OAuth (وفق قاعدة Give or Keep)."
+            )
+        return (
+            "مرحباً بك في SmartCampus AI. أنا VISION مساعدك الذكي للتوجيه الجامعي في "
+            "المعهد الدولي للتكنولوجيا (IIT) ومدرسة الأعمال الدولية (ISB) ومعهد العمارة (ISA) "
+            "بصفاقس. يرجى تحديد الشعبة أو التخصص المطلوب للاطلاع على البيانات الرسمية."
+        )
+
     if dialect == "Arabizi":
         if intent == "PREINSCRIPTION_AND_RELEVE" and not is_authenticated:
             return (
@@ -376,7 +805,7 @@ async def generate_chat_reply(
     session_id: str | None = None,
     is_authenticated: bool = False,
 ) -> ChatMessageResponse:
-    """Orchestrate dialect detection, intent routing, and LLM completion (or safe fallback)."""
+    """Orchestrate dialect detection, intent routing, confidence fallback, and LLM completion."""
     start_ns = time.perf_counter_ns()
     resolved_session_id = session_id or payload.session_id or str(uuid4())
 
@@ -388,9 +817,23 @@ async def generate_chat_reply(
     intent, sub_agent, action_prompt, suggested_actions = classify_intent_and_subagent(
         payload.message,
         is_authenticated=is_authenticated,
+        lang_code=lang_code,
+    )
+    if intent == "CLARIFICATION_REQUIRED":
+        confidence, needs_reformulation = 0.25, True
+    else:
+        confidence, needs_reformulation = assess_comprehension_confidence(
+            payload.message,
+            lang_code=lang_code,
+            intent=intent,
+        )
+    reformulation_msg = (
+        _build_reformulation_fallback_reply(lang_code, dialect)
+        if needs_reformulation
+        else None
     )
     citations = _build_citations(payload.context_chunks)
-    messages = _build_messages(payload, dialect, intent)
+    messages = _build_messages(payload, lang_code, dialect, intent)
 
     provider = settings.LLM_PROVIDER.lower().strip()
     can_call_remote = provider == "ollama" or (
@@ -398,9 +841,16 @@ async def generate_chat_reply(
     )
 
     used_fallback = False
-    if provider == "mock" or (not can_call_remote and settings.LLM_FALLBACK_TO_MOCK):
+    if needs_reformulation:
+        # SA-34 safety fallback: never guess on unintelligible/ambiguous dialect inputs;
+        # explicitly request a clear French reformulation.
+        used_fallback = True
+        reply_text = reformulation_msg or FRENCH_REFORMULATION_FALLBACK_FR
+        model_used = "smartcampus-clarification-fallback-v1"
+    elif provider == "mock" or (not can_call_remote and settings.LLM_FALLBACK_TO_MOCK):
         used_fallback = True
         reply_text = _generate_deterministic_fallback_reply(
+            lang_code=lang_code,
             dialect=dialect,
             intent=intent,
             is_authenticated=is_authenticated,
@@ -434,6 +884,9 @@ async def generate_chat_reply(
         model_used=model_used,
         latency_ms=elapsed_ms,
         used_fallback=used_fallback,
+        comprehension_confidence=confidence,
+        needs_reformulation=needs_reformulation,
+        reformulation_prompt=reformulation_msg,
     )
 
 
@@ -457,4 +910,3 @@ def get_llm_health() -> LlmHealthResponse:
         api_key_configured=has_key,
         fallback_enabled=settings.LLM_FALLBACK_TO_MOCK,
     )
-

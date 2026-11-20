@@ -1,12 +1,16 @@
 """VISION dialogue and LLM backend connection REST endpoints (SA-36)."""
 
+import asyncio
+from typing import Any
+
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.deps import decode_hs256_jwt
+from app.core.deps import CurrentActor, decode_hs256_jwt, require_roles
 from app.core.rate_limit import enforce_guest_chat_rate_limit
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse, LlmHealthResponse
 from app.services import llm_service as svc
+from app.services.dialect_eval_service import evaluate_pipeline
 
 router = APIRouter()
 _optional_bearer = HTTPBearer(auto_error=False)
@@ -51,4 +55,16 @@ async def post_chat_message(
         session_id=resolved_session_id,
         is_authenticated=is_authenticated,
     )
+
+
+@router.get(
+    "/evaluate-dialect",
+    status_code=status.HTTP_200_OK,
+    summary="Run SA-34 multilingual & Arabizi comprehension benchmark (admin/direction only)",
+)
+async def get_dialect_evaluation_benchmark(
+    _actor: CurrentActor = Depends(require_roles("admin", "direction")),
+) -> dict[str, Any]:
+    report = await asyncio.to_thread(evaluate_pipeline)
+    return report.to_dict()
 

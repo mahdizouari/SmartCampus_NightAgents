@@ -1,0 +1,152 @@
+[
+  {
+    "id": "CS-01",
+    "language_group": "code_switching_fr_tn",
+    "query": "Bonjour, bellehi n7eb na3ref les spécialités d'ingénieur disponibles fel IIT Sfax ?",
+    "intent": "program_catalog",
+    "target_school": "iit",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "Polite French greeting + Tunisian Arabizi core + French academic noun phrase."
+  },
+  {
+    "id": "CS-02",
+    "language_group": "code_switching_fr_tn",
+    "query": "Salut, 3andi bac sciences b moyenne 13.5, est-ce que je suis éligible lel prépa intégrée ?",
+    "intent": "eligibility_evaluation",
+    "target_school": "iit",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "Mixed FR/Arabizi declarative eligibility inquiry with Bac section and average."
+  },
+  {
+    "id": "CS-03",
+    "language_group": "code_switching_fr_tn",
+    "query": "SVP kifeh na3mel préinscription w chnowa les documents obligatoires bech nsob mon dossier ?",
+    "intent": "required_documents",
+    "target_school": "all",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "Code-switching pre-inscription & required document list (Give-or-Keep auth trigger)."
+  },
+  {
+    "id": "CS-04",
+    "language_group": "code_switching_fr_tn",
+    "query": "Je voudrais comparer GLID w SDIA, chnouwa eli ywalmni akther si j'aime le machine learning ?",
+    "intent": "advisory_comparison",
+    "target_school": "iit",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "FR/Arabizi track comparison requesting recommendation from 1.5_Advisor."
+  },
+  {
+    "id": "CS-05",
+    "language_group": "code_switching_fr_tn",
+    "query": "Est-ce que najem ne5ou rendez-vous m3a un conseiller pédagogique fel ISB cette semaine ?",
+    "intent": "appointment_scheduling",
+    "target_school": "isb",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "FR/Arabizi interview slot booking request (1.6_Registrar + AUTH_REQUIRED for guest)."
+  },
+  {
+    "id": "CS-06",
+    "language_group": "code_switching_fr_tn",
+    "query": "سلام، je cherche des infos على licence Finance في الـ ISB شنوة الآفاق متاعها ؟",
+    "intent": "program_details",
+    "target_school": "isb",
+    "expected_language": "Derja arabe + Français (Code-switching)",
+    "expected_fallback": false,
+    "notes": "Bi-script code-switching (Arabic script Derja + French)."
+  },
+  {
+    "id": "CS-07",
+    "language_group": "code_switching_fr_tn",
+    "query": "3andi licence informatique, est-ce que najem na3mel passerelle vers 1ère année cycle ingénieur ?",
+    "intent": "eligibility_gateway",
+    "target_school": "iit",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "Bac+3 gateway eligibility check in mixed French/Arabizi."
+  },
+  {
+    "id": "CS-08",
+    "language_group": "code_switching_fr_tn",
+    "query": "Est-ce que l'IA mte3kom tnajem ta3tini acceptation finale walla el décision 3and le jury humain ?",
+    "intent": "admission_governance",
+    "target_school": "all",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "HITL admission governance test in mixed French/Arabizi."
+  },
+  {
+    "id": "CS-09",
+    "language_group": "code_switching_fr_tn",
+    "query": "بربي je veux téléverser mon relevé de notes du bac، يلزمني نعمل compte قبل ؟",
+    "intent": "required_documents",
+    "target_school": "all",
+    "expected_language": "Derja arabe + Français (Code-switching)",
+    "expected_fallback": false,
+    "notes": "Bi-script Give-or-Keep rule check before uploading transcript."
+  },
+  {
+    "id": "CS-10",
+    "language_group": "code_switching_fr_tn",
+    "query": "Fama faculté de médecine walla pharmacie fel IIT Sfax ? SVP donnez-moi le tarif.",
+    "intent": "out_of_corpus_trap",
+    "target_school": "none",
+    "expected_language": "Arabizi / Code-switching FR-TN",
+    "expected_fallback": false,
+    "notes": "Out-of-corpus trap combining Arabizi + French asking for non-existent Medicine/Pharmacy program."
+  },
+  {
+    "id": "AMB-01",
+    "language_group": "ambiguous_low_confidence",
+    "query": "slm brbi 3tini hedhi mte3 lfac",
+    "intent": "ambiguous_clarification",
+    "target_school": "all",
+    "expected_language": "Arabizi (ambiguous -> French reformulation fallback)",
+    "expected_fallback": true,
+    "notes": "Vague demonstrative pronoun 'hedhi' without any school, program, or action."
+  },
+  {
+    "id": "AMB-02",
+    "language_group": "ambiguous_low_confidence",
+    "query": "kfh n3ml hedha w 9dh",
+    "intent": "ambiguous_clarification",
+    "target_school": "all",
+    "expected_language": "Arabizi (heavy abbreviations -> French reformulation fallback)",
+    "expected_fallback": true,
+    "notes": "Heavily vowelless Arabizi abbreviations ('kfh', 'n3ml', '9dh') with no identifiable domain entity."
+  },
+  {
+    "id": "AMB-03",
+    "language_group": "ambiguous_low_confidence",
+    "query": "?? brbi 3awenni f heki mte3 l3am jey",
+    "intent": "ambiguous_clarification",
+    "target_school": "all",
+    "expected_language": "Arabizi (underspecified -> French reformulation fallback)",
+    "expected_fallback": true,
+    "notes": "Underspecified request referencing 'heki' without intent or target program."
+  },
+  {
+    "id": "AMB-04",
+    "language_group": "ambiguous_low_confidence",
+    "query": "عسلامة بربي هكا متاع القراية شنوة نعمل فيه",
+    "intent": "ambiguous_clarification",
+    "target_school": "all",
+    "expected_language": "Derja arabe (underspecified -> French reformulation fallback)",
+    "expected_fallback": true,
+    "notes": "Vague Derja Arabic query lacking program, school, or specific orientation step."
+  },
+  {
+    "id": "AMB-05",
+    "language_group": "ambiguous_low_confidence",
+    "query": "3slm x9z2 ???",
+    "intent": "ambiguous_clarification",
+    "target_school": "all",
+    "expected_language": "Noisy Arabizi (gibberish -> French reformulation fallback)",
+    "expected_fallback": true,
+    "notes": "Corrupted/unintelligible Arabizi input requiring polite reformulation in French."
+  }
+]
