@@ -62,6 +62,16 @@ class Settings(BaseSettings):
     RATE_LIMIT_STUDENT_PER_MINUTE: int = 120
     RATE_LIMIT_STAFF_PER_MINUTE: int = 300
 
+    # LLM Provider & Generation Settings (SA-36)
+    LLM_PROVIDER: str = "openai_compatible"  # openai_compatible | ollama | mock
+    LLM_BASE_URL: str = "https://api.groq.com/openai/v1"
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = "openai/gpt-oss-120b"
+    LLM_TEMPERATURE: float = 0.2
+    LLM_MAX_TOKENS: int = 1024
+    LLM_TIMEOUT_SECONDS: float = 30.0
+    LLM_FALLBACK_TO_MOCK: bool = True
+
     @property
     def effective_redis_url(self) -> str:
         """Returns the Redis connection URL."""
