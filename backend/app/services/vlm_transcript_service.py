@@ -108,9 +108,94 @@ TUNISIAN_BAC_COEFFICIENTS: dict[BacSection, dict[str, float]] = {
     },
 }
 
+# Official Arabic subject names printed on Tunisian Bac transcripts (بيان أعداد البكالوريا)
+ARABIC_TO_CANONICAL_SUBJECT: dict[str, str] = {
+    "رياضيات": "Mathématiques",
+    "الرياضيات": "Mathématiques",
+    "علوم فيزيائية": "Sciences Physiques",
+    "العلوم الفيزيائية": "Sciences Physiques",
+    "علوم الحياة والأرض": "Sciences de la Vie et de la Terre",
+    "علوم الحياة والارض": "Sciences de la Vie et de la Terre",
+    "انقليزية": "Anglais",
+    "إنقليزية": "Anglais",
+    "إنجليزية": "Anglais",
+    "انجليزية": "Anglais",
+    "فرنسية": "Français",
+    "عربية": "Arabe",
+    "فلسفة": "Philosophie",
+    "إعلامية": "Informatique",
+    "اعلامية": "Informatique",
+    "تربية بدنية": "Éducation Physique",
+    "تكنولوجيا": "Technologie",
+    "خوارزميات وبرمجة": "Algorithmique et Programmation",
+    "اقتصاد": "Économie",
+    "تصرف": "Gestion",
+    "تاريخ وجغرافيا": "Histoire et Géographie",
+    "إسبانية": "Espagnol (Option)",
+    "اسبانية": "Espagnol (Option)",
+    "ألمانية": "Allemand (Option)",
+    "المانية": "Allemand (Option)",
+    "إيطالية": "Italien (Option)",
+    "ايطالية": "Italien (Option)",
+    "صينية": "Chinois (Option)",
+    "روسية": "Russe (Option)",
+    "موسيقى": "Musique (Option)",
+    "تربية تشكيلية": "Arts Plastiques (Option)",
+}
+
+OPTIONAL_BAC_SUBJECT_KEYS: frozenset[str] = frozenset(
+    {
+        "espagnol",
+        "espagnol (option)",
+        "allemand",
+        "allemand (option)",
+        "italien",
+        "italien (option)",
+        "chinois",
+        "chinois (option)",
+        "russe",
+        "russe (option)",
+        "musique",
+        "musique (option)",
+        "arts plastiques",
+        "arts plastiques (option)",
+        "إسبانية",
+        "اسبانية",
+        "ألمانية",
+        "المانية",
+        "إيطالية",
+        "ايطالية",
+        "صينية",
+        "روسية",
+        "موسيقى",
+        "تربية تشكيلية",
+    }
+)
+
+ARABIC_MENTION_MAP: dict[str, str] = {
+    "متوسط": "Passable",
+    "قريب من الحسن": "Assez Bien",
+    "حسن": "Bien",
+    "حسن جدا": "Très Bien",
+    "حسن جداً": "Très Bien",
+}
+
 VLM_TRANSCRIPT_SYSTEM_PROMPT = (
     "Tu es VISION 1.4_Reader, le module d'extraction OCR/VLM de relevés de notes du "
-    "Baccalauréat Tunisien (Ministère de l'Éducation) pour SmartCampus AI (IIT / ISB / ISA).\n\n"
+    "Baccalauréat Tunisien (بيان أعداد امتحان البكالوريا - الجمهورية التونسية، وزارة التربية) "
+    "pour SmartCampus AI (IIT / ISB / ISA).\n\n"
+    "SPÉCIFICITÉS DES RELEVÉS OFFICIELS TUNISIENS :\n"
+    "- Les relevés officiels du Bac tunisien sont généralement en arabe (droite à gauche) avec "
+    "3 colonnes : المواد (Matières), الدورة الرئيسية (Session Principale) et دورة المراقبة "
+    "(Session de Contrôle, affichant '*****' si admis en principale).\n"
+    "- La colonne coefficient n'est pas imprimée sur le relevé officiel ; tu peux omettre "
+    "`coefficient` (ou mettre null) si absent : le backend applique automatiquement les "
+    "coefficients officiels du Ministère de l'Éducation selon la section.\n"
+    "- Les notes utilisent souvent une virgule décimale (ex. '09,25' -> 9.25, '11,51' -> 11.51).\n"
+    "- Les langues facultatives (إسبانية, ألمانية, إيطالية, صينية, روسية, موسيقى, تربية تشكيلية) "
+    "doivent avoir `is_optional: true`.\n"
+    "- Mentions tunisiennes : متوسط = Passable, قريب من الحسن = Assez Bien, حسن = Bien, "
+    "حسن جدا = Très Bien.\n\n"
     "INSTRUCTIONS STRICTES :\n"
     "1. Extrais UNIQUEMENT les données réellement visibles sur le relevé fourni. "
     "N'invente JAMAIS une note, une matière ou une moyenne illisible.\n"
@@ -120,21 +205,21 @@ VLM_TRANSCRIPT_SYSTEM_PROMPT = (
     'Sciences de l\'Informatique | Économie et Gestion | Lettres | Sport | Autre",\n'
     '  "session_year": "2026",\n'
     '  "session_type": "Principale | Contrôle | Inconnue",\n'
-    '  "student_name": "Nom Prénom ou null",\n'
+    '  "student_name": "Nom Prénom ou null (si masqué/anonymisé)",\n'
     '  "institution": "Lycée ou null",\n'
     '  "governorate": "Gouvernorat (ex. Sfax) ou null",\n'
-    '  "general_average": 15.42,\n'
+    '  "general_average": 11.51,\n'
     '  "mention": "Passable | Assez Bien | Bien | Très Bien | null",\n'
     '  "subjects": [\n'
-    '    {"name": "Mathématiques", "grade": 17.5, "coefficient": 4.0, '
+    '    {"name": "Mathématiques", "grade": 9.25, "coefficient": 4.0, '
     '"is_optional": false, "confidence": 0.96}\n'
     "  ],\n"
     '  "field_confidences": {\n'
     '    "bac_section": 0.98,\n'
     '    "session_year": 0.98,\n'
     '    "general_average": 0.97,\n'
-    '    "student_name": 0.95,\n'
-    '    "institution": 0.94\n'
+    '    "student_name": null,\n'
+    '    "institution": null\n'
     "  }\n"
     "}\n"
     "3. Pour tout champ flou, partiellement caché ou incertain, assigne un score de confiance "
@@ -243,6 +328,65 @@ def infer_mention(avg: float | None) -> str | None:
     if avg >= 12.0:
         return "Assez Bien"
     return "Passable"
+
+
+def normalize_mention(raw_mention: str | None, avg: float | None) -> str | None:
+    """Normalize Arabic/French Tunisian Baccalaureate mention labels."""
+    if raw_mention:
+        cleaned = str(raw_mention).strip()
+        if cleaned in ARABIC_MENTION_MAP:
+            return ARABIC_MENTION_MAP[cleaned]
+        folded = _ascii_fold(cleaned)
+        if "tres bien" in folded:
+            return "Très Bien"
+        if "assez bien" in folded:
+            return "Assez Bien"
+        if "bien" in folded:
+            return "Bien"
+        if "passable" in folded:
+            return "Passable"
+        return cleaned
+    return infer_mention(avg)
+
+
+def _parse_decimal_number(raw: Any) -> float:
+    """Parse numeric grades accepting both dot ('11.51') and Tunisian comma ('09,25') formats."""
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    cleaned = str(raw).strip().replace(",", ".")
+    return float(cleaned)
+
+
+def resolve_tunisian_subject_and_coefficient(
+    raw_name: str,
+    bac_section: BacSection,
+    provided_coeff: Any = None,
+    provided_optional: Any = None,
+) -> tuple[str, float, bool]:
+    """Map Arabic/French subject name to canonical label, official coeff, and optional flag."""
+    stripped = raw_name.strip()
+    canonical_name = ARABIC_TO_CANONICAL_SUBJECT.get(stripped, stripped)
+    folded = _ascii_fold(canonical_name)
+    raw_folded = _ascii_fold(stripped)
+
+    is_optional = (
+        bool(provided_optional)
+        or "option" in folded
+        or stripped in OPTIONAL_BAC_SUBJECT_KEYS
+        or raw_folded in OPTIONAL_BAC_SUBJECT_KEYS
+        or folded in OPTIONAL_BAC_SUBJECT_KEYS
+    )
+
+    if provided_coeff is not None and str(provided_coeff).strip() != "":
+        coeff = round(_parse_decimal_number(provided_coeff), 2)
+        return canonical_name, coeff, is_optional
+
+    # Real Tunisian Bac transcripts do not print a coefficient column: infer from official table
+    section_table = {
+        _ascii_fold(k): v for k, v in TUNISIAN_BAC_COEFFICIENTS.get(bac_section, {}).items()
+    }
+    inferred_coeff = section_table.get(folded, 1.0)
+    return canonical_name, inferred_coeff, is_optional
 
 
 def _prepare_image_data_uri(raw_bytes: bytes, mime_type: str) -> tuple[str, tuple[int, int]]:
@@ -496,18 +640,30 @@ def _assemble_validated_result(
         if not isinstance(row, dict):
             continue
         try:
-            grade_val = round(float(row["grade"]), 2)
-            coeff_val = round(float(row.get("coefficient", 1.0)), 2)
-            conf_val = round(float(row.get("confidence", 0.5)), 3)
-            name_val = str(row["name"]).strip()
-            is_opt = bool(row.get("is_optional", False))
+            raw_grade = row.get("grade")
+            if raw_grade is None or str(raw_grade).strip().startswith("*"):
+                continue
+            grade_val = round(_parse_decimal_number(raw_grade), 2)
+            raw_name = str(row["name"]).strip()
+            canonical_name, coeff_val, is_opt = resolve_tunisian_subject_and_coefficient(
+                raw_name,
+                bac_section,
+                provided_coeff=row.get("coefficient"),
+                provided_optional=row.get("is_optional"),
+            )
+            conf_val = round(_parse_decimal_number(row.get("confidence", 0.5)), 3)
             needs_confirm = conf_val < threshold
+            weighted = (
+                round(max(0.0, grade_val - 10.0) * coeff_val, 2)
+                if is_opt
+                else round(grade_val * coeff_val, 2)
+            )
             subj = ExtractedSubjectGrade(
-                name=name_val,
+                name=canonical_name,
                 grade=grade_val,
                 grade_scale=20.0,
                 coefficient=coeff_val,
-                weighted_points=round(grade_val * coeff_val, 2),
+                weighted_points=weighted,
                 is_optional=is_opt,
                 confidence=conf_val,
                 needs_confirmation=needs_confirm,
@@ -551,7 +707,7 @@ def _assemble_validated_result(
     overall_conf = round(sum(all_confidences) / len(all_confidences), 3) if all_confidences else 0.0
 
     raw_avg = raw_data.get("general_average")
-    general_average = round(float(raw_avg), 2) if raw_avg is not None else None
+    general_average = round(_parse_decimal_number(raw_avg), 2) if raw_avg is not None else None
     calculated_average = compute_tunisian_bac_average(subjects)
 
     discrepancy: float | None = None
@@ -608,11 +764,7 @@ def _assemble_validated_result(
         declared_average=round(declared_average, 2) if declared_average is not None else None,
         average_discrepancy=discrepancy,
         discrepancy_detected=discrepancy_detected,
-        mention=(
-            str(raw_data["mention"]).strip()
-            if raw_data.get("mention")
-            else infer_mention(general_average or calculated_average)
-        ),
+        mention=normalize_mention(raw_data.get("mention"), general_average or calculated_average),
         subjects=subjects,
         field_confidences=fc,
         overall_confidence=overall_conf,

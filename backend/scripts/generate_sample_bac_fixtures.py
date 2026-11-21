@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
-
 OUT_DIR = Path(__file__).resolve().parents[1] / "tests" / "data" / "sample_bac"
 
 MATH_SFAX_LINES = [
@@ -118,35 +116,11 @@ def write_simple_text_pdf(path: Path, lines: list[str]) -> None:
     path.write_bytes(bytes(body))
 
 
-def write_transcript_png(path: Path, lines: list[str]) -> None:
-    """Render an authentic visual PNG scan of the anonymized Sfax Tunisian Bac transcript."""
-    width, height = 920, 1120
-    img = Image.new("RGB", (width, height), color=(252, 252, 248))
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
-
-    # Official document outer border
-    draw.rectangle([(28, 28), (width - 28, height - 28)], outline=(24, 62, 112), width=3)
-    draw.rectangle([(36, 36), (width - 36, height - 36)], outline=(180, 195, 215), width=1)
-    draw.rectangle([(48, 48), (width - 48, 130)], fill=(24, 62, 112))
-    draw.text((70, 66), lines[0], fill=(255, 255, 255), font=font)
-    draw.text((70, 96), lines[1], fill=(230, 240, 255), font=font)
-
-    y = 158
-    for line in lines[2:]:
-        color = (20, 40, 75) if line.startswith(("Moyenne", "Mention", "Section")) else (35, 35, 35)
-        draw.text((70, y), line, fill=color, font=font)
-        y += 38
-
-    img.save(path, format="PNG")
-
-
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     write_simple_text_pdf(OUT_DIR / "releve_bac_math_sfax_2026.pdf", MATH_SFAX_LINES)
     write_simple_text_pdf(OUT_DIR / "releve_bac_info_sfax_2026.pdf", INFO_SFAX_LINES)
-    write_transcript_png(OUT_DIR / "releve_bac_math_sfax_2026.png", MATH_SFAX_LINES)
-    print(f"[OK] Generated 3 anonymized Sfax Tunisian Bac fixtures in {OUT_DIR}")
+    print(f"[OK] Generated 2 anonymized Sfax Tunisian Bac PDF fixtures in {OUT_DIR}")
     return 0
 
 

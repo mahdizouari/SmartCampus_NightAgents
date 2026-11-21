@@ -49,8 +49,12 @@ Le schéma Pydantic `BacTranscriptExtractionResult` (`backend/app/schemas/transc
 
 ## 3. Jeux d'Essais Tunisiens (Sfax) Conformes INPDP (Loi 2004-63)
 
-Afin de respecter strictement la loi tunisienne sur la protection des données personnelles (INPDP 2004-63), aucun relevé contenant la CIN ou le nom réel d'un étudiant n'est commité dans le dépôt. Trois jeux d'essais synthétiques anonymisés fidèles au format officiel du Ministère de l'Éducation (Gouvernorat de Sfax) sont générés par `backend/scripts/generate_sample_bac_fixtures.py` dans `backend/tests/data/sample_bac/` :
+Afin de respecter strictement la loi tunisienne sur la protection des données personnelles (INPDP 2004-63), aucune donnée personnelle nominative (nom, date de naissance, CIN, numéro d'inscription, code 2D-DOC) n'est exposée dans le dépôt public :
 
-1. `releve_bac_math_sfax_2026.pdf` — Lycée Pilote de Sfax, Section **Mathématiques** (9 matières, coefficients officiels `4, 4, 1, 1, 1, 1, 1, 1, 1`, Moyenne `16.80`, Mention *Très Bien*).
-2. `releve_bac_info_sfax_2026.pdf` — Lycée Hédi Chaker Sfax, Section **Sciences de l'Informatique** (9 matières, coefficients officiels `3, 3, 3, 2, 1, 1, 1, 1, 1`, Moyenne `15.45`, Mention *Bien*).
-3. `releve_bac_math_sfax_2026.png` — Scan PNG haute résolution (920×1120 px) du relevé anonymisé de Sfax pour les tests Vision multimodaux.
+1. **`releve_bac_math_sfax_anonymized.jpg`** — Photographie réelle d'un relevé officiel du Baccalauréat tunisien (*الجمهورية التونسية — وزارة التربية — بيان أعداد امتحان البكالوريا، الشعبة: الرياضيات، مكانها: صفاقس، دورة 2021*, 10 matières en arabe dont l'option `إسبانية`, notes à virgule `09,25`..`18,66`, `المعدل النهائي 11,51`, `الملاحظة متوسط`) **entièrement anonymisée INPDP** (nom, date de naissance, numéro d'inscription, code `2D-DOC` et métadonnées EXIF définitivement masqués/supprimés). Ce cas réel valide notamment :
+   - le mapping automatique des matières arabes vers les libellés canoniques,
+   - l'inférence automatique des coefficients officiels du Ministère de l'Éducation (absents du relevé papier officiel),
+   - la prise en compte automatique de l'épreuve facultative (`إسبانية`: `11,25 -> +1,25` pts bonus),
+   - la vérification arithmétique exacte `172.66 / 15 = 11.51` (`average_discrepancy = 0.00`).
+2. **`releve_bac_math_sfax_2026.pdf`** — Relevé PDF numérique anonymisé (Lycée Pilote de Sfax, Section **Mathématiques**, 9 matières, coefficients officiels `4, 4, 1, 1, 1, 1, 1, 1, 1`, Moyenne `16.80`, Mention *Très Bien*).
+3. **`releve_bac_info_sfax_2026.pdf`** — Relevé PDF numérique anonymisé (Lycée Hédi Chaker Sfax, Section **Sciences de l'Informatique**, 9 matières, coefficients officiels `3, 3, 3, 2, 1, 1, 1, 1, 1`, Moyenne `15.45`, Mention *Bien*).

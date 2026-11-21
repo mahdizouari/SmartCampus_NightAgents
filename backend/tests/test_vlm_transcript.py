@@ -18,7 +18,7 @@ from app.services.vlm_transcript_service import (
 SAMPLE_BAC_DIR = Path(__file__).parent / "data" / "sample_bac"
 MATH_PDF = SAMPLE_BAC_DIR / "releve_bac_math_sfax_2026.pdf"
 INFO_PDF = SAMPLE_BAC_DIR / "releve_bac_info_sfax_2026.pdf"
-MATH_PNG = SAMPLE_BAC_DIR / "releve_bac_math_sfax_2026.png"
+REAL_BAC_JPG = SAMPLE_BAC_DIR / "releve_bac_math_sfax_anonymized.jpg"
 
 
 def _student_headers() -> dict[str, str]:
@@ -111,34 +111,41 @@ def test_extract_real_sfax_bac_math_and_info_pdfs(
     assert bi["needs_manual_review"] is False
 
 
-def test_live_vlm_image_extraction_with_mocked_qwen_vl(
+def test_live_vlm_image_extraction_on_real_anonymized_tunisian_bac_jpg(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify multimodal image_url payload, JSON fence parsing, and Pydantic validation."""
+    """Verify Arabic Tunisian Bac extraction without printed coeffs (exact 172.66/15 = 11.51)."""
     monkeypatch.setattr(settings, "VLM_PROVIDER", "openai_compatible")
     monkeypatch.setattr(settings, "VLM_API_KEY", "test-vlm-key")
     monkeypatch.setattr(settings, "VLM_MODEL", "qwen/qwen3.8-27b")
 
+    # Mirrors exact official Arabic transcript (no coeff column, comma decimals, optional Spanish)
     vlm_json_payload = {
-        "bac_section": "Mathématiques",
-        "session_year": "2026",
+        "bac_section": "الرياضيات",
+        "session_year": "2021",
         "session_type": "Principale",
-        "student_name": "Foulen Ben Foulen",
-        "institution": "Lycée Pilote de Sfax",
-        "governorate": "Sfax",
-        "general_average": 17.0,
-        "mention": "Très Bien",
+        "student_name": None,
+        "institution": None,
+        "governorate": "صفاقس",
+        "general_average": "11,51",
+        "mention": "متوسط",
         "subjects": [
-            {"name": "Mathématiques", "grade": 18.0, "coefficient": 4.0, "confidence": 0.97},
-            {"name": "Sciences Physiques", "grade": 16.0, "coefficient": 4.0, "confidence": 0.95},
+            {"name": "رياضيات", "grade": "09,25", "confidence": 0.97},
+            {"name": "علوم فيزيائية", "grade": "11,50", "confidence": 0.96},
+            {"name": "علوم الحياة والأرض", "grade": "12,50", "confidence": 0.96},
+            {"name": "انقليزية", "grade": "13,50", "confidence": 0.97},
+            {"name": "فرنسية", "grade": "08,50", "confidence": 0.96},
+            {"name": "عربية", "grade": "10,75", "confidence": 0.96},
+            {"name": "فلسفة", "grade": "07,50", "confidence": 0.95},
+            {"name": "إعلامية", "grade": "17,00", "confidence": 0.98},
+            {"name": "تربية بدنية", "grade": "18,66", "confidence": 0.97},
+            {"name": "إسبانية", "grade": "11,25", "confidence": 0.95},
         ],
         "field_confidences": {
-            "bac_section": 0.98,
+            "bac_section": 0.99,
             "session_year": 0.99,
-            "general_average": 0.96,
-            "student_name": 0.94,
-            "institution": 0.95,
+            "general_average": 0.98,
         },
     }
     mock_resp = MagicMock()
@@ -149,7 +156,7 @@ def test_live_vlm_image_extraction_with_mocked_qwen_vl(
             {
                 "message": {
                     "role": "assistant",
-                    "content": f"```json\n{json.dumps(vlm_json_payload)}\n```",
+                    "content": f"```json\n{json.dumps(vlm_json_payload, ensure_ascii=False)}\n```",
                 }
             }
         ],
@@ -159,7 +166,7 @@ def test_live_vlm_image_extraction_with_mocked_qwen_vl(
         resp = client.post(
             "/api/v1/documents/extract-bac-transcript",
             headers=_student_headers(),
-            files={"file": (MATH_PNG.name, MATH_PNG.read_bytes(), "image/png")},
+            files={"file": (REAL_BAC_JPG.name, REAL_BAC_JPG.read_bytes(), "image/jpeg")},
         )
 
     assert resp.status_code == 200
@@ -167,18 +174,29 @@ def test_live_vlm_image_extraction_with_mocked_qwen_vl(
     assert body["extraction_source"] == "vlm_live"
     assert body["model_used"] == "qwen/qwen3.8-27b"
     assert body["bac_section"] == "Mathématiques"
-    assert body["general_average"] == pytest.approx(17.0)
-    assert body["calculated_average"] == pytest.approx(17.0)
-    assert body["min_confidence"] == pytest.approx(0.94)
+    assert body["mention"] == "Passable"
+    assert len(body["subjects"]) == 10
+    assert body["general_average"] == pytest.approx(11.51)
+    assert body["calculated_average"] == pytest.approx(11.51)
+    assert body["average_discrepancy"] == pytest.approx(0.0)
+    assert body["discrepancy_detected"] is False
+    assert body["min_confidence"] == pytest.approx(0.95)
     assert body["needs_manual_review"] is False
 
-    # Verify multimodal base64 data URI was sent to VLM
+    # Verify auto-inferred official coefficients and optional Spanish flag
+    by_name = {s["name"]: s for s in body["subjects"]}
+    assert by_name["Mathématiques"]["coefficient"] == pytest.approx(4.0)
+    assert by_name["Sciences Physiques"]["coefficient"] == pytest.approx(4.0)
+    assert by_name["Espagnol (Option)"]["is_optional"] is True
+    assert by_name["Espagnol (Option)"]["weighted_points"] == pytest.approx(1.25)
+
+    # Verify multimodal base64 JPEG data URI was sent to VLM
     sent_json = m_post.call_args.kwargs["json"]
     assert sent_json["model"] == "qwen/qwen3.8-27b"
     user_parts = sent_json["messages"][1]["content"]
     image_parts = [p for p in user_parts if p.get("type") == "image_url"]
     assert len(image_parts) == 1
-    assert image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert image_parts[0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
 def test_low_confidence_and_arithmetic_discrepancy_trigger_hitl_review(
@@ -215,7 +233,7 @@ def test_low_confidence_and_arithmetic_discrepancy_trigger_hitl_review(
         resp = client.post(
             "/api/v1/documents/extract-bac-transcript",
             headers=_student_headers(),
-            files={"file": (MATH_PNG.name, MATH_PNG.read_bytes(), "image/png")},
+            files={"file": (REAL_BAC_JPG.name, REAL_BAC_JPG.read_bytes(), "image/jpeg")},
         )
 
     assert resp.status_code == 200
@@ -242,7 +260,7 @@ def test_offline_raster_image_does_not_hallucinate_grades(
     resp = client.post(
         "/api/v1/documents/extract-bac-transcript",
         headers=_student_headers(),
-        files={"file": (MATH_PNG.name, MATH_PNG.read_bytes(), "image/png")},
+        files={"file": (REAL_BAC_JPG.name, REAL_BAC_JPG.read_bytes(), "image/jpeg")},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -281,7 +299,7 @@ def test_upload_validation_and_vlm_upstream_error_handling(
     r_big = client.post(
         "/api/v1/documents/extract-bac-transcript",
         headers=headers,
-        files={"file": ("big.png", MATH_PNG.read_bytes(), "image/png")},
+        files={"file": ("big.jpg", REAL_BAC_JPG.read_bytes(), "image/jpeg")},
     )
     assert r_big.status_code == 413
     monkeypatch.setattr(settings, "VLM_MAX_FILE_SIZE_BYTES", 10 * 1024 * 1024)
@@ -292,7 +310,7 @@ def test_upload_validation_and_vlm_upstream_error_handling(
         r_to = client.post(
             "/api/v1/documents/extract-bac-transcript",
             headers=headers,
-            files={"file": (MATH_PNG.name, MATH_PNG.read_bytes(), "image/png")},
+            files={"file": (REAL_BAC_JPG.name, REAL_BAC_JPG.read_bytes(), "image/jpeg")},
         )
     assert r_to.status_code == 504
 
@@ -304,7 +322,7 @@ def test_upload_validation_and_vlm_upstream_error_handling(
         r_bad = client.post(
             "/api/v1/documents/extract-bac-transcript",
             headers=headers,
-            files={"file": (MATH_PNG.name, MATH_PNG.read_bytes(), "image/png")},
+            files={"file": (REAL_BAC_JPG.name, REAL_BAC_JPG.read_bytes(), "image/jpeg")},
         )
     assert r_bad.status_code == 502
 
