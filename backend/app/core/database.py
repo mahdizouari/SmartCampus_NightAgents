@@ -16,34 +16,27 @@ logger = logging.getLogger(__name__)
 EXPECTED_SCHEMAS = ("core", "iit", "isb", "isa", "knowledge")
 
 # Create the async engine with connection pooling (SA-16)
-try:
-    engine = create_async_engine(
-        url=settings.async_database_url,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_MAX_OVERFLOW,
-        pool_timeout=settings.DB_POOL_TIMEOUT,
-        pool_recycle=settings.DB_POOL_RECYCLE,
-        pool_pre_ping=True,
-        echo=settings.DB_ECHO,
-    )
+engine = create_async_engine(
+    url=settings.async_database_url,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+    pool_pre_ping=True,
+    echo=settings.DB_ECHO,
+)
 
-    # Async session factory for dependency injection
-    async_session_factory = async_sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-    )
-except (ModuleNotFoundError, Exception) as _exc:
-    logger.warning("Database engine not initialized (%s). Offline mode enabled.", _exc)
-    engine = None
-    async_session_factory = None
+# Async session factory for dependency injection
+async_session_factory = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency that yields an async database session."""
-    if async_session_factory is None:
-        raise RuntimeError("Database engine not initialized (asyncpg driver missing).")
     async with async_session_factory() as session:
         try:
             yield session
@@ -53,10 +46,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def close_db_pool() -> None:
     """Closes all database connections in the pool on application shutdown."""
-    if engine is not None:
-        logger.info("Closing PostgreSQL connection pool...")
-        await engine.dispose()
-        logger.info("PostgreSQL connection pool closed.")
+    logger.info("Closing PostgreSQL connection pool...")
+    await engine.dispose()
+    logger.info("PostgreSQL connection pool closed.")
 
 
 async def check_db_health() -> dict:
@@ -64,27 +56,6 @@ async def check_db_health() -> dict:
     Verifies database connectivity, checks installed extensions (pgvector),
     validates presence of expected schemas, and reports connection pool status.
     """
-    if engine is None:
-        return {
-            "status": "disconnected",
-            "database": None,
-            "user": None,
-            "postgres_version": None,
-            "pgvector": {"installed": False, "version": None},
-            "schemas": {
-                "expected": list(EXPECTED_SCHEMAS),
-                "found": [],
-                "all_present": False,
-            },
-            "connection_pool": {
-                "size": 0,
-                "checkedin": 0,
-                "checkedout": 0,
-                "overflow": 0,
-            },
-            "error": "asyncpg driver unavailable or database unconfigured",
-        }
-
     pool = engine.pool
     pool_status = {
         "size": pool.size(),

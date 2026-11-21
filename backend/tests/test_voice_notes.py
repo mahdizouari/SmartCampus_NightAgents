@@ -81,21 +81,17 @@ def test_build_whisper_prompt_modes():
 
 
 # =============================================================================
-# 2. Endpoint Tests: /api/voice-notes/transcribe & /api/v1/voice-notes/transcribe
+# 2. Endpoint Tests: /api/v1/voice-notes/transcribe
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    "endpoint",
-    ["/api/voice-notes/transcribe", "/api/v1/voice-notes/transcribe"],
-)
-def test_transcribe_endpoint_dev_mock(client, endpoint):
+def test_transcribe_endpoint_dev_mock(client):
     """Test voice note transcription returns review card payload without calling LLM."""
     fake_audio = io.BytesIO(b"RIFF dummy wav audio data 1234567890")
     files = {"audio": ("sample.wav", fake_audio, "audio/wav")}
     data = {"mode": "auto", "campus_scope": "IIT"}
 
-    response = client.post(endpoint, files=files, data=data)
+    response = client.post("/api/v1/voice-notes/transcribe", files=files, data=data)
     assert response.status_code == 200
     res_data = response.json()
 
@@ -113,12 +109,12 @@ def test_transcribe_endpoint_dev_mock(client, endpoint):
 
 def test_transcribe_endpoint_invalid_file(client):
     files = {"audio": ("bad.txt", io.BytesIO(b"hello world"), "text/plain")}
-    response = client.post("/api/voice-notes/transcribe", files=files)
+    response = client.post("/api/v1/voice-notes/transcribe", files=files)
     assert response.status_code == 400
 
 
 def test_transcribe_with_mocked_openai_api(client, monkeypatch):
-    """Test OpenAI Whisper API integration when OPENAI_API_KEY is configured."""
+    """Test Whisper STT API integration when API key is configured."""
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key-12345")
 
     mock_resp = AsyncMock()
@@ -134,7 +130,7 @@ def test_transcribe_with_mocked_openai_api(client, monkeypatch):
         files = {"audio": ("recording.ogg", fake_audio, "audio/ogg")}
         data = {"mode": "derja", "campus_scope": "IIT"}
 
-        response = client.post("/api/voice-notes/transcribe", files=files, data=data)
+        response = client.post("/api/v1/voice-notes/transcribe", files=files, data=data)
         assert response.status_code == 200
         res_data = response.json()
 
@@ -165,21 +161,17 @@ def test_transcribe_openai_api_error_handling(client, monkeypatch):
         mock_post.return_value = mock_resp
 
         files = {"audio": ("recording.webm", io.BytesIO(b"webm bytes"), "audio/webm")}
-        response = client.post("/api/voice-notes/transcribe", files=files)
+        response = client.post("/api/v1/voice-notes/transcribe", files=files)
         assert response.status_code == 502
-        assert "Erreur de l'API OpenAI Whisper" in response.json()["detail"]
+        assert "Whisper" in response.json()["detail"]
 
 
 # =============================================================================
-# 3. Endpoint Tests: /api/voice-notes/process & /api/v1/voice-notes/process
+# 3. Endpoint Tests: /api/v1/voice-notes/process
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    "endpoint",
-    ["/api/voice-notes/process", "/api/v1/voice-notes/process"],
-)
-def test_process_endpoint_success(client, endpoint):
+def test_process_endpoint_success(client):
     """Test user-confirmed transcript is routed into SmartCampus agent/LLM pipeline."""
     payload = {
         "transcript_id": "vn-12345",
@@ -189,7 +181,7 @@ def test_process_endpoint_success(client, endpoint):
         "session_id": "session-test-01",
     }
 
-    response = client.post(endpoint, json=payload)
+    response = client.post("/api/v1/voice-notes/process", json=payload)
     assert response.status_code == 200
     res_data = response.json()
 
@@ -210,7 +202,7 @@ def test_process_endpoint_derja_arabizi(client):
         "campus_scope": "ISB",
         "mode": "derja",
     }
-    response = client.post("/api/voice-notes/process", json=payload)
+    response = client.post("/api/v1/voice-notes/process", json=payload)
     assert response.status_code == 200
     res_data = response.json()
     assert res_data["detectedDialect"] in {"Arabizi", "Tunisian_Derja"}
@@ -224,5 +216,34 @@ def test_process_endpoint_empty_transcript(client):
         "final_transcript": "   ",
         "campus_scope": "all",
     }
-    response = client.post("/api/voice-notes/process", json=payload)
+    response = client.post("/api/v1/voice-notes/process", json=payload)
     assert response.status_code == 422
+
+
+# =============================================================================
+# 4. Settings & Provider Config Alignment Tests
+# =============================================================================
+
+
+def test_whisper_settings_inheritance(monkeypatch):
+    """Whisper inherits LLM_BASE_URL (Groq) and LLM_API_KEY when STT settings are empty."""
+    monkeypatch.setattr(settings, "WHISPER_BASE_URL", "")
+    monkeypatch.setattr(settings, "WHISPER_API_KEY", "")
+    monkeypatch.setattr(settings, "STT_API_KEY", "")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setattr(settings, "LLM_API_KEY", "gsk_groq_shared_key_123")
+
+    assert settings.WHISPER_MODEL == "whisper-large-v3"
+    assert settings.effective_whisper_base_url == "https://api.groq.com/openai/v1"
+    assert settings.effective_whisper_api_key == "gsk_groq_shared_key_123"
+
+    # OpenAI override via .env
+    monkeypatch.setattr(settings, "WHISPER_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai-key-456")
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "whisper-1")
+
+    assert settings.WHISPER_MODEL == "whisper-1"
+    assert settings.effective_whisper_base_url == "https://api.openai.com/v1"
+    assert settings.effective_whisper_api_key == "sk-openai-key-456"
+

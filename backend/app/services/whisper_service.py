@@ -162,17 +162,17 @@ async def transcribe_audio(
     mode: VoiceNoteMode = "auto",
     campus_scope: CampusScope = "all",
 ) -> VoiceNoteTranscribeResponse:
-    """Execute audio transcription via OpenAI Whisper API with domain prompts and review step."""
-    file_bytes = await file.read()
+    """Execute audio transcription via Whisper API with domain prompts and review step."""
+    file_bytes = await file.read(MAX_AUDIO_SIZE_BYTES + 1)
     validate_audio_upload(file.filename, file.content_type, file_bytes)
 
     transcript_id = f"vn-{uuid4()}"
     prompt, language = build_whisper_prompt(mode, campus_scope)
 
-    api_key = settings.OPENAI_API_KEY.strip()
+    api_key = settings.effective_whisper_api_key
     if not api_key:
         logger.warning(
-            "OPENAI_API_KEY is not set. Using dev/test mock transcription for mode='%s'.",
+            "No STT/Whisper/LLM key set. Using mock transcript for mode='%s'.",
             mode,
         )
         mock_text = MOCK_VOICE_TRANSCRIPTS.get(mode, MOCK_VOICE_TRANSCRIPTS["auto"])
@@ -187,7 +187,7 @@ async def transcribe_audio(
             audio_filename=file.filename,
         )
 
-    # Prepare multipart request to OpenAI Whisper API
+    # Prepare multipart request to Whisper STT API
     mime_type = file.content_type or "audio/webm"
     filename = file.filename or "audio.webm"
     form_data: dict[str, str] = {
@@ -198,7 +198,7 @@ async def transcribe_audio(
     if language:
         form_data["language"] = language
 
-    whisper_url = f"{settings.WHISPER_BASE_URL.rstrip('/')}/audio/transcriptions"
+    whisper_url = f"{settings.effective_whisper_base_url}/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
 
     try:
@@ -210,23 +210,30 @@ async def transcribe_audio(
                 files={"file": (filename, file_bytes, mime_type)},
             )
     except httpx.TimeoutException as exc:
-        logger.error("OpenAI Whisper API timeout after %ss.", settings.WHISPER_TIMEOUT_SECONDS)
+        logger.error("Whisper STT API timeout after %ss.", settings.WHISPER_TIMEOUT_SECONDS)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Le service de transcription Whisper a expiré. Veuillez réessayer.",
         ) from exc
     except httpx.RequestError as exc:
-        logger.error("Network error while calling OpenAI Whisper: %s", exc)
+        logger.error("Network error while calling Whisper STT API: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Erreur de connexion réseau au service de transcription OpenAI Whisper.",
+            detail="Erreur de connexion réseau au service de transcription Whisper.",
         ) from exc
 
     if resp.status_code != 200:
-        logger.error("OpenAI Whisper API returned status %s: %s", resp.status_code, resp.text)
+        logger.error(
+            "Whisper STT API returned status %s: %s",
+            resp.status_code,
+            resp.text[:200],
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Erreur de l'API OpenAI Whisper ({resp.status_code}): {resp.text}",
+            detail=(
+                f"Erreur du service de transcription audio Whisper (code {resp.status_code}). "
+                "Veuillez réessayer ultérieurement."
+            ),
         )
 
     try:

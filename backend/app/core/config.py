@@ -82,10 +82,12 @@ class Settings(BaseSettings):
     VLM_MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB upload cap
     VLM_FALLBACK_TO_LOCAL_PARSER: bool = True
 
-    # OpenAI Whisper Audio Transcription (Voice Notes)
+    # Speech-to-Text / Whisper Audio Transcription (Bonus-3: Voice Notes)
     OPENAI_API_KEY: str = ""
-    WHISPER_MODEL: str = "whisper-1"
-    WHISPER_BASE_URL: str = "https://api.openai.com/v1"
+    STT_API_KEY: str = ""
+    WHISPER_API_KEY: str = ""
+    WHISPER_MODEL: str = "whisper-large-v3"
+    WHISPER_BASE_URL: str = ""  # Defaults to LLM_BASE_URL when empty
     WHISPER_TIMEOUT_SECONDS: float = 60.0
 
     @property
@@ -97,6 +99,21 @@ class Settings(BaseSettings):
     def effective_vlm_api_key(self) -> str:
         """Returns the VLM API key (inherits LLM_API_KEY if unset)."""
         return self.VLM_API_KEY.strip() or self.LLM_API_KEY.strip()
+
+    @property
+    def effective_whisper_base_url(self) -> str:
+        """Returns the Whisper STT base URL (inherits LLM_BASE_URL if unset)."""
+        return (self.WHISPER_BASE_URL.strip() or self.LLM_BASE_URL.strip()).rstrip("/")
+
+    @property
+    def effective_whisper_api_key(self) -> str:
+        """Returns the Whisper API key (checks STT_API_KEY / OPENAI_API_KEY, else LLM_API_KEY)."""
+        return (
+            self.WHISPER_API_KEY.strip()
+            or self.STT_API_KEY.strip()
+            or self.OPENAI_API_KEY.strip()
+            or self.LLM_API_KEY.strip()
+        )
 
     @property
     def effective_redis_url(self) -> str:

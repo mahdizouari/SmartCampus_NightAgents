@@ -42,17 +42,25 @@ _optional_bearer = HTTPBearer(auto_error=False)
     summary="Transcribe student voice note into text for review (Whisper STT)",
     description=(
         "Accepts a voice recording (webm, mp4, m4a, mp3, wav, ogg up to 25MB). "
-        "Transcribes it with OpenAI Whisper using domain context for IIT, ISB, and ISA "
+        "Transcribes it with OpenAI / Groq Whisper using domain context for IIT, ISB, and ISA "
         "(French, Derja, and Modern Standard Arabic). "
         "Returns the transcript for user review/correction without invoking the LLM."
     ),
 )
 async def post_transcribe_voice_note(
     audio: Annotated[UploadFile, File(description="Voice recording audio file")],
+    request: Request,
+    response: Response,
     mode: Annotated[VoiceNoteMode, Form(description="Language mode")] = "auto",
     campus_scope: Annotated[CampusScope, Form(description="Target school filter")] = "all",
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
 ) -> VoiceNoteTranscribeResponse:
     """Step 1: Transcribe the audio note with Whisper, returning editable transcript."""
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        decode_hs256_jwt(credentials.credentials, expected_type="access")
+    else:
+        await enforce_guest_chat_rate_limit(request, response)
+
     return await whisper_service.transcribe_audio(
         file=audio,
         mode=mode,
