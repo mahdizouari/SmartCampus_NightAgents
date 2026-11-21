@@ -1,0 +1,379 @@
+{
+  "dataset_total_cases": 70,
+  "timestamp_iso": "2026-11-21T22:28:29Z",
+  "models": [
+    {
+      "model_id": "openai/gpt-oss-120b",
+      "display_name": "GPT-OSS 120B",
+      "provider": "Groq",
+      "parameter_size": "120B",
+      "total_evaluated": 70,
+      "overall_score_100": 97.14,
+      "french_score_100": 99.67,
+      "fusha_score_100": 90,
+      "derja_arabic_score_100": 99.33,
+      "arabizi_score_100": 99.33,
+      "trap_score_100": 97.5,
+      "latency_p50_ms": 1727,
+      "latency_p95_ms": 1945,
+      "latency_mean_ms": 1705,
+      "throughput_tps": 160.0,
+      "cost_per_1k_queries_usd": 0.404,
+      "hitl_violations": 0,
+      "hallucination_trap_failures": 0,
+      "group_metrics": [
+        {
+          "language_group": "french",
+          "total_queries": 15,
+          "mean_score": 99.67,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 99.0,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1670
+        },
+        {
+          "language_group": "fusha",
+          "total_queries": 15,
+          "mean_score": 90,
+          "lang_alignment_pct": 66.7,
+          "factual_accuracy_pct": 95.2,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1717
+        },
+        {
+          "language_group": "derja_arabic",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1701
+        },
+        {
+          "language_group": "arabizi",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1705
+        },
+        {
+          "language_group": "traps",
+          "total_queries": 10,
+          "mean_score": 97.5,
+          "lang_alignment_pct": 90.0,
+          "factual_accuracy_pct": 100.0,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1748
+        }
+      ],
+      "rank": 1,
+      "selection_verdict": "VISION Supervisor (Selected SA-36)"
+    },
+    {
+      "model_id": "openai/gpt-oss-20b",
+      "display_name": "GPT-OSS 20B",
+      "provider": "Groq",
+      "parameter_size": "20B",
+      "total_evaluated": 70,
+      "overall_score_100": 97.14,
+      "french_score_100": 99.67,
+      "fusha_score_100": 90,
+      "derja_arabic_score_100": 99.33,
+      "arabizi_score_100": 99.33,
+      "trap_score_100": 97.5,
+      "latency_p50_ms": 888,
+      "latency_p95_ms": 1013,
+      "latency_mean_ms": 891,
+      "throughput_tps": 320.0,
+      "cost_per_1k_queries_usd": 0.0725,
+      "hitl_violations": 0,
+      "hallucination_trap_failures": 0,
+      "group_metrics": [
+        {
+          "language_group": "french",
+          "total_queries": 15,
+          "mean_score": 99.67,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 99.0,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 869
+        },
+        {
+          "language_group": "fusha",
+          "total_queries": 15,
+          "mean_score": 90,
+          "lang_alignment_pct": 66.7,
+          "factual_accuracy_pct": 95.2,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 882
+        },
+        {
+          "language_group": "derja_arabic",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 900
+        },
+        {
+          "language_group": "arabizi",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 879
+        },
+        {
+          "language_group": "traps",
+          "total_queries": 10,
+          "mean_score": 97.5,
+          "lang_alignment_pct": 90.0,
+          "factual_accuracy_pct": 100.0,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 944
+        }
+      ],
+      "rank": 2,
+      "selection_verdict": "JARVIS Scheduler (Selected SA-36)"
+    },
+    {
+      "model_id": "meta-llama/llama-3.3-70b-versatile",
+      "display_name": "Llama 3.3 70B Versatile",
+      "provider": "Groq",
+      "parameter_size": "70B",
+      "total_evaluated": 70,
+      "overall_score_100": 95.36,
+      "french_score_100": 99.67,
+      "fusha_score_100": 90,
+      "derja_arabic_score_100": 97.67,
+      "arabizi_score_100": 99.33,
+      "trap_score_100": 87.5,
+      "latency_p50_ms": 1294,
+      "latency_p95_ms": 1468,
+      "latency_mean_ms": 1299,
+      "throughput_tps": 280.0,
+      "cost_per_1k_queries_usd": 0.404,
+      "hitl_violations": 0,
+      "hallucination_trap_failures": 2,
+      "group_metrics": [
+        {
+          "language_group": "french",
+          "total_queries": 15,
+          "mean_score": 99.67,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 99.0,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1307
+        },
+        {
+          "language_group": "fusha",
+          "total_queries": 15,
+          "mean_score": 90,
+          "lang_alignment_pct": 66.7,
+          "factual_accuracy_pct": 95.2,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1309
+        },
+        {
+          "language_group": "derja_arabic",
+          "total_queries": 15,
+          "mean_score": 97.67,
+          "lang_alignment_pct": 93.3,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1300
+        },
+        {
+          "language_group": "arabizi",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1285
+        },
+        {
+          "language_group": "traps",
+          "total_queries": 10,
+          "mean_score": 87.5,
+          "lang_alignment_pct": 70.0,
+          "factual_accuracy_pct": 100.0,
+          "hallucination_resistance_pct": 80.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1291
+        }
+      ],
+      "rank": 3,
+      "selection_verdict": "Alternative / Fallback"
+    },
+    {
+      "model_id": "qwen/qwen-2.5-72b-instruct",
+      "display_name": "Qwen 2.5 72B Instruct",
+      "provider": "Groq / OpenRouter",
+      "parameter_size": "72B",
+      "total_evaluated": 70,
+      "overall_score_100": 95.36,
+      "french_score_100": 99.67,
+      "fusha_score_100": 90,
+      "derja_arabic_score_100": 99.33,
+      "arabizi_score_100": 99.33,
+      "trap_score_100": 85,
+      "latency_p50_ms": 2783,
+      "latency_p95_ms": 3144,
+      "latency_mean_ms": 2792,
+      "throughput_tps": 140.0,
+      "cost_per_1k_queries_usd": 0.24,
+      "hitl_violations": 0,
+      "hallucination_trap_failures": 2,
+      "group_metrics": [
+        {
+          "language_group": "french",
+          "total_queries": 15,
+          "mean_score": 99.67,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 99.0,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 2765
+        },
+        {
+          "language_group": "fusha",
+          "total_queries": 15,
+          "mean_score": 90,
+          "lang_alignment_pct": 66.7,
+          "factual_accuracy_pct": 95.2,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 2808
+        },
+        {
+          "language_group": "derja_arabic",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 2850
+        },
+        {
+          "language_group": "arabizi",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 2709
+        },
+        {
+          "language_group": "traps",
+          "total_queries": 10,
+          "mean_score": 85,
+          "lang_alignment_pct": 60.0,
+          "factual_accuracy_pct": 100.0,
+          "hallucination_resistance_pct": 80.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 2845
+        }
+      ],
+      "rank": 4,
+      "selection_verdict": "Alternative / Backup"
+    },
+    {
+      "model_id": "mistralai/mixtral-8x7b-32768",
+      "display_name": "Mixtral 8x7B",
+      "provider": "Groq",
+      "parameter_size": "46.7B (MoE)",
+      "total_evaluated": 70,
+      "overall_score_100": 95,
+      "french_score_100": 99.67,
+      "fusha_score_100": 90,
+      "derja_arabic_score_100": 99.33,
+      "arabizi_score_100": 99.33,
+      "trap_score_100": 82.5,
+      "latency_p50_ms": 1466,
+      "latency_p95_ms": 1676,
+      "latency_mean_ms": 1459,
+      "throughput_tps": 250.0,
+      "cost_per_1k_queries_usd": 0.144,
+      "hitl_violations": 0,
+      "hallucination_trap_failures": 3,
+      "group_metrics": [
+        {
+          "language_group": "french",
+          "total_queries": 15,
+          "mean_score": 99.67,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 99.0,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1443
+        },
+        {
+          "language_group": "fusha",
+          "total_queries": 15,
+          "mean_score": 90,
+          "lang_alignment_pct": 66.7,
+          "factual_accuracy_pct": 95.2,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1413
+        },
+        {
+          "language_group": "derja_arabic",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1494
+        },
+        {
+          "language_group": "arabizi",
+          "total_queries": 15,
+          "mean_score": 99.33,
+          "lang_alignment_pct": 100.0,
+          "factual_accuracy_pct": 98.1,
+          "hallucination_resistance_pct": 100.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1486
+        },
+        {
+          "language_group": "traps",
+          "total_queries": 10,
+          "mean_score": 82.5,
+          "lang_alignment_pct": 60.0,
+          "factual_accuracy_pct": 100.0,
+          "hallucination_resistance_pct": 70.0,
+          "hitl_compliance_pct": 100.0,
+          "latency_mean_ms": 1460
+        }
+      ],
+      "rank": 5,
+      "selection_verdict": "Alternative / Fallback"
+    }
+  ],
+  "recommended_vision_model": "openai/gpt-oss-120b",
+  "recommended_jarvis_model": "openai/gpt-oss-20b",
+  "markdown_comparison_table": "| Modèle Candidat | Rôle Attribué | Note Globale (/100) | FR (15) | Fusha (15) | Derja (15) | Arabizi (15) | Pièges (10) | Latence p50 | Latence p95 | Coût / 1k | Décision SA-36 |\n| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |\n| `openai/gpt-oss-120b` (GPT-OSS 120B) | VISION Supervisor | **97.1** | 99.7 | 90.0 | 99.3 | 99.3 | 97.5 | 1.73 s | 1.95 s | $0.4040 | **Retenu (VISION)** |\n| `openai/gpt-oss-20b` (GPT-OSS 20B) | JARVIS Scheduler | **97.1** | 99.7 | 90.0 | 99.3 | 99.3 | 97.5 | 0.89 s | 1.01 s | $0.0725 | **Retenu (JARVIS)** |\n| `meta-llama/llama-3.3-70b-versatile` (Llama 3.3 70B Versatile) | Alternative / Fallback | **95.4** | 99.7 | 90.0 | 97.7 | 99.3 | 87.5 | 1.29 s | 1.47 s | $0.4040 | Écarté / Secondaire |\n| `qwen/qwen-2.5-72b-instruct` (Qwen 2.5 72B Instruct) | Alternative / Backup | **95.4** | 99.7 | 90.0 | 99.3 | 99.3 | 85.0 | 2.78 s | 3.14 s | $0.2400 | Écarté / Secondaire |\n| `mistralai/mixtral-8x7b-32768` (Mixtral 8x7B) | Alternative / Fallback | **95.0** | 99.7 | 90.0 | 99.3 | 99.3 | 82.5 | 1.47 s | 1.68 s | $0.1440 | Écarté / Secondaire |"
+}
