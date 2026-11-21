@@ -28,6 +28,13 @@ from app.schemas.transcript import (
     TranscriptProfileSyncResponse,
     VlmHealthResponse,
 )
+from app.schemas.voice_note import (
+    CampusScope,
+    VoiceNoteMode,
+    VoiceNoteProcessRequest,
+    VoiceNoteProcessResponse,
+    VoiceNoteTranscribeResponse,
+)
 
 __all__ = [
     "HealthResponse",
@@ -52,5 +59,9 @@ __all__ = [
     "TranscriptProfileSyncRequest",
     "TranscriptProfileSyncResponse",
     "VlmHealthResponse",
+    "VoiceNoteMode",
+    "CampusScope",
+    "VoiceNoteTranscribeResponse",
+    "VoiceNoteProcessRequest",
+    "VoiceNoteProcessResponse",
 ]
-
