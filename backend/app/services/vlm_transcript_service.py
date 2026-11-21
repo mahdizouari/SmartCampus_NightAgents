@@ -44,13 +44,15 @@ SUPPORTED_IMAGE_MIME_TYPES: tuple[str, ...] = ("image/png", "image/jpeg", "image
 SUPPORTED_MIME_TYPES: tuple[str, ...] = (*SUPPORTED_IMAGE_MIME_TYPES, "application/pdf")
 
 DISCREPANCY_TOLERANCE = 0.25
-MAX_VLM_IMAGE_DIMENSION = 1600
+MAX_VLM_IMAGE_DIMENSION = 1280
 
 # Official Tunisian Ministère de l'Éducation Baccalaureate section coefficients
 TUNISIAN_BAC_COEFFICIENTS: dict[BacSection, dict[str, float]] = {
     "Mathématiques": {
         "mathématiques": 4.0,
         "sciences physiques": 4.0,
+        "physique": 4.0,
+        "physique-chimie": 4.0,
         "sciences de la vie et de la terre": 1.0,
         "svt": 1.0,
         "français": 1.0,
@@ -64,6 +66,8 @@ TUNISIAN_BAC_COEFFICIENTS: dict[BacSection, dict[str, float]] = {
         "sciences de la vie et de la terre": 4.0,
         "svt": 4.0,
         "sciences physiques": 4.0,
+        "physique": 4.0,
+        "physique-chimie": 4.0,
         "mathématiques": 3.0,
         "français": 1.0,
         "anglais": 1.0,
@@ -78,6 +82,8 @@ TUNISIAN_BAC_COEFFICIENTS: dict[BacSection, dict[str, float]] = {
         "sciences de la technologie": 3.0,
         "sti": 3.0,
         "sciences physiques": 2.0,
+        "physique": 2.0,
+        "physique-chimie": 2.0,
         "français": 1.0,
         "anglais": 1.0,
         "philosophie": 1.0,
@@ -88,6 +94,8 @@ TUNISIAN_BAC_COEFFICIENTS: dict[BacSection, dict[str, float]] = {
         "technologie": 3.0,
         "mathématiques": 3.0,
         "sciences physiques": 3.0,
+        "physique": 3.0,
+        "physique-chimie": 3.0,
         "tp technologie": 1.0,
         "français": 1.0,
         "anglais": 1.0,
@@ -190,12 +198,25 @@ VLM_TRANSCRIPT_SYSTEM_PROMPT = (
     "« بيان أعداد امتحان البكالوريا - الجمهورية التونسية، وزارة التربية ») :\n"
     "   - Document en arabe (droite à gauche) avec 3 colonnes : المواد (Matières), الدورة الرئيسية "
     "(Session Principale) et دورة المراقبة (Session de Contrôle, affichant '*****' si admis).\n"
+    "   - Lis impérativement la ligne « الشعبة : ... » (Section) en utilisant la table exacte :\n"
+    "     الرياضيات = Mathématiques | العلوم التجريبية = Sciences Expérimentales | "
+    "العلوم التقنية = Sciences Techniques | علوم الإعلامية = Sciences de l'Informatique | "
+    "الاقتصاد والتصرف = Économie et Gestion | الآداب = Lettres | الرياضة = Sport.\n"
+    "   - Traduis fidèlement les matières arabes (ne confonds jamais انقليزية et إعلامية) :\n"
+    "     رياضيات = Mathématiques | علوم فيزيائية = Sciences Physiques | "
+    "علوم الحياة والأرض = Sciences de la Vie et de la Terre | انقليزية = Anglais | "
+    "فرنسية = Français | عربية = Arabe | فلسفة = Philosophie | إعلامية = Informatique | "
+    "تربية بدنية = Éducation Physique | إسبانية = Espagnol (Option).\n"
+    "   - Gouvernorat : lis « مكانها : ... » (ex. صفاقس = Sfax) ; ne prends pas « تونس في » "
+    "(ville d'émission du Ministère).\n"
     "   - La colonne coefficient n'est pas imprimée : omets `coefficient` (ou mets null) pour que "
     "le backend applique les coefficients officiels du Ministère de l'Éducation selon la section.\n"
     "   - Notes à virgule (ex. '09,25' -> 9.25, '11,51' -> 11.51) ; langues facultatives "
     "(إسبانية, ألمانية, إيطالية, صينية, روسية, موسيقى, تربية تشكيلية) -> `is_optional: true`.\n"
     "   - Mentions arabes : متوسط = Passable, قريب من الحسن = Assez Bien, حسن = Bien, "
     "حسن جدا = Très Bien.\n"
+    "   - Si une donnée personnelle (ex. الإسم واللقب, CIN, signature) est masquée/noircie "
+    "(anonymisée INPDP), retourne strictement null pour `student_name` sans jamais deviner.\n"
     "B. Relevé Universitaire / Licence Passerelle (`document_type: \"RELEVE_UNIVERSITAIRE\"`, "
     "`diploma_stage: \"L1\"|\"L2\"|\"L3\"|\"PREPA_1\"|\"PREPA_2\"|\"M1\"`, ex. Université de Sfax "
     "/ ISIMS pour passerelle Bac+3 vers Cycle Ingénieur IIT) :\n"
@@ -377,6 +398,8 @@ def resolve_tunisian_subject_and_coefficient(
     """Map Arabic/French subject name to canonical label, official coeff, and optional flag."""
     stripped = raw_name.strip()
     canonical_name = ARABIC_TO_CANONICAL_SUBJECT.get(stripped, stripped)
+    if _ascii_fold(canonical_name) in {"physique", "physique-chimie", "physique chimie"}:
+        canonical_name = "Sciences Physiques"
     folded = _ascii_fold(canonical_name)
     raw_folded = _ascii_fold(stripped)
 
