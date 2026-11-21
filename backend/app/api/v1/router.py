@@ -1,6 +1,14 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, catalog, catalog_management, chat, documents, health
+from app.api.v1.endpoints import (
+    auth,
+    catalog,
+    catalog_management,
+    chat,
+    documents,
+    health,
+    voice_notes,
+)
 
 api_router = APIRouter()
 
@@ -19,6 +27,13 @@ api_router.include_router(
     chat.router,
     prefix="/chat",
     tags=["Chat & LLM"],
+)
+
+# Include Whisper voice-note transcription and review endpoints under /api/v1/voice-notes
+api_router.include_router(
+    voice_notes.router,
+    prefix="/voice-notes",
+    tags=["Voice Notes & Whisper"],
 )
 
 # Include public catalog consultation endpoints under /api/v1/catalog (SA-21)
