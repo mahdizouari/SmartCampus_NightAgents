@@ -103,3 +103,4 @@ En conclusion de ce benchmark empirique, l'allocation des modèles pour le socle
 * **Script CLI d'exécution :** `backend/scripts/benchmark_llm_models.py`
 * **Résultats machine-readable :** `backend/tests/data/llm_benchmark_results.json`
 * **Tests unitaires automatisés :** `backend/tests/test_llm_benchmark.py` (validé par `pytest`)
+

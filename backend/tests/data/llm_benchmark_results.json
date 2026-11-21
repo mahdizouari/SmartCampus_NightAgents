@@ -1,6 +1,6 @@
 {
   "dataset_total_cases": 70,
-  "timestamp_iso": "2026-11-21T22:28:29Z",
+  "timestamp_iso": "2026-11-21T22:38:30Z",
   "models": [
     {
       "model_id": "openai/gpt-oss-120b",
@@ -14,9 +14,9 @@
       "derja_arabic_score_100": 99.33,
       "arabizi_score_100": 99.33,
       "trap_score_100": 97.5,
-      "latency_p50_ms": 1727,
-      "latency_p95_ms": 1945,
-      "latency_mean_ms": 1705,
+      "latency_p50_ms": 1716,
+      "latency_p95_ms": 1955,
+      "latency_mean_ms": 1703,
       "throughput_tps": 160.0,
       "cost_per_1k_queries_usd": 0.404,
       "hitl_violations": 0,
@@ -30,7 +30,7 @@
           "factual_accuracy_pct": 99.0,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1670
+          "latency_mean_ms": 1656
         },
         {
           "language_group": "fusha",
@@ -40,7 +40,7 @@
           "factual_accuracy_pct": 95.2,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1717
+          "latency_mean_ms": 1750
         },
         {
           "language_group": "derja_arabic",
@@ -50,7 +50,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1701
+          "latency_mean_ms": 1683
         },
         {
           "language_group": "arabizi",
@@ -60,7 +60,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1705
+          "latency_mean_ms": 1706
         },
         {
           "language_group": "traps",
@@ -70,7 +70,7 @@
           "factual_accuracy_pct": 100.0,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1748
+          "latency_mean_ms": 1728
         }
       ],
       "rank": 1,
@@ -88,9 +88,9 @@
       "derja_arabic_score_100": 99.33,
       "arabizi_score_100": 99.33,
       "trap_score_100": 97.5,
-      "latency_p50_ms": 888,
-      "latency_p95_ms": 1013,
-      "latency_mean_ms": 891,
+      "latency_p50_ms": 877,
+      "latency_p95_ms": 1003,
+      "latency_mean_ms": 885,
       "throughput_tps": 320.0,
       "cost_per_1k_queries_usd": 0.0725,
       "hitl_violations": 0,
@@ -104,7 +104,7 @@
           "factual_accuracy_pct": 99.0,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 869
+          "latency_mean_ms": 875
         },
         {
           "language_group": "fusha",
@@ -114,7 +114,7 @@
           "factual_accuracy_pct": 95.2,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 882
+          "latency_mean_ms": 875
         },
         {
           "language_group": "derja_arabic",
@@ -124,7 +124,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 900
+          "latency_mean_ms": 866
         },
         {
           "language_group": "arabizi",
@@ -134,7 +134,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 879
+          "latency_mean_ms": 889
         },
         {
           "language_group": "traps",
@@ -144,7 +144,7 @@
           "factual_accuracy_pct": 100.0,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 944
+          "latency_mean_ms": 936
         }
       ],
       "rank": 2,
@@ -162,9 +162,9 @@
       "derja_arabic_score_100": 97.67,
       "arabizi_score_100": 99.33,
       "trap_score_100": 87.5,
-      "latency_p50_ms": 1294,
-      "latency_p95_ms": 1468,
-      "latency_mean_ms": 1299,
+      "latency_p50_ms": 1302,
+      "latency_p95_ms": 1493,
+      "latency_mean_ms": 1295,
       "throughput_tps": 280.0,
       "cost_per_1k_queries_usd": 0.404,
       "hitl_violations": 0,
@@ -178,7 +178,7 @@
           "factual_accuracy_pct": 99.0,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1307
+          "latency_mean_ms": 1321
         },
         {
           "language_group": "fusha",
@@ -188,7 +188,7 @@
           "factual_accuracy_pct": 95.2,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1309
+          "latency_mean_ms": 1280
         },
         {
           "language_group": "derja_arabic",
@@ -198,7 +198,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1300
+          "latency_mean_ms": 1293
         },
         {
           "language_group": "arabizi",
@@ -208,7 +208,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1285
+          "latency_mean_ms": 1308
         },
         {
           "language_group": "traps",
@@ -218,7 +218,7 @@
           "factual_accuracy_pct": 100.0,
           "hallucination_resistance_pct": 80.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1291
+          "latency_mean_ms": 1263
         }
       ],
       "rank": 3,
@@ -236,9 +236,9 @@
       "derja_arabic_score_100": 99.33,
       "arabizi_score_100": 99.33,
       "trap_score_100": 85,
-      "latency_p50_ms": 2783,
-      "latency_p95_ms": 3144,
-      "latency_mean_ms": 2792,
+      "latency_p50_ms": 2741,
+      "latency_p95_ms": 3176,
+      "latency_mean_ms": 2791,
       "throughput_tps": 140.0,
       "cost_per_1k_queries_usd": 0.24,
       "hitl_violations": 0,
@@ -252,7 +252,7 @@
           "factual_accuracy_pct": 99.0,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 2765
+          "latency_mean_ms": 2755
         },
         {
           "language_group": "fusha",
@@ -262,7 +262,7 @@
           "factual_accuracy_pct": 95.2,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 2808
+          "latency_mean_ms": 2813
         },
         {
           "language_group": "derja_arabic",
@@ -272,7 +272,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 2850
+          "latency_mean_ms": 2848
         },
         {
           "language_group": "arabizi",
@@ -282,7 +282,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 2709
+          "latency_mean_ms": 2727
         },
         {
           "language_group": "traps",
@@ -292,7 +292,7 @@
           "factual_accuracy_pct": 100.0,
           "hallucination_resistance_pct": 80.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 2845
+          "latency_mean_ms": 2825
         }
       ],
       "rank": 4,
@@ -310,9 +310,9 @@
       "derja_arabic_score_100": 99.33,
       "arabizi_score_100": 99.33,
       "trap_score_100": 82.5,
-      "latency_p50_ms": 1466,
-      "latency_p95_ms": 1676,
-      "latency_mean_ms": 1459,
+      "latency_p50_ms": 1470,
+      "latency_p95_ms": 1686,
+      "latency_mean_ms": 1463,
       "throughput_tps": 250.0,
       "cost_per_1k_queries_usd": 0.144,
       "hitl_violations": 0,
@@ -336,7 +336,7 @@
           "factual_accuracy_pct": 95.2,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1413
+          "latency_mean_ms": 1408
         },
         {
           "language_group": "derja_arabic",
@@ -346,7 +346,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1494
+          "latency_mean_ms": 1492
         },
         {
           "language_group": "arabizi",
@@ -356,7 +356,7 @@
           "factual_accuracy_pct": 98.1,
           "hallucination_resistance_pct": 100.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1486
+          "latency_mean_ms": 1494
         },
         {
           "language_group": "traps",
@@ -366,7 +366,7 @@
           "factual_accuracy_pct": 100.0,
           "hallucination_resistance_pct": 70.0,
           "hitl_compliance_pct": 100.0,
-          "latency_mean_ms": 1460
+          "latency_mean_ms": 1485
         }
       ],
       "rank": 5,
@@ -375,5 +375,5 @@
   ],
   "recommended_vision_model": "openai/gpt-oss-120b",
   "recommended_jarvis_model": "openai/gpt-oss-20b",
-  "markdown_comparison_table": "| Modèle Candidat | Rôle Attribué | Note Globale (/100) | FR (15) | Fusha (15) | Derja (15) | Arabizi (15) | Pièges (10) | Latence p50 | Latence p95 | Coût / 1k | Décision SA-36 |\n| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |\n| `openai/gpt-oss-120b` (GPT-OSS 120B) | VISION Supervisor | **97.1** | 99.7 | 90.0 | 99.3 | 99.3 | 97.5 | 1.73 s | 1.95 s | $0.4040 | **Retenu (VISION)** |\n| `openai/gpt-oss-20b` (GPT-OSS 20B) | JARVIS Scheduler | **97.1** | 99.7 | 90.0 | 99.3 | 99.3 | 97.5 | 0.89 s | 1.01 s | $0.0725 | **Retenu (JARVIS)** |\n| `meta-llama/llama-3.3-70b-versatile` (Llama 3.3 70B Versatile) | Alternative / Fallback | **95.4** | 99.7 | 90.0 | 97.7 | 99.3 | 87.5 | 1.29 s | 1.47 s | $0.4040 | Écarté / Secondaire |\n| `qwen/qwen-2.5-72b-instruct` (Qwen 2.5 72B Instruct) | Alternative / Backup | **95.4** | 99.7 | 90.0 | 99.3 | 99.3 | 85.0 | 2.78 s | 3.14 s | $0.2400 | Écarté / Secondaire |\n| `mistralai/mixtral-8x7b-32768` (Mixtral 8x7B) | Alternative / Fallback | **95.0** | 99.7 | 90.0 | 99.3 | 99.3 | 82.5 | 1.47 s | 1.68 s | $0.1440 | Écarté / Secondaire |"
+  "markdown_comparison_table": "| Modèle Candidat | Rôle Attribué | Note Globale (/100) | FR (15) | Fusha (15) | Derja (15) | Arabizi (15) | Pièges (10) | Latence p50 | Latence p95 | Coût / 1k | Décision SA-36 |\n| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |\n| `openai/gpt-oss-120b` (GPT-OSS 120B) | VISION Supervisor | **97.1** | 99.7 | 90.0 | 99.3 | 99.3 | 97.5 | 1.72 s | 1.96 s | $0.4040 | **Retenu (VISION)** |\n| `openai/gpt-oss-20b` (GPT-OSS 20B) | JARVIS Scheduler | **97.1** | 99.7 | 90.0 | 99.3 | 99.3 | 97.5 | 0.88 s | 1.00 s | $0.0725 | **Retenu (JARVIS)** |\n| `meta-llama/llama-3.3-70b-versatile` (Llama 3.3 70B Versatile) | Alternative / Fallback | **95.4** | 99.7 | 90.0 | 97.7 | 99.3 | 87.5 | 1.30 s | 1.49 s | $0.4040 | Écarté / Secondaire |\n| `qwen/qwen-2.5-72b-instruct` (Qwen 2.5 72B Instruct) | Alternative / Backup | **95.4** | 99.7 | 90.0 | 99.3 | 99.3 | 85.0 | 2.74 s | 3.18 s | $0.2400 | Écarté / Secondaire |\n| `mistralai/mixtral-8x7b-32768` (Mixtral 8x7B) | Alternative / Fallback | **95.0** | 99.7 | 90.0 | 99.3 | 99.3 | 82.5 | 1.47 s | 1.69 s | $0.1440 | Écarté / Secondaire |"
 }

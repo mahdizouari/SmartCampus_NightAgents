@@ -105,3 +105,4 @@ def test_exported_benchmark_results_json():
         assert data["dataset_total_cases"] == 70
         assert data["recommended_vision_model"] == "openai/gpt-oss-120b"
         assert len(data["models"]) >= 5
+
