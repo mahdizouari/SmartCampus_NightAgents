@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: float = 30.0
     LLM_FALLBACK_TO_MOCK: bool = True
 
+    # OpenAI Whisper Audio Transcription (Voice Notes)
+    OPENAI_API_KEY: str = ""
+    WHISPER_MODEL: str = "whisper-1"
+    WHISPER_BASE_URL: str = "https://api.openai.com/v1"
+    WHISPER_TIMEOUT_SECONDS: float = 60.0
+
     @property
     def effective_redis_url(self) -> str:
         """Returns the Redis connection URL."""

@@ -16,6 +16,13 @@ from app.schemas.session import (
     SessionMergeRequest,
     SessionMergeResponse,
 )
+from app.schemas.voice_note import (
+    CampusScope,
+    VoiceNoteMode,
+    VoiceNoteProcessRequest,
+    VoiceNoteProcessResponse,
+    VoiceNoteTranscribeResponse,
+)
 
 __all__ = [
     "HealthResponse",
@@ -30,5 +37,10 @@ __all__ = [
     "GuestSessionDeleteResponse",
     "SessionMergeRequest",
     "SessionMergeResponse",
+    "VoiceNoteMode",
+    "CampusScope",
+    "VoiceNoteTranscribeResponse",
+    "VoiceNoteProcessRequest",
+    "VoiceNoteProcessResponse",
 ]
 

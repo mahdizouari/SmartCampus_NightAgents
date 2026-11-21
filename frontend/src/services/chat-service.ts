@@ -66,7 +66,7 @@ class ChatService {
     }
   }
 
-  private generateFallbackResponse(userText: string): ChatMessage {
+  public generateFallbackResponse(userText: string): ChatMessage {
     const lower = userText.toLowerCase();
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 

@@ -9,6 +9,7 @@ from app.api.v1.endpoints.health import (
     get_health,
     get_redis_health,
 )
+from app.api.v1.endpoints.voice_notes import router as voice_notes_router
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import close_db_pool
@@ -87,6 +88,13 @@ app.add_api_route(
 
 # Include v1 API routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Also expose voice notes directly under /api/voice-notes for direct contract compliance
+app.include_router(
+    voice_notes_router,
+    prefix="/api/voice-notes",
+    tags=["Voice Notes & Whisper"],
+)
 
 
 @app.get("/", tags=["Root"])

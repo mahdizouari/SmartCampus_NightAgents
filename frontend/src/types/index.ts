@@ -139,3 +139,42 @@ export interface AcademicProgram {
   officialSource: string;
 }
 
+/**
+ * Voice Note & Whisper Transcription Types
+ */
+export type VoiceNoteMode = 'auto' | 'derja' | 'ar' | 'fr';
+export type CampusScope = 'all' | 'IIT' | 'ISB' | 'ISA';
+
+export interface VoiceNoteTranscribeResponse {
+  transcript_id: string;
+  transcript: string;
+  mode: VoiceNoteMode;
+  campus_scope: CampusScope;
+  requires_review: boolean;
+  audio_filename?: string;
+  duration_seconds?: number;
+}
+
+export interface VoiceNoteProcessRequest {
+  transcript_id: string;
+  final_transcript: string;
+  campus_scope?: CampusScope;
+  mode?: VoiceNoteMode;
+  session_id?: string;
+}
+
+export interface VoiceNoteProcessResponse {
+  transcript_id: string;
+  campus_scope: CampusScope;
+  mode: VoiceNoteMode;
+  final_transcript: string;
+  sessionId: string;
+  reply: string;
+  subAgent: '1.1_Listener' | '1.2_Librarian' | '1.3_Gatekeeper' | '1.4_Reader' | '1.5_Advisor' | '1.6_Registrar';
+  detectedDialect?: 'French' | 'Tunisian_Derja' | 'Arabizi';
+  recommendations?: TrackRecommendation[];
+  actionPrompt?: 'AUTH_REQUIRED' | 'UPLOAD_RELEVE' | 'CONFIRM_SHORTLIST' | 'BOOK_SLOT';
+  citations?: SourceCitation[];
+}
+
+
