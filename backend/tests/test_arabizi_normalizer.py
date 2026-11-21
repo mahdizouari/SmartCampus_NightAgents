@@ -6,6 +6,7 @@ Verifies:
 3. Lexicon normalization of common Derja question stems, verbs, and conjunctions.
 4. Full sentence Arabizi -> structured French normalization.
 5. Integration as a pre-processing step before LLM call (_build_messages).
+6. Regression tests: pure French (merci, bourse, prepa, L3, 3ème) and multi-word 'men ghir'.
 """
 
 from app.schemas.chat import ChatMessageRequest
@@ -130,3 +131,45 @@ def test_preprocessing_integration_before_llm_call():
     # Ensure user message is kept original
     user_msg = messages[-1]["content"]
     assert user_msg == "3aslema, 9adech les frais mte3 cycle ingénieur fi IIT ?"
+
+
+def test_regression_pure_french_words_not_classified_as_arabizi():
+    """Verify that pure French sentences (merci, bourse, prepa, releve) do not trigger Arabizi."""
+    msg1 = "Bonjour, merci ! Y a-t-il une bourse pour les étudiants ?"
+    assert is_arabizi_text(msg1) is False
+    res1 = normalize_arabizi_to_french(msg1)
+    assert res1.is_arabizi is False
+    assert res1.normalized_french == msg1
+
+    msg2 = "Je veux envoyer mon releve de notes pour la prepa"
+    assert is_arabizi_text(msg2) is False
+    res2 = normalize_arabizi_to_french(msg2)
+    assert res2.is_arabizi is False
+
+
+def test_regression_academic_levels_and_ordinals_protected():
+    """Verify L1-L3, M1-M2, and French ordinals (3ème, 2ème) are untouched and not Arabizi."""
+    msg = "Je suis en L3, je veux entrer en 3ème année de cycle ingénieur"
+    assert is_arabizi_text(msg) is False
+    res = normalize_arabizi_to_french(msg)
+    assert res.is_arabizi is False
+    assert "L3" in res.normalized_french
+    assert "3ème" in res.normalized_french
+    assert "Lع" not in res.transliterated_arabic
+    assert "عème" not in res.transliterated_arabic
+
+    # Additional ordinals and levels
+    assert is_arabizi_text("Candidature en M1 après une 1ère et 2ème année") is False
+
+
+def test_regression_multi_word_men_ghir_normalized_to_sans():
+    """Verify multi-word expression 'men ghir' normalizes to 'sans' instead of 'de sans'."""
+    sentence = "najem nod5el men ghir concours ?"
+    assert is_arabizi_text(sentence) is True
+    res = normalize_arabizi_to_french(sentence)
+    assert res.is_arabizi is True
+    assert "sans" in res.normalized_french
+    assert "de sans" not in res.normalized_french
+    assert "men ghir" in res.detected_tokens
+    assert "puis-je" in res.normalized_french
+    assert "intégrer" in res.normalized_french
