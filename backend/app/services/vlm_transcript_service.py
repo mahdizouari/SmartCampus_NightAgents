@@ -28,11 +28,13 @@ from pypdf import PdfReader
 from app.core.config import settings
 from app.schemas.transcript import (
     BacSection,
-    BacSessionType,
     BacTranscriptExtractionResult,
+    DiplomaStage,
+    DocumentType,
     ExtractedSubjectGrade,
     ExtractionSource,
     TranscriptFieldConfidence,
+    TranscriptSessionType,
     VlmHealthResponse,
 )
 
@@ -181,38 +183,47 @@ ARABIC_MENTION_MAP: dict[str, str] = {
 }
 
 VLM_TRANSCRIPT_SYSTEM_PROMPT = (
-    "Tu es VISION 1.4_Reader, le module d'extraction OCR/VLM de relevés de notes du "
-    "Baccalauréat Tunisien (بيان أعداد امتحان البكالوريا - الجمهورية التونسية، وزارة التربية) "
-    "pour SmartCampus AI (IIT / ISB / ISA).\n\n"
-    "SPÉCIFICITÉS DES RELEVÉS OFFICIELS TUNISIENS :\n"
-    "- Les relevés officiels du Bac tunisien sont généralement en arabe (droite à gauche) avec "
-    "3 colonnes : المواد (Matières), الدورة الرئيسية (Session Principale) et دورة المراقبة "
-    "(Session de Contrôle, affichant '*****' si admis en principale).\n"
-    "- La colonne coefficient n'est pas imprimée sur le relevé officiel ; tu peux omettre "
-    "`coefficient` (ou mettre null) si absent : le backend applique automatiquement les "
-    "coefficients officiels du Ministère de l'Éducation selon la section.\n"
-    "- Les notes utilisent souvent une virgule décimale (ex. '09,25' -> 9.25, '11,51' -> 11.51).\n"
-    "- Les langues facultatives (إسبانية, ألمانية, إيطالية, صينية, روسية, موسيقى, تربية تشكيلية) "
-    "doivent avoir `is_optional: true`.\n"
-    "- Mentions tunisiennes : متوسط = Passable, قريب من الحسن = Assez Bien, حسن = Bien, "
-    "حسن جدا = Très Bien.\n\n"
+    "Tu es VISION 1.4_Reader, le module d'extraction OCR/VLM de relevés de notes officiels "
+    "tunisiens pour SmartCampus AI (IIT / ISB / ISA — groupe NAU Sfax).\n"
+    "Tu prends en charge DEUX types de relevés officiels :\n"
+    "A. Relevé du Bac Tunisien (`document_type: \"RELEVE_BAC\"`, `diploma_stage: \"BAC\"`, "
+    "« بيان أعداد امتحان البكالوريا - الجمهورية التونسية، وزارة التربية ») :\n"
+    "   - Document en arabe (droite à gauche) avec 3 colonnes : المواد (Matières), الدورة الرئيسية "
+    "(Session Principale) et دورة المراقبة (Session de Contrôle, affichant '*****' si admis).\n"
+    "   - La colonne coefficient n'est pas imprimée : omets `coefficient` (ou mets null) pour que "
+    "le backend applique les coefficients officiels du Ministère de l'Éducation selon la section.\n"
+    "   - Notes à virgule (ex. '09,25' -> 9.25, '11,51' -> 11.51) ; langues facultatives "
+    "(إسبانية, ألمانية, إيطالية, صينية, روسية, موسيقى, تربية تشكيلية) -> `is_optional: true`.\n"
+    "   - Mentions arabes : متوسط = Passable, قريب من الحسن = Assez Bien, حسن = Bien, "
+    "حسن جدا = Très Bien.\n"
+    "B. Relevé Universitaire / Licence Passerelle (`document_type: \"RELEVE_UNIVERSITAIRE\"`, "
+    "`diploma_stage: \"L1\"|\"L2\"|\"L3\"|\"PREPA_1\"|\"PREPA_2\"|\"M1\"`, ex. Université de Sfax "
+    "/ ISIMS pour passerelle Bac+3 vers Cycle Ingénieur IIT) :\n"
+    "   - Extrais les Unités d'Enseignement (Unités, Coef, Moyenne finale en privilégiant la "
+    "Session de Rattrapage si supérieure/présente, Crédits acquis), la `moyenne générale`, "
+    "`credits_acquired`, `program_title`, `mention` et `jury_decision`.\n\n"
     "INSTRUCTIONS STRICTES :\n"
     "1. Extrais UNIQUEMENT les données réellement visibles sur le relevé fourni. "
     "N'invente JAMAIS une note, une matière ou une moyenne illisible.\n"
     "2. Retourne EXCLUSIVEMENT un objet JSON valide respectant exactement ce schéma :\n"
     "{\n"
+    '  "document_type": "RELEVE_BAC | RELEVE_UNIVERSITAIRE",\n'
+    '  "diploma_stage": "BAC | L1 | L2 | L3 | PREPA_1 | PREPA_2 | M1 | OTHER",\n'
     '  "bac_section": "Mathématiques | Sciences Expérimentales | Sciences Techniques | '
-    'Sciences de l\'Informatique | Économie et Gestion | Lettres | Sport | Autre",\n'
-    '  "session_year": "2026",\n'
-    '  "session_type": "Principale | Contrôle | Inconnue",\n'
+    'Sciences de l\'Informatique | Économie et Gestion | Lettres | Sport | Autre | null",\n'
+    '  "program_title": "Intitulé du diplôme universitaire ou null",\n'
+    '  "session_year": "2021 ou 2023-2024",\n'
+    '  "session_type": "Principale | Contrôle | Rattrapage | Inconnue",\n'
     '  "student_name": "Nom Prénom ou null (si masqué/anonymisé)",\n'
-    '  "institution": "Lycée ou null",\n'
+    '  "institution": "Établissement / Lycée / Faculté ou null",\n'
     '  "governorate": "Gouvernorat (ex. Sfax) ou null",\n'
     '  "general_average": 11.51,\n'
+    '  "credits_acquired": null,\n'
     '  "mention": "Passable | Assez Bien | Bien | Très Bien | null",\n'
+    '  "jury_decision": "Admis | Refusé | Contrôle | null",\n'
     '  "subjects": [\n'
     '    {"name": "Mathématiques", "grade": 9.25, "coefficient": 4.0, '
-    '"is_optional": false, "confidence": 0.96}\n'
+    '"credits_acquired": null, "is_optional": false, "confidence": 0.96}\n'
     "  ],\n"
     '  "field_confidences": {\n'
     '    "bac_section": 0.98,\n'
@@ -418,12 +429,18 @@ def _prepare_image_data_uri(raw_bytes: bytes, mime_type: str) -> tuple[str, tupl
     return f"data:{out_mime};base64,{b64}", (width, height)
 
 
-def _extract_pdf_text(raw_bytes: bytes) -> tuple[str, int]:
-    """Extract embedded text and page count from a PDF transcript using pypdf."""
+def _extract_pdf_content(raw_bytes: bytes) -> tuple[str, int, bytes | None]:
+    """Extract embedded text, page count, and first embedded raster scan image from a PDF."""
     try:
         reader = PdfReader(io.BytesIO(raw_bytes))
         pages_text = [(page.extract_text() or "").strip() for page in reader.pages]
-        return "\n".join(t for t in pages_text if t), len(reader.pages)
+        joined_text = "\n".join(t for t in pages_text if t)
+        first_image_bytes: bytes | None = None
+        for page in reader.pages:
+            if page.images:
+                first_image_bytes = bytes(page.images[0].data)
+                break
+        return joined_text, len(reader.pages), first_image_bytes
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -445,8 +462,10 @@ def _parse_tunisian_bac_pdf_text(text: str) -> dict[str, Any]:
         text,
         re.IGNORECASE,
     )
-    session_type: BacSessionType = "Principale"
-    if re.search(r"Contr[oô]le", text, re.IGNORECASE):
+    session_type: TranscriptSessionType = "Principale"
+    if re.search(r"Rattrapage", text, re.IGNORECASE):
+        session_type = "Rattrapage"
+    elif re.search(r"Contr[oô]le", text, re.IGNORECASE):
         session_type = "Contrôle"
 
     name_match = re.search(r"(?:Nom\s*et\s*Pr[ée]nom|Candidat)\s*[:\-]\s*(.+)", text, re.IGNORECASE)
@@ -625,12 +644,26 @@ def _assemble_validated_result(
     warnings = list(initial_warnings or [])
     threshold = settings.VLM_CONFIDENCE_THRESHOLD
 
-    bac_section = normalize_bac_section(raw_data.get("bac_section"))
+    raw_doc_type = str(raw_data.get("document_type") or "RELEVE_BAC")
+    document_type: DocumentType = (
+        "RELEVE_UNIVERSITAIRE" if raw_doc_type == "RELEVE_UNIVERSITAIRE" else "RELEVE_BAC"
+    )
+    raw_stage = str(
+        raw_data.get("diploma_stage")
+        or ("L3" if document_type == "RELEVE_UNIVERSITAIRE" else "BAC")
+    )
+    valid_stages = ("BAC", "L1", "L2", "L3", "PREPA_1", "PREPA_2", "M1", "OTHER")
+    diploma_stage: DiplomaStage = raw_stage if raw_stage in valid_stages else "OTHER"  # type: ignore[assignment]
+
+    bac_section: BacSection | None = (
+        normalize_bac_section(raw_data.get("bac_section"))
+        if document_type == "RELEVE_BAC" or raw_data.get("bac_section")
+        else None
+    )
     raw_session_type = str(raw_data.get("session_type") or "Principale")
-    session_type: BacSessionType = (
-        raw_session_type
-        if raw_session_type in ("Principale", "Contrôle", "Inconnue")
-        else "Inconnue"
+    valid_sessions = ("Principale", "Contrôle", "Rattrapage", "Inconnue")
+    session_type: TranscriptSessionType = (
+        raw_session_type if raw_session_type in valid_sessions else "Inconnue"  # type: ignore[assignment]
     )
 
     subjects: list[ExtractedSubjectGrade] = []
@@ -647,11 +680,13 @@ def _assemble_validated_result(
             raw_name = str(row["name"]).strip()
             canonical_name, coeff_val, is_opt = resolve_tunisian_subject_and_coefficient(
                 raw_name,
-                bac_section,
+                bac_section or "Autre",
                 provided_coeff=row.get("coefficient"),
                 provided_optional=row.get("is_optional"),
             )
             conf_val = round(_parse_decimal_number(row.get("confidence", 0.5)), 3)
+            raw_cr = row.get("credits_acquired")
+            subj_credits = round(_parse_decimal_number(raw_cr), 2) if raw_cr is not None else None
             needs_confirm = conf_val < threshold
             weighted = (
                 round(max(0.0, grade_val - 10.0) * coeff_val, 2)
@@ -664,6 +699,7 @@ def _assemble_validated_result(
                 grade_scale=20.0,
                 coefficient=coeff_val,
                 weighted_points=weighted,
+                credits_acquired=subj_credits,
                 is_optional=is_opt,
                 confidence=conf_val,
                 needs_confirmation=needs_confirm,
@@ -744,8 +780,20 @@ def _assemble_validated_result(
     )
     verification_status = "MISMATCH_RH" if discrepancy_detected else "PENDING"
 
+    raw_total_credits = raw_data.get("credits_acquired")
+    total_credits = (
+        round(_parse_decimal_number(raw_total_credits), 2)
+        if raw_total_credits is not None
+        else None
+    )
+
     return BacTranscriptExtractionResult(
+        document_type=document_type,
+        diploma_stage=diploma_stage,
         bac_section=bac_section,
+        program_title=(
+            str(raw_data["program_title"]).strip() if raw_data.get("program_title") else None
+        ),
         session_year=(
             str(raw_data["session_year"]).strip() if raw_data.get("session_year") else None
         ),
@@ -764,7 +812,11 @@ def _assemble_validated_result(
         declared_average=round(declared_average, 2) if declared_average is not None else None,
         average_discrepancy=discrepancy,
         discrepancy_detected=discrepancy_detected,
+        credits_acquired=total_credits,
         mention=normalize_mention(raw_data.get("mention"), general_average or calculated_average),
+        jury_decision=(
+            str(raw_data["jury_decision"]).strip() if raw_data.get("jury_decision") else None
+        ),
         subjects=subjects,
         field_confidences=fc,
         overall_confidence=overall_conf,
@@ -803,16 +855,23 @@ async def extract_bac_transcript(
     )
 
     if mime_type == "application/pdf":
-        pdf_text, page_count = await asyncio.to_thread(_extract_pdf_text, raw_bytes)
-        if has_live_key and pdf_text:
-            raw_json, model_used = await _call_vlm_openai_compatible(pdf_text=pdf_text)
+        pdf_text, page_count, embedded_img = await asyncio.to_thread(
+            _extract_pdf_content, raw_bytes
+        )
+        warnings = []
+        if has_live_key and embedded_img is not None and not pdf_text:
+            # Real scanned PDF (e.g. official Tunisian Bac or ISIMS Sfax scan): extract scan image
+            img_mime = _detect_magic_mime(embedded_img) or "image/jpeg"
+            data_uri, _ = await asyncio.to_thread(_prepare_image_data_uri, embedded_img, img_mime)
+            raw_json, model_used = await _call_vlm_openai_compatible(image_data_uri=data_uri)
             source: ExtractionSource = "vlm_live"
-            warnings: list[str] = []
+        elif has_live_key and pdf_text:
+            raw_json, model_used = await _call_vlm_openai_compatible(pdf_text=pdf_text)
+            source = "vlm_live"
         elif pdf_text and settings.VLM_FALLBACK_TO_LOCAL_PARSER:
             raw_json = _parse_tunisian_bac_pdf_text(pdf_text)
             model_used = "smartcampus-pdf-bac-parser-v1"
             source = "pdf_text_parser"
-            warnings = []
             if page_count > 1:
                 warnings.append(f"Multi-page PDF detected ({page_count} pages); parsed all text.")
         elif not has_live_key and not settings.VLM_FALLBACK_TO_LOCAL_PARSER:
@@ -834,8 +893,8 @@ async def extract_bac_transcript(
             model_used = "smartcampus-vlm-unconfigured"
             source = "image_fallback"
             warnings = [
-                "Scanned PDF has no embedded text layer and VLM_API_KEY is unset. "
-                "Configure VLM_API_KEY (Groq qwen/qwen3.8-27b or OpenAI gpt-4o-mini) in .env."
+                "Scanned PDF contains raster page image(s) without embedded text and VLM_API_KEY "
+                "is unset. Configure VLM_API_KEY (Groq qwen/qwen3.8-27b or OpenAI gpt-4o-mini)."
             ]
     else:
         data_uri, (width, height) = await asyncio.to_thread(

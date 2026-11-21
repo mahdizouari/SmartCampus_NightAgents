@@ -24,12 +24,12 @@ async def get_vlm_extraction_health() -> VlmHealthResponse:
     "/extract-bac-transcript",
     response_model=BacTranscriptExtractionResult,
     status_code=status.HTTP_200_OK,
-    summary="Extract Tunisian Baccalaureate grades, average & confidence scores from image/PDF",
+    summary="Extract Tunisian Bac or Licence grades & confidence scores from image/PDF",
 )
 async def extract_bac_transcript_endpoint(
     file: UploadFile = File(
         ...,
-        description="Tunisian Baccalaureate transcript (PNG, JPEG, WEBP, or PDF, max 10 MB)",
+        description="Tunisian Bac or Licence transcript (PNG, JPEG, WEBP, or PDF, max 10 MB)",
     ),
     declared_average: float | None = Form(
         default=None,
