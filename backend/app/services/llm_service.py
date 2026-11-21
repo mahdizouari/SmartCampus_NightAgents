@@ -581,6 +581,12 @@ def _build_messages(
         f"- Registre de réponse obligatoire : {register_instruction}\n"
         f"- Intention détectée : {intent}\n"
     )
+    if getattr(payload, "campus_scope", None) and payload.campus_scope != "all":
+        system_content += (
+            f"- Périmètre d'établissement ciblé (campus_scope) : {payload.campus_scope}\n"
+            "- Consigne de périmètre : Focalise en priorité tes conseils et filières "
+            f"sur l'établissement {payload.campus_scope} (Groupe NAU Sfax).\n"
+        )
     if intent == "OUT_OF_CORPUS_TRAP":
         system_content += (
             "- ALERTE GARDE-FOU : La requête semble porter sur une filière hors-catalogue "
