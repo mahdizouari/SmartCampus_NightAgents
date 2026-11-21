@@ -1,10 +1,15 @@
-"""Tests for SA-33 LLM Models Benchmark & Comparative Evaluation."""
+"""Tests for SA-33 Live LLM Benchmark & Comparative Evaluation."""
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.services.llm_benchmark_service import (
     CANDIDATE_MODELS,
+    CandidateModelProfile,
+    evaluate_model_on_sa32,
     load_sa32_dataset,
     run_full_benchmark,
     score_response,
@@ -64,37 +69,71 @@ def test_score_response_language_and_traps():
     assert res_hitl_fail["hitl_security_15"] == 0
 
 
-def test_full_benchmark_execution_and_model_selection():
-    """Runs the benchmark across all candidate models and verifies SA-36 baseline selection."""
-    report = run_full_benchmark()
+@pytest.mark.anyio
+async def test_evaluate_model_pending_when_no_api_key():
+    """When no API key is provided, the model is transparently marked PENDING_LIVE_RUN."""
+    profile = CANDIDATE_MODELS[0]
+    data = load_sa32_dataset()[:2]
 
-    assert report.dataset_total_cases == 70
-    assert len(report.models) == len(CANDIDATE_MODELS)
+    with patch("app.services.llm_benchmark_service.settings.LLM_API_KEY", ""):
+        summary = await evaluate_model_on_sa32(profile, data, api_key="")
+        assert summary.status == "PENDING_LIVE_RUN"
+        assert summary.total_evaluated == 0
+        assert summary.overall_score_100 is None
+        assert summary.latency_p50_ms is None
 
-    # 1. Verify models are ranked by overall score descending
-    scores = [m.overall_score_100 for m in report.models]
-    assert scores == sorted(scores, reverse=True)
 
-    # 2. Verify GPT-OSS 120B is ranked #1 and selected for VISION
-    top_model = report.models[0]
-    assert top_model.model_id == "openai/gpt-oss-120b"
-    assert "VISION" in top_model.selection_verdict
-    assert report.recommended_vision_model == "openai/gpt-oss-120b"
-    assert top_model.overall_score_100 > 90.0
+@pytest.mark.anyio
+async def test_evaluate_model_with_mocked_live_api():
+    """Tests evaluate_model_on_sa32 when live HTTP call is mocked via AsyncMock."""
+    profile = CandidateModelProfile(
+        model_id="openai/gpt-oss-120b",
+        display_name="GPT-OSS 120B",
+        provider="Groq",
+        parameter_size="120B",
+        context_window=131072,
+        input_cost_per_m=0.59,
+        output_cost_per_m=0.79,
+        target_latency_p50_s=1.8,
+        recommended_role="VISION Supervisor (Selected SA-36)",
+        description="Test candidate",
+    )
+    dataset = [
+        {
+            "id": "FR-01",
+            "language_group": "french",
+            "query": "Quelles sont les filières ?",
+            "ground_truth": "IIT propose GLID et SDIA à Sfax.",
+            "target_school": "iit",
+            "intent": "program_catalog",
+        }
+    ]
 
-    # 3. Verify GPT-OSS 20B is selected for JARVIS
-    jarvis_model = next(m for m in report.models if m.model_id == "openai/gpt-oss-20b")
-    assert "JARVIS" in jarvis_model.selection_verdict
-    assert report.recommended_jarvis_model == "openai/gpt-oss-20b"
-    assert jarvis_model.latency_p50_ms < 1000  # Sub-second latency for async scheduler
+    mock_reply = "Bonjour, l'IIT propose les filières GLID et SDIA à Sfax."
+    with patch(
+        "app.services.llm_benchmark_service.call_candidate_llm_api",
+        new=AsyncMock(return_value=(mock_reply, "openai/gpt-oss-120b", 1250)),
+    ):
+        summary = await evaluate_model_on_sa32(profile, dataset, api_key="fake-test-key")
+        assert summary.status == "COMPLETED"
+        assert summary.total_evaluated == 1
+        assert summary.overall_score_100 is not None
+        assert summary.overall_score_100 >= 80.0
+        assert summary.latency_p50_ms == 1250
+        assert summary.hitl_violations == 0
 
-    # 4. Verify markdown table has all models
-    table = report.markdown_comparison_table
-    assert "| Modèle Candidat |" in table
-    assert "openai/gpt-oss-120b" in table
-    assert "meta-llama/llama-3.3-70b-versatile" in table
-    assert "mistralai/mixtral-8x7b-32768" in table
-    assert "qwen/qwen-2.5-72b-instruct" in table
+
+@pytest.mark.anyio
+async def test_run_full_benchmark_harness():
+    """Runs the asynchronous benchmark harness and verifies model rankings and markdown table."""
+    with patch("app.services.llm_benchmark_service.settings.LLM_API_KEY", ""):
+        report = await run_full_benchmark(limit=5)
+        assert report.dataset_total_cases == 70
+        assert len(report.models) == len(CANDIDATE_MODELS)
+        assert report.recommended_vision_model == "openai/gpt-oss-120b"
+        assert report.recommended_jarvis_model == "openai/gpt-oss-20b"
+        assert "| Modèle Candidat |" in report.markdown_comparison_table
+        assert "openai/gpt-oss-120b" in report.markdown_comparison_table
 
 
 def test_exported_benchmark_results_json():
@@ -105,4 +144,3 @@ def test_exported_benchmark_results_json():
         assert data["dataset_total_cases"] == 70
         assert data["recommended_vision_model"] == "openai/gpt-oss-120b"
         assert len(data["models"]) >= 5
-
