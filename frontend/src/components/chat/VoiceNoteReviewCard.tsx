@@ -42,12 +42,14 @@ export const VoiceNoteReviewCard: React.FC<VoiceNoteReviewCardProps> = ({
   isProcessing = false,
 }) => {
   const [editedText, setEditedText] = useState(transcript);
+  const [prevTranscript, setPrevTranscript] = useState(transcript);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync editedText whenever new transcript arrives from re-transcription
-  useEffect(() => {
+  // Sync editedText during render when new transcript arrives from re-transcription
+  if (transcript !== prevTranscript) {
+    setPrevTranscript(transcript);
     setEditedText(transcript);
-  }, [transcript]);
+  }
 
   // Auto-resize textarea to fit content without scrollbars
   useEffect(() => {
@@ -83,7 +85,7 @@ export const VoiceNoteReviewCard: React.FC<VoiceNoteReviewCardProps> = ({
             </h4>
             <p className="text-[11px] text-slate-500">
               {recordingSeconds ? `Enregistrement (${recordingSeconds}s) · ` : ''}
-              Vérifiez ou corrigez le texte avant de l'envoyer à VISION.
+              Vérifiez ou corrigez le texte avant de l&apos;envoyer à VISION.
             </p>
           </div>
         </div>
@@ -159,7 +161,7 @@ export const VoiceNoteReviewCard: React.FC<VoiceNoteReviewCardProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
         <div className="flex items-center gap-1 text-[11px] text-slate-600">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Vous pouvez modifier le texte ci-dessus avant l'envoi.</span>
+          <span>Vous pouvez modifier le texte ci-dessus avant l&apos;envoi.</span>
         </div>
 
         <div className="flex items-center gap-2">
