@@ -19,6 +19,7 @@ from app.schemas.chat import (
     LlmHealthResponse,
     VisionSubAgent,
 )
+from app.services.arabizi_normalizer import normalize_arabizi_to_french
 
 logger = logging.getLogger(__name__)
 
@@ -586,6 +587,12 @@ def _build_messages(
             f"- Périmètre d'établissement ciblé (campus_scope) : {payload.campus_scope}\n"
             "- Consigne de périmètre : Focalise en priorité tes conseils et filières "
             f"sur l'établissement {payload.campus_scope} (Groupe NAU Sfax).\n"
+        )
+    arabizi_norm = normalize_arabizi_to_french(payload.message)
+    if arabizi_norm.is_arabizi or detected_dialect == "Arabizi":
+        system_content += (
+            f"- Pré-traitement Arabizi -> Français structuré (Bonus-4) : "
+            f"{arabizi_norm.normalized_french}\n"
         )
     if intent == "OUT_OF_CORPUS_TRAP":
         system_content += (
