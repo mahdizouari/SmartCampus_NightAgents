@@ -1,8 +1,8 @@
 {
   "dataset_total_cases": 70,
-  "timestamp_iso": "2026-11-21T23:05:39Z",
+  "timestamp_iso": "2026-11-21T23:08:44Z",
   "provider_base_url": "https://api.groq.com/openai/v1",
-  "live_run_executed": false,
+  "live_run_executed": true,
   "models": [
     {
       "model_id": "openai/gpt-oss-120b",
@@ -10,7 +10,7 @@
       "provider": "Groq",
       "parameter_size": "120B",
       "total_evaluated": 0,
-      "status": "PENDING_LIVE_RUN",
+      "status": "FAILED",
       "overall_score_100": null,
       "french_score_100": null,
       "fusha_score_100": null,
@@ -26,7 +26,7 @@
       "group_metrics": [],
       "rank": 1,
       "selection_verdict": "VISION Supervisor (Selected SA-36)",
-      "error_message": null
+      "error_message": "LLM API returned HTTP 401 for model 'openai/gpt-oss-120b': {\"error\":{\"message\":\"Invalid API Key\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}\n"
     },
     {
       "model_id": "openai/gpt-oss-20b",
@@ -34,7 +34,7 @@
       "provider": "Groq",
       "parameter_size": "20B",
       "total_evaluated": 0,
-      "status": "PENDING_LIVE_RUN",
+      "status": "FAILED",
       "overall_score_100": null,
       "french_score_100": null,
       "fusha_score_100": null,
@@ -50,7 +50,7 @@
       "group_metrics": [],
       "rank": 2,
       "selection_verdict": "JARVIS Scheduler (Selected SA-36)",
-      "error_message": null
+      "error_message": "LLM API returned HTTP 401 for model 'openai/gpt-oss-20b': {\"error\":{\"message\":\"Invalid API Key\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}\n"
     },
     {
       "model_id": "qwen/qwen3.8-27b",
@@ -58,7 +58,7 @@
       "provider": "Groq",
       "parameter_size": "27B",
       "total_evaluated": 0,
-      "status": "PENDING_LIVE_RUN",
+      "status": "FAILED",
       "overall_score_100": null,
       "french_score_100": null,
       "fusha_score_100": null,
@@ -74,7 +74,7 @@
       "group_metrics": [],
       "rank": 3,
       "selection_verdict": "VLM Extraction / Alternative (SA-36)",
-      "error_message": null
+      "error_message": "LLM API returned HTTP 401 for model 'qwen/qwen3.8-27b': {\"error\":{\"message\":\"Invalid API Key\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}\n"
     },
     {
       "model_id": "meta-llama/llama-3.3-70b-versatile",
@@ -82,7 +82,7 @@
       "provider": "Groq",
       "parameter_size": "70B",
       "total_evaluated": 0,
-      "status": "PENDING_LIVE_RUN",
+      "status": "FAILED",
       "overall_score_100": null,
       "french_score_100": null,
       "fusha_score_100": null,
@@ -98,7 +98,7 @@
       "group_metrics": [],
       "rank": 4,
       "selection_verdict": "Alternative / Fallback",
-      "error_message": null
+      "error_message": "LLM API returned HTTP 401 for model 'meta-llama/llama-3.3-70b-versatile': {\"error\":{\"message\":\"Invalid API Key\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}\n"
     },
     {
       "model_id": "mistralai/mixtral-8x7b-32768",
@@ -106,7 +106,7 @@
       "provider": "Groq",
       "parameter_size": "46.7B (MoE)",
       "total_evaluated": 0,
-      "status": "PENDING_LIVE_RUN",
+      "status": "FAILED",
       "overall_score_100": null,
       "french_score_100": null,
       "fusha_score_100": null,
@@ -122,7 +122,7 @@
       "group_metrics": [],
       "rank": 5,
       "selection_verdict": "Alternative / Fallback",
-      "error_message": null
+      "error_message": "LLM API returned HTTP 401 for model 'mistralai/mixtral-8x7b-32768': {\"error\":{\"message\":\"Invalid API Key\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}\n"
     }
   ],
   "recommended_vision_model": "openai/gpt-oss-120b",
