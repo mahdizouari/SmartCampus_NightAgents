@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     catalog,
     catalog_management,
     chat,
+    documents,
     health,
     voice_notes,
 )
@@ -47,4 +48,11 @@ api_router.include_router(
     catalog_management.router,
     prefix="/catalog",
     tags=["Catalog Management"],
+)
+
+# Include VLM transcript extraction endpoints under /api/v1/documents (Bonus-1 / SA-42)
+api_router.include_router(
+    documents.router,
+    prefix="/documents",
+    tags=["Documents & VLM Extraction"],
 )
