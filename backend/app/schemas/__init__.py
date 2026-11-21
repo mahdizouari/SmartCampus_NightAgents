@@ -16,6 +16,12 @@ from app.schemas.session import (
     SessionMergeRequest,
     SessionMergeResponse,
 )
+from app.schemas.transcript import (
+    BacTranscriptExtractionResult,
+    ExtractedSubjectGrade,
+    TranscriptFieldConfidence,
+    VlmHealthResponse,
+)
 
 __all__ = [
     "HealthResponse",
@@ -30,5 +36,9 @@ __all__ = [
     "GuestSessionDeleteResponse",
     "SessionMergeRequest",
     "SessionMergeResponse",
+    "BacTranscriptExtractionResult",
+    "ExtractedSubjectGrade",
+    "TranscriptFieldConfidence",
+    "VlmHealthResponse",
 ]
 

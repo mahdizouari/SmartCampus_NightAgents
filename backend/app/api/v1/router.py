@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, catalog, catalog_management, chat, health
+from app.api.v1.endpoints import auth, catalog, catalog_management, chat, documents, health
 
 api_router = APIRouter()
 
@@ -33,4 +33,11 @@ api_router.include_router(
     catalog_management.router,
     prefix="/catalog",
     tags=["Catalog Management"],
+)
+
+# Include VLM transcript extraction endpoints under /api/v1/documents (Bonus-1 / SA-42)
+api_router.include_router(
+    documents.router,
+    prefix="/documents",
+    tags=["Documents & VLM Extraction"],
 )
