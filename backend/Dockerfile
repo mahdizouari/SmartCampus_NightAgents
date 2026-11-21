@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and make entrypoint executable (SA-18: auto-migrate on startup)
+# Copy and make entrypoint executable (SA-18: auto-migrate on startup, strip CRLF on Windows)
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Install Python dependencies
 COPY requirements.txt .
