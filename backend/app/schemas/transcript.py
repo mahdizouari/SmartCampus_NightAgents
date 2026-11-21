@@ -6,9 +6,11 @@ Designed for direct handoff to Bonus-2 PostgreSQL persistence:
   - core.declared_grades (diploma_stage, subject_name, grade_value, coefficient, confidence_score)
 """
 
+from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DocumentType = Literal["RELEVE_BAC", "RELEVE_UNIVERSITAIRE"]
 
@@ -102,3 +104,132 @@ class VlmHealthResponse(BaseModel):
     max_file_size_bytes: int
     supported_mime_types: list[str]
     local_pdf_fallback_enabled: bool
+
+
+DocumentVerificationStatus = Literal[
+    "PENDING",
+    "CONFIRMED_BY_STUDENT",
+    "MISMATCH_RH",
+    "VERIFIED",
+]
+
+GradeEntrySource = Literal[
+    "DECLARED_CHAT",
+    "CANDIDATE_FORM",
+    "VLM_CONFIRMED",
+    "RH_CORRECTED",
+]
+
+
+class LowConfidenceFlag(BaseModel):
+    """Explicit low-confidence or discrepancy flag surfaced for student/RH confirmation."""
+
+    field: str = Field(..., min_length=1, max_length=128)
+    value: str | float | None = None
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    threshold: float = Field(..., ge=0.0, le=1.0)
+    reason: str = Field(..., min_length=1, max_length=256)
+
+
+class TranscriptProfileSyncRequest(BaseModel):
+    """Bonus-2 payload connecting Bonus-1 VLM extraction JSON to PostgreSQL profile."""
+
+    extraction: BacTranscriptExtractionResult
+    candidate_id: UUID | None = Field(
+        default=None,
+        description=(
+            "Target candidate UUID. Ignored/checked against own ID for students; "
+            "required when staff (rh/responsable/admin) sync on behalf of a candidate."
+        ),
+    )
+    document_uri: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Optional private storage URI (e.g. minio://...); defaults to sanitized URI.",
+    )
+    confirmed_by_student: bool = Field(
+        default=False,
+        description=(
+            "Set true after the student reviews and confirms extracted grades. "
+            "Never overrides MISMATCH_RH or low-confidence manual review flags."
+        ),
+    )
+    replace_stage_grades: bool = Field(
+        default=True,
+        description="Replace prior VLM grades for the same diploma_stage to stay idempotent.",
+    )
+
+    @model_validator(mode="after")
+    def validate_subject_grades_within_scale(self) -> "TranscriptProfileSyncRequest":
+        for subj in self.extraction.subjects:
+            if subj.grade > subj.grade_scale:
+                raise ValueError(
+                    f"Subject '{subj.name}' grade ({subj.grade}) exceeds "
+                    f"grade_scale ({subj.grade_scale})."
+                )
+        return self
+
+
+class PersistedGradeSummary(BaseModel):
+    """Persisted core.declared_grades row returned after syncing VLM extraction."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    diploma_stage: DiplomaStage
+    academic_year: str | None = None
+    subject_name: str
+    grade_value: float
+    grade_scale: float = 20.0
+    coefficient: float | None = None
+    entry_source: GradeEntrySource
+    confidence_score: float | None = None
+    needs_confirmation: bool = False
+
+
+class TranscriptProfileSyncResponse(BaseModel):
+    """Result of persisting Bonus-1 VLM transcript JSON into PostgreSQL (Bonus-2)."""
+
+    candidate_id: UUID
+    document_id: UUID
+    document_type: DocumentType
+    diploma_stage: DiplomaStage
+    verification_status: DocumentVerificationStatus
+    profile_updated: bool = True
+    current_education_level: str | None = None
+    current_specialty: str | None = None
+    declared_overall_avg: float | None = None
+    grades_persisted_count: int = Field(..., ge=0)
+    grades: list[PersistedGradeSummary] = Field(default_factory=list)
+    overall_confidence: float = Field(..., ge=0.0, le=1.0)
+    min_confidence: float = Field(..., ge=0.0, le=1.0)
+    discrepancy_detected: bool = False
+    needs_manual_review: bool = True
+    low_confidence_flags: list[LowConfidenceFlag] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    synced_at: datetime
+
+
+class CandidateTranscriptDocumentSummary(BaseModel):
+    """Compact summary of a persisted core.document transcript record."""
+
+    id: UUID
+    type: str
+    uri: str
+    min_confidence: float | None = None
+    verification_status: str
+    uploaded_at: datetime
+
+
+class CandidateTranscriptProfileResponse(BaseModel):
+    """Authenticated candidate's persisted academic profile, grades, and pending review flags."""
+
+    candidate_id: UUID
+    current_education_level: str | None = None
+    current_specialty: str | None = None
+    declared_overall_avg: float | None = None
+    needs_manual_review: bool = False
+    low_confidence_fields: list[str] = Field(default_factory=list)
+    documents: list[CandidateTranscriptDocumentSummary] = Field(default_factory=list)
+    grades: list[PersistedGradeSummary] = Field(default_factory=list)
+    updated_at: datetime | None = None
