@@ -54,6 +54,10 @@ class ChatMessageRequest(BaseModel):
     sessionId: str | None = Field(default=None, max_length=128)
     isVoice: bool = False
     detectedDialect: DetectedDialect | None = None
+    campus_scope: Literal["all", "IIT", "ISB", "ISA"] | None = Field(
+        default="all",
+        description="Target campus school scope (all, IIT, ISB, ISA)",
+    )
     history: list[ChatTurnInput] | None = Field(
         default=None,
         description="Optional recent conversation turns (ready for SA-37 Redis injection).",
