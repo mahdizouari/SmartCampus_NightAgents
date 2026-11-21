@@ -594,7 +594,6 @@ def _build_messages(
             f"- Pré-traitement Arabizi -> Français structuré (Bonus-4) : "
             f"{arabizi_norm.normalized_french}\n"
         )
-        )
     if intent == "OUT_OF_CORPUS_TRAP":
         system_content += (
             "- ALERTE GARDE-FOU : La requête semble porter sur une filière hors-catalogue "
