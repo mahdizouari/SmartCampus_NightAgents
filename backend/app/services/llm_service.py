@@ -4,12 +4,15 @@ import logging
 import re
 import time
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import HTTPException, status
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.users import CandidateProfile
 from app.schemas.chat import (
     ActionPrompt,
     ChatCitation,
@@ -20,6 +23,10 @@ from app.schemas.chat import (
     VisionSubAgent,
 )
 from app.services.arabizi_normalizer import normalize_arabizi_to_french
+from app.services.redis_service import (
+    GuestSessionService,
+    HotConversationService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +55,13 @@ VISION_SYSTEM_PROMPT = (
     "abrégé ou bruité pour identifier l'intention avec certitude, ne devine jamais ; demande "
     "poliment à l'étudiant de reformuler sa question en français simple.\n"
     "6. Style : Sois concis, structuré, bienveillant et cite systématiquement les "
-    "documents sources fournis dans le contexte."
+    "documents sources fournis dans le contexte.\n"
+    "7. Rigueur administrative et séparation déclaratif / officiel : Ne présente JAMAIS "
+    "d'informations administratives non vérifiées, spéculatives ou déclaratives comme des faits "
+    "officiels. Toute information sur les frais de scolarité, bourses, seuils ou équivalences "
+    "doit provenir exclusivement des extraits de catalogue officiels RAG fournis. "
+    "En l'absence de source officielle formelle dans le contexte, rappelle explicitement à "
+    "l'étudiant que l'information doit être confirmée par le secrétariat administratif NAU."
 )
 
 FRENCH_REFORMULATION_FALLBACK_ARABIZI = (
@@ -568,11 +581,89 @@ def _build_citations(context_chunks: list[dict[str, Any]] | None) -> list[ChatCi
     return citations
 
 
+def build_rolling_summary(
+    declared_facts: dict[str, Any] | None = None,
+    recent_turns: list[Any] | None = None,
+    existing_summary: str | None = None,
+    latest_query: str | None = None,
+) -> str:
+    """Build or update a bounded (<= 300 tokens) rolling orientation profile summary (SA-37)."""
+    facts = declared_facts or {}
+    elements: list[str] = []
+
+    school = facts.get("school_target") or facts.get("target_school")
+    if school:
+        elements.append(f"Établissement cible : {str(school).upper()}")
+
+    specialty = (
+        facts.get("current_specialty")
+        or facts.get("specialty")
+        or facts.get("filiere")
+    )
+    if specialty:
+        elements.append(f"Spécialité/Filière : {specialty}")
+
+    bac_section = facts.get("bac_section") or facts.get("section")
+    if bac_section:
+        elements.append(f"Baccalauréat : {bac_section}")
+
+    avg = facts.get("declared_overall_avg") or facts.get("moyenne")
+    if avg is not None:
+        elements.append(f"Moyenne déclarée : {avg}/20")
+
+    lang = facts.get("preferred_language")
+    if lang:
+        elements.append(f"Langue préférée : {lang}")
+
+    topic_cues: list[str] = []
+    texts_to_scan: list[str] = [
+        (
+            getattr(t, "content", None)
+            or (t.get("content") if isinstance(t, dict) else "")
+        ).lower()
+        for t in (recent_turns or [])[-6:]
+    ]
+    if latest_query:
+        texts_to_scan.append(latest_query.lower())
+
+    for content in texts_to_scan:
+        if any(k in content for k in ["passerelle", "licence", "bac+3"]):
+            topic_cues.append("passerelle Bac+3")
+        if any(k in content for k in ["glid", "logiciel"]):
+            topic_cues.append("Génie Logiciel (GLID)")
+        if re.search(r"\b(sdia|data|ia)\b|intelligence artificielle", content):
+            topic_cues.append("Data & IA (SDIA)")
+        if any(k in content for k in ["rendez-vous", "entretien", "créneau"]):
+            topic_cues.append("prise de rendez-vous")
+        if any(k in content for k in ["frais", "tarif", "paiement"]):
+            topic_cues.append("tarifs officiels")
+
+    unique_topics = sorted(set(topic_cues))
+    if unique_topics:
+        elements.append(f"Sujets abordés : {', '.join(unique_topics)}")
+
+    if existing_summary and len(elements) <= 1:
+        return existing_summary[:1200]
+
+    if not elements:
+        summary = "Orientation préliminaire en cours (profil académique en attente de précision)."
+    else:
+        summary = " | ".join(elements)
+
+    if len(summary) > 1200:
+        summary = summary[:1197] + "..."
+    return summary
+
+
 def _build_messages(
     payload: ChatMessageRequest,
     lang_code: str,
     detected_dialect: DetectedDialect,
     intent: str,
+    *,
+    history_turns: list[Any] | None = None,
+    rolling_summary: str | None = None,
+    declared_facts: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     register_instruction = _expected_register_label(lang_code, detected_dialect)
     system_content = VISION_SYSTEM_PROMPT + (
@@ -615,10 +706,47 @@ def _build_messages(
             "(IIT, ISB ou extension ISA) ou son profil (Bac, Licence, Prépa)."
         )
 
+    # Inject rolling memory & profile summary if available (SA-37)
+    if declared_facts or rolling_summary:
+        system_content += "\n[PROFIL CANDIDAT & SYNTHÈSE GLISSANTE (MÉMOIRE TIÈDE)]\n"
+        if declared_facts:
+            facts_str = ", ".join(
+                f"{k}: {v}" for k, v in declared_facts.items() if v is not None and k != "facts"
+            )
+            if facts_str:
+                system_content += f"- Faits académiques déclarés : {facts_str}\n"
+        if rolling_summary:
+            system_content += (
+                f"- Synthèse glissante de l'orientation (<= 300 tokens) : {rolling_summary}\n"
+            )
+
+    # Context window bounded: last 6-8 turns (12-16 messages max, oldest to newest)
+    raw_history = history_turns if history_turns is not None else (payload.history or [])
+    bounded_turns = list(raw_history[-16:])
+    if (
+        bounded_turns
+        and (
+            getattr(bounded_turns[-1], "role", None)
+            or (bounded_turns[-1].get("role") if isinstance(bounded_turns[-1], dict) else None)
+        )
+        == "user"
+        and (
+            getattr(bounded_turns[-1], "content", None)
+            or (bounded_turns[-1].get("content") if isinstance(bounded_turns[-1], dict) else None)
+        )
+        == payload.message
+    ):
+        bounded_turns.pop()
+
     messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
-    if payload.history:
-        for turn in payload.history[-16:]:
-            messages.append({"role": turn.role, "content": turn.content})
+    for turn in bounded_turns:
+        role = getattr(turn, "role", None) or (
+            turn.get("role") if isinstance(turn, dict) else "user"
+        )
+        content = getattr(turn, "content", None) or (
+            turn.get("content") if isinstance(turn, dict) else ""
+        )
+        messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": payload.message})
     return messages
 
@@ -816,11 +944,94 @@ async def generate_chat_reply(
     payload: ChatMessageRequest,
     *,
     session_id: str | None = None,
+    candidate_id: str | None = None,
     is_authenticated: bool = False,
+    redis_client: Redis | None = None,
+    db: AsyncSession | None = None,
 ) -> ChatMessageResponse:
-    """Orchestrate dialect detection, intent routing, confidence fallback, and LLM completion."""
+    """Orchestrate conversational memory, dialect detection, intent routing, and LLM completion."""
     start_ns = time.perf_counter_ns()
     resolved_session_id = session_id or payload.session_id or str(uuid4())
+    profile_lookup_id = candidate_id or resolved_session_id
+
+    # --- Conversational Memory Integration (SA-37) ---
+    hot_svc = HotConversationService(redis_client=redis_client)
+    guest_svc = GuestSessionService(redis_client=redis_client)
+
+    # 1. Fetch recent hot turns from Redis if client payload does not provide explicit history
+    history_turns: list[Any] = []
+    if payload.history:
+        history_turns = list(payload.history)
+    else:
+        try:
+            cached_turns = await hot_svc.get_history(resolved_session_id)
+            if cached_turns:
+                history_turns = list(cached_turns)
+        except Exception as exc:
+            logger.debug(
+                "Unable to read hot history from Redis for %s: %s",
+                resolved_session_id,
+                exc,
+            )
+
+    # 2. Fetch declared facts & rolling summary from Redis guest session & PostgreSQL (if given)
+    declared_facts: dict[str, Any] = {}
+    existing_summary: str | None = None
+
+    try:
+        guest_data = await guest_svc.get_session(resolved_session_id)
+        if guest_data:
+            if isinstance(guest_data.get("declared_facts"), dict):
+                declared_facts.update(guest_data["declared_facts"])
+            for field_name in (
+                "school_target",
+                "current_specialty",
+                "bac_section",
+                "declared_overall_avg",
+                "preferred_language",
+            ):
+                if guest_data.get(field_name) is not None:
+                    declared_facts[field_name] = guest_data[field_name]
+            if guest_data.get("rolling_summary"):
+                existing_summary = str(guest_data["rolling_summary"])
+    except Exception as exc:
+        logger.debug(
+            "Unable to read guest session from Redis for %s: %s",
+            resolved_session_id,
+            exc,
+        )
+
+    if is_authenticated and db is not None:
+        try:
+            cand_uuid = UUID(str(profile_lookup_id))
+            cand_profile = await db.get(CandidateProfile, cand_uuid)
+            if cand_profile:
+                if cand_profile.facts and isinstance(cand_profile.facts, dict):
+                    declared_facts.update(cand_profile.facts)
+                if cand_profile.current_specialty:
+                    declared_facts["current_specialty"] = cand_profile.current_specialty
+                if cand_profile.preferred_language:
+                    declared_facts["preferred_language"] = cand_profile.preferred_language
+                if cand_profile.declared_overall_avg is not None:
+                    declared_facts["declared_overall_avg"] = float(
+                        cand_profile.declared_overall_avg
+                    )
+                if cand_profile.summary and not existing_summary:
+                    existing_summary = cand_profile.summary
+        except Exception as exc:
+            logger.debug(
+                "Unable to read CandidateProfile for %s: %s",
+                profile_lookup_id,
+                exc,
+            )
+
+    # 3. Synthesize updated rolling orientation summary (bounded <= 300 tokens)
+    rolling_summary = build_rolling_summary(
+        declared_facts=declared_facts,
+        recent_turns=history_turns,
+        existing_summary=existing_summary,
+        latest_query=payload.message,
+    )
 
     lang_code, dialect = detect_dialect(
         payload.message,
@@ -846,7 +1057,15 @@ async def generate_chat_reply(
         else None
     )
     citations = _build_citations(payload.context_chunks)
-    messages = _build_messages(payload, lang_code, dialect, intent)
+    messages = _build_messages(
+        payload,
+        lang_code,
+        dialect,
+        intent,
+        history_turns=history_turns,
+        rolling_summary=rolling_summary,
+        declared_facts=declared_facts,
+    )
 
     provider = settings.LLM_PROVIDER.lower().strip()
     can_call_remote = provider == "ollama" or (
@@ -878,6 +1097,31 @@ async def generate_chat_reply(
     else:
         reply_text, model_used = await _call_openai_compatible_api(messages)
 
+    # 4. Persist new user turn and assistant reply to Redis hot history, and sync rolling summary
+    try:
+        await hot_svc.add_turn(resolved_session_id, role="user", content=payload.message)
+        await hot_svc.add_turn(resolved_session_id, role="assistant", content=reply_text)
+        await guest_svc.update_fields(
+            resolved_session_id,
+            {"rolling_summary": rolling_summary},
+        )
+    except Exception as exc:
+        logger.debug(
+            "Unable to persist turn to Redis for %s: %s",
+            resolved_session_id,
+            exc,
+        )
+
+    if is_authenticated and db is not None:
+        try:
+            cand_uuid = UUID(str(profile_lookup_id))
+            cand_profile = await db.get(CandidateProfile, cand_uuid)
+            if cand_profile:
+                cand_profile.summary = rolling_summary[:1200]
+                await db.commit()
+        except Exception as exc:
+            logger.debug("Unable to update CandidateProfile summary in DB: %s", exc)
+
     elapsed_ms = max(1, int((time.perf_counter_ns() - start_ns) / 1_000_000))
 
     return ChatMessageResponse(
@@ -900,6 +1144,8 @@ async def generate_chat_reply(
         comprehension_confidence=confidence,
         needs_reformulation=needs_reformulation,
         reformulation_prompt=reformulation_msg,
+        rolling_summary=rolling_summary,
+        history_turn_count=len(history_turns),
     )
 
 
