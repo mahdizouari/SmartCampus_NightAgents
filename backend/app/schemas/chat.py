@@ -109,6 +109,14 @@ class ChatMessageResponse(BaseModel):
         default=None,
         description="Number of hot conversation turns loaded from Redis memory (SA-37).",
     )
+    guardrail_triggered: bool = Field(
+        default=False,
+        description="Whether an input/output guardrail intervened during this turn (SA-46).",
+    )
+    guardrail_action: str | None = Field(
+        default=None,
+        description="Action code performed by the guardrail node if triggered (SA-46 / Bonus-5).",
+    )
 
 
 class LlmHealthResponse(BaseModel):

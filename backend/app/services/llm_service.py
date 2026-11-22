@@ -23,6 +23,10 @@ from app.schemas.chat import (
     VisionSubAgent,
 )
 from app.services.arabizi_normalizer import normalize_arabizi_to_french
+from app.services.guardrail_service import (
+    check_input_guardrail,
+    check_output_guardrail,
+)
 from app.services.redis_service import (
     GuestSessionService,
     HotConversationService,
@@ -1038,64 +1042,113 @@ async def generate_chat_reply(
         language_hint=payload.language_hint,
         explicit_dialect=payload.detectedDialect,
     )
-    intent, sub_agent, action_prompt, suggested_actions = classify_intent_and_subagent(
+
+    guardrail_triggered = False
+    guardrail_action: str | None = None
+
+    # SA-46 / Bonus-5: Input Guardrail Node (anti-hors-sujet & prompt injection)
+    input_guard = check_input_guardrail(
         payload.message,
-        is_authenticated=is_authenticated,
         lang_code=lang_code,
+        dialect=dialect,
     )
-    if intent == "CLARIFICATION_REQUIRED":
-        confidence, needs_reformulation = 0.25, True
+    if input_guard.is_blocked:
+        guardrail_triggered = True
+        guardrail_action = (
+            input_guard.guardrail_type.value
+            if input_guard.guardrail_type
+            else "INPUT_BLOCKED"
+        )
+        reply_text = input_guard.refusal_message or FRENCH_REFORMULATION_FALLBACK_FR
+        used_fallback = True
+        provider = "guardrail_node"
+        model_used = "smartcampus-guardrail-v1"
+        intent = "OUT_OF_CORPUS_TRAP"
+        sub_agent = "1.1_Listener"
+        action_prompt = None
+        suggested_actions = [
+            "Découvrir les vraies filières IIT / ISB / ISA",
+            "Parler à un conseiller NAU",
+        ]
+        confidence = 1.0
+        needs_reformulation = False
+        reformulation_msg = None
+        citations = []
     else:
-        confidence, needs_reformulation = assess_comprehension_confidence(
+        intent, sub_agent, action_prompt, suggested_actions = classify_intent_and_subagent(
             payload.message,
-            lang_code=lang_code,
-            intent=intent,
-        )
-    reformulation_msg = (
-        _build_reformulation_fallback_reply(lang_code, dialect)
-        if needs_reformulation
-        else None
-    )
-    citations = _build_citations(payload.context_chunks)
-    messages = _build_messages(
-        payload,
-        lang_code,
-        dialect,
-        intent,
-        history_turns=history_turns,
-        rolling_summary=rolling_summary,
-        declared_facts=declared_facts,
-    )
-
-    provider = settings.LLM_PROVIDER.lower().strip()
-    can_call_remote = provider == "ollama" or (
-        provider == "openai_compatible" and bool(settings.LLM_API_KEY.strip())
-    )
-
-    used_fallback = False
-    if needs_reformulation:
-        # SA-34 safety fallback: never guess on unintelligible/ambiguous dialect inputs;
-        # explicitly request a clear French reformulation.
-        used_fallback = True
-        reply_text = reformulation_msg or FRENCH_REFORMULATION_FALLBACK_FR
-        model_used = "smartcampus-clarification-fallback-v1"
-    elif provider == "mock" or (not can_call_remote and settings.LLM_FALLBACK_TO_MOCK):
-        used_fallback = True
-        reply_text = _generate_deterministic_fallback_reply(
-            lang_code=lang_code,
-            dialect=dialect,
-            intent=intent,
             is_authenticated=is_authenticated,
-            citations=citations,
+            lang_code=lang_code,
         )
-        model_used = "smartcampus-fallback-v1"
-    elif not can_call_remote:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="LLM_API_KEY is not configured and LLM_FALLBACK_TO_MOCK is disabled.",
+        if intent == "CLARIFICATION_REQUIRED":
+            confidence, needs_reformulation = 0.25, True
+        else:
+            confidence, needs_reformulation = assess_comprehension_confidence(
+                payload.message,
+                lang_code=lang_code,
+                intent=intent,
+            )
+        reformulation_msg = (
+            _build_reformulation_fallback_reply(lang_code, dialect)
+            if needs_reformulation
+            else None
         )
-    else:
-        reply_text, model_used = await _call_openai_compatible_api(messages)
+        citations = _build_citations(payload.context_chunks)
+        messages = _build_messages(
+            payload,
+            lang_code,
+            dialect,
+            intent,
+            history_turns=history_turns,
+            rolling_summary=rolling_summary,
+            declared_facts=declared_facts,
+        )
+
+        provider = settings.LLM_PROVIDER.lower().strip()
+        can_call_remote = provider == "ollama" or (
+            provider == "openai_compatible" and bool(settings.LLM_API_KEY.strip())
+        )
+
+        used_fallback = False
+        if needs_reformulation:
+            # SA-34 safety fallback: never guess on unintelligible/ambiguous dialect inputs;
+            # explicitly request a clear French reformulation.
+            used_fallback = True
+            reply_text = reformulation_msg or FRENCH_REFORMULATION_FALLBACK_FR
+            model_used = "smartcampus-clarification-fallback-v1"
+        elif provider == "mock" or (not can_call_remote and settings.LLM_FALLBACK_TO_MOCK):
+            used_fallback = True
+            reply_text = _generate_deterministic_fallback_reply(
+                lang_code=lang_code,
+                dialect=dialect,
+                intent=intent,
+                is_authenticated=is_authenticated,
+                citations=citations,
+            )
+            model_used = "smartcampus-fallback-v1"
+        elif not can_call_remote:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="LLM_API_KEY is not configured and LLM_FALLBACK_TO_MOCK is disabled.",
+            )
+        else:
+            reply_text, model_used = await _call_openai_compatible_api(messages)
+
+    # SA-46 / Bonus-5: Output Guardrail Node (HITL Admission promises & ungrounded claims)
+    output_guard = check_output_guardrail(
+        reply_text,
+        context_chunks=payload.context_chunks,
+        lang_code=lang_code,
+        dialect=dialect,
+    )
+    if output_guard.was_modified:
+        reply_text = output_guard.sanitized_text
+        guardrail_triggered = True
+        guardrail_action = (
+            output_guard.guardrail_type.value
+            if output_guard.guardrail_type
+            else "OUTPUT_MODIFIED"
+        )
 
     # 4. Persist new user turn and assistant reply to Redis hot history, and sync rolling summary
     try:
@@ -1146,6 +1199,8 @@ async def generate_chat_reply(
         reformulation_prompt=reformulation_msg,
         rolling_summary=rolling_summary,
         history_turn_count=len(history_turns),
+        guardrail_triggered=guardrail_triggered,
+        guardrail_action=guardrail_action,
     )
 
 
