@@ -101,6 +101,14 @@ class ChatMessageResponse(BaseModel):
     comprehension_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     needs_reformulation: bool = False
     reformulation_prompt: str | None = None
+    rolling_summary: str | None = Field(
+        default=None,
+        description="Bounded rolling orientation summary (<= 300 tokens) across turns (SA-37).",
+    )
+    history_turn_count: int | None = Field(
+        default=None,
+        description="Number of hot conversation turns loaded from Redis memory (SA-37).",
+    )
 
 
 class LlmHealthResponse(BaseModel):
