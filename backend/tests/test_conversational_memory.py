@@ -27,7 +27,6 @@ from app.services.llm_service import (
 )
 from app.services.redis_service import MessageTurn
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -317,3 +316,4 @@ def test_t8_rolling_summary_respects_existing_when_no_new_facts():
     existing = "Établissement cible : ISB | Spécialité/Filière : Management"
     summary = build_rolling_summary(existing_summary=existing)
     assert summary == existing
+
