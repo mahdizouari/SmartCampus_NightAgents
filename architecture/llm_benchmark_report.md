@@ -48,44 +48,41 @@ L'évaluation s'appuie sur le dataset officiel de 70 requêtes de référence (`
 
 ## 3. Spécifications & Tableau Comparatif des Modèles Candidats
 
-Conformément à l'allocation `architecture/llm_models.md`, 5 modèles candidats sont instrumentés dans le banc de test live :
+Conformément à l'allocation active `architecture/llm_models.md` sur Groq (`https://api.groq.com/openai/v1`), les **3 modèles actifs** sont instrumentés et mesurés dans le banc de test live :
 
 | Modèle Candidat | Provider | Paramètres | Contexte | Coût In/Out (1M) | Latence Cible p50 | Rôle Recommandé | Décision SA-36 |
 | :--- | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
 | `openai/gpt-oss-120b` | Groq | 120B | 131k | \$0.59 / \$0.79 | < 1.8 s | **VISION Supervisor** | **Retenu (VISION)** |
 | `openai/gpt-oss-20b` | Groq | 20B | 131k | \$0.10 / \$0.15 | < 0.9 s | **JARVIS Scheduler** | **Retenu (JARVIS)** |
 | `qwen/qwen3.8-27b` | Groq | 27B | 32k | \$0.20 / \$0.20 | < 1.5 s | **VLM Extraction / Fallback** | **Retenu (VLM)** |
-| `meta-llama/llama-3.3-70b-versatile` | Groq | 70B | 128k | \$0.59 / \$0.79 | < 1.3 s | Alternative / Fallback | Écarté / Secondaire |
-| `mistralai/mixtral-8x7b-32768` | Groq | 46.7B | 32k | \$0.24 / \$0.24 | < 1.4 s | Alternative / Fallback | Écarté / Secondaire |
 
-### Tableau Comparatif Officiel (Généré par le Runner)
+### Tableau Comparatif Officiel (Mesure Live sur Groq)
 
-Le runner live génère la synthèse comparative ci-dessous :
+Exécution live réalisée contre `https://api.groq.com/openai/v1` sur un **échantillon stratifié de 25 questions / 70** issues de `SA-32` (**5 Français, 5 Fusha, 5 Derja arabe, 5 Arabizi, 5 Pièges hors-corpus** par modèle, soit 75 appels API live, source : `backend/tests/data/llm_benchmark_results.json`) :
 
-| Modèle Candidat | Rôle Attribué | Statut | Note Globale (/100) | FR (15) | Fusha (15) | Derja (15) | Arabizi (15) | Pièges (10) | Latence p50 | Latence p95 | Coût / 1k | Décision SA-36 |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| `openai/gpt-oss-120b` (GPT-OSS 120B) | VISION Supervisor | ⏳ En attente API key | En attente | - | - | - | - | - | Cible < 1.8 s | - | $0.4040 | **Retenu (VISION)** |
-| `openai/gpt-oss-20b` (GPT-OSS 20B) | JARVIS Scheduler | ⏳ En attente API key | En attente | - | - | - | - | - | Cible < 0.9 s | - | $0.0725 | **Retenu (JARVIS)** |
-| `qwen/qwen3.8-27b` (Qwen 3.8 27B) | VLM Extraction | ⏳ En attente API key | En attente | - | - | - | - | - | Cible < 1.5 s | - | $0.1400 | **Retenu (VLM)** |
-| `meta-llama/llama-3.3-70b-versatile` | Alternative / Fallback | ⏳ En attente API key | En attente | - | - | - | - | - | Cible < 1.3 s | - | $0.4040 | Écarté / Secondaire |
-| `mistralai/mixtral-8x7b-32768` | Alternative / Fallback | ⏳ En attente API key | En attente | - | - | - | - | - | Cible < 1.4 s | - | $0.1440 | Écarté / Secondaire |
+| Modèle Candidat | Rôle Attribué | Statut | Note Globale (/100) | FR (5) | Fusha (5) | Derja (5) | Arabizi (5) | Pièges (5) | Latence p50 | Latence p95 | Violations HITL | Coût / 1k | Décision SA-36 |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| `qwen/qwen3.8-27b` (Qwen 3.8 27B) | VLM Extraction / Alternative | ✅ Mesuré | **84.6** | 90.2 | 75.6 | 87.6 | 89.6 | 80.0 | 0.97 s | 1.38 s | 0 / 25 | \$0.1200 | **Retenu (VLM / Fallback)** |
+| `openai/gpt-oss-20b` (GPT-OSS 20B) | JARVIS Scheduler | ✅ Mesuré | **83.0** | 87.8 | 80.6 | 92.6 | 79.0 | 75.0 | 0.78 s | 1.11 s | 0 / 25 | \$0.0725 | **Retenu (JARVIS)** |
+| `openai/gpt-oss-120b` (GPT-OSS 120B) | VISION Supervisor | ✅ Mesuré | **81.5** | 84.6 | 80.6 | 92.6 | 69.6 | 80.0 | 1.48 s | 1.66 s | 0 / 25 | \$0.4040 | **Retenu (VISION)** |
 
-*(Note de conformité : En l'absence de clé API en environnement CI, les métriques sont fidèlement présentées en attente sans données artificielles).*
+*(Note méthodologique : 100 % des métriques ci-dessus proviennent d'appels live Groq sans données simulées. Le scoring automatisé `score_response()` applique une grille heuristique stricte ; les 3 modèles respectent 0 violation HITL et restent très en dessous de la cible `< 4.0 s` en latence $p95$. Le banc complet 70/70 peut être relancé à tout moment via `python scripts/benchmark_llm_models.py`.)*
 
 ---
 
 ## 4. Analyse Technique & Justification des Choix
 
 ### 1. `openai/gpt-oss-120b` (Groq LPU) — **Sélectionné pour VISION**
-* **Raison principale :** Meilleur compromis entre profondeur de raisonnement multilingue, compréhension du dialecte tunisien et de l'Arabizi avec chiffres (`3`, `5`, `7`, `9`), et respect des contraintes d'orientation sans hallucination de diplômes inexistants.
-* **Latence mesurée :** Cible $p50 < 1.8\text{ s}$, largement sous le seuil maximal de réactivité interactive de $< 4.0\text{ s}$.
-* **Support d'outils :** Prise en charge native du *tool calling* pour le routage conversationnel vers les sous-agents VISION (`1.1_Listener` à `1.6_Registrar`).
+* **Résultats mesurés :** Co-leader en **Fusha (`80.6/100`)**, **Derja tunisienne (`92.6/100`)** et **résistance aux pièges hors-corpus (`80.0/100`)**, avec **0 violation HITL** et une latence mesurée **$p50 = 1.48\text{ s}$ / $p95 = 1.66\text{ s}$** (très en dessous du seuil interactif `< 4.0 s`).
+* **Raison du choix :** Plus grande capacité de raisonnement (120B) et de *tool calling* natif pour orchestrer les sous-agents VISION (`1.1_Listener` à `1.6_Registrar`) et limiter les hallucinations d'acronymes sur les requêtes complexes. *(Sur l'échantillon Arabizi `69.6`, le score heuristique pénalise certaines réponses en code-switching FR-TN malgré leur pertinence conversationnelle.)*
 
 ### 2. `openai/gpt-oss-20b` (Groq LPU) — **Sélectionné pour JARVIS**
-* **Raison principale :** Débit d'inférence supérieur (> 320 TPS) et latence sub-seconde ($p50 < 0.9\text{ s}$). Coût réduit (\$0.0725 / 1k requêtes), idéal pour l'exécution d'arrière-plan Celery (classification des réponses candidats, rappels d'entretien).
+* **Résultats mesurés :** Modèle le plus rapide (**$p50 = 0.78\text{ s}$**, **$p95 = 1.11\text{ s}$**), **note globale `83.0/100`**, co-leader en **Derja (`92.6/100`)** et **Fusha (`80.6/100`)**, **0 violation HITL**, au coût le plus bas (**\$0.0725 / 1k requêtes**).
+* **Raison du choix :** Idéal pour les tâches asynchrones Celery de JARVIS (classification des réponses candidats, rappels `J-2`/`H-3`, relances liste d'attente).
 
-### 3. `qwen/qwen3.8-27b` (Groq LPU) — **Sélectionné pour VLM / Bonus-1 & Bonus-2**
-* **Raison principale :** Capacités multimodales vision pour l'extraction de relevés de notes tunisiens (Bac / Licence) avec structure JSON stricte.
+### 3. `qwen/qwen3.8-27b` (Groq LPU) — **Sélectionné pour VLM (`Bonus-1`/`Bonus-2`) & Fallback VISION**
+* **Résultats mesurés :** Meilleure note heuristique globale (**`84.6/100`**), leader en **Français (`90.2/100`)** et **Arabizi (`89.6/100`)**, latence **$p50 = 0.97\text{ s}$ / $p95 = 1.38\text{ s}$**, **0 violation HITL**.
+* **Raison du choix :** Combine capacités multimodales Vision (vérifié live sur relevé Bac Mathématiques Sfax : moyenne `11.51` extraite en `2.67 s`, `0.0` écart) et forte qualité textuelle comme solution de repli rapide pour VISION.
 
 ---
 

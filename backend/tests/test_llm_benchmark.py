@@ -13,6 +13,7 @@ from app.services.llm_benchmark_service import (
     load_sa32_dataset,
     run_full_benchmark,
     score_response,
+    select_stratified_items,
 )
 
 DATA_PATH = Path(__file__).parent / "data" / "llm_benchmark_results.json"
@@ -136,6 +137,18 @@ async def test_run_full_benchmark_harness():
         assert "openai/gpt-oss-120b" in report.markdown_comparison_table
 
 
+def test_select_stratified_items_covers_all_groups():
+    """Stratified selection with limit=10 covers all 5 SA-32 language groups evenly."""
+    data = load_sa32_dataset()
+    subset = select_stratified_items(data, limit=10)
+    assert len(subset) == 10
+    groups = {
+        "traps" if str(x["language_group"]).startswith("trap_") else x["language_group"]
+        for x in subset
+    }
+    assert groups == {"french", "fusha", "derja_arabic", "arabizi", "traps"}
+
+
 def test_exported_benchmark_results_json():
     """Validates that the exported llm_benchmark_results.json adheres to schema."""
     if DATA_PATH.exists():
@@ -143,4 +156,4 @@ def test_exported_benchmark_results_json():
             data = json.load(f)
         assert data["dataset_total_cases"] == 70
         assert data["recommended_vision_model"] == "openai/gpt-oss-120b"
-        assert len(data["models"]) >= 5
+        assert len(data["models"]) == len(CANDIDATE_MODELS)

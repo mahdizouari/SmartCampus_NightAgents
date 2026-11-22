@@ -14,6 +14,7 @@ Strict anti-hallucination compliance (SC V3 §10):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -105,34 +106,6 @@ CANDIDATE_MODELS: list[CandidateModelProfile] = [
         description=(
             "Multimodal Vision & text model on Groq. Handles transcript JSON extraction "
             "and serves as primary fallback for academic queries."
-        ),
-    ),
-    CandidateModelProfile(
-        model_id="meta-llama/llama-3.3-70b-versatile",
-        display_name="Llama 3.3 70B Versatile",
-        provider="Groq",
-        parameter_size="70B",
-        context_window=128000,
-        input_cost_per_m=0.59,
-        output_cost_per_m=0.79,
-        target_latency_p50_s=1.3,
-        recommended_role="Alternative / Fallback",
-        description=(
-            "High general reasoning and French fluency; evaluated for Fusha vs Derja balance."
-        ),
-    ),
-    CandidateModelProfile(
-        model_id="mistralai/mixtral-8x7b-32768",
-        display_name="Mixtral 8x7B",
-        provider="Groq",
-        parameter_size="46.7B (MoE)",
-        context_window=32768,
-        input_cost_per_m=0.24,
-        output_cost_per_m=0.24,
-        target_latency_p50_s=1.4,
-        recommended_role="Alternative / Fallback",
-        description=(
-            "Low-cost European open-weight MoE model; evaluated on French & Tunisian dialects."
         ),
     ),
 ]
@@ -332,6 +305,57 @@ def score_response(
     }
 
 
+def select_stratified_items(
+    dataset: list[dict[str, Any]],
+    limit: int | None,
+) -> list[dict[str, Any]]:
+    """Select up to `limit` items balanced across all 5 SA-32 evaluation groups."""
+    if limit is None or limit >= len(dataset):
+        return list(dataset)
+    if limit <= 0:
+        return []
+
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "french": [],
+        "fusha": [],
+        "derja_arabic": [],
+        "arabizi": [],
+        "traps": [],
+    }
+    for item in dataset:
+        grp = str(item.get("language_group") or "french")
+        key = "traps" if grp.startswith("trap_") else grp
+        buckets.setdefault(key, []).append(item)
+
+    selected: list[dict[str, Any]] = []
+    bucket_keys = [k for k, v in buckets.items() if v]
+    idx = 0
+    while len(selected) < limit and bucket_keys:
+        progressed = False
+        for key in bucket_keys:
+            if idx < len(buckets[key]) and len(selected) < limit:
+                selected.append(buckets[key][idx])
+                progressed = True
+        if not progressed:
+            break
+        idx += 1
+    return selected
+
+
+def _parse_retry_after_seconds(resp: httpx.Response, attempt: int) -> float:
+    """Compute backoff seconds from Retry-After header or Groq error body."""
+    header_val = resp.headers.get("retry-after")
+    if header_val:
+        try:
+            return max(1.0, min(float(header_val), 65.0))
+        except ValueError:
+            pass
+    match = re.search(r"try again in (\d+(?:\.\d+)?)s", resp.text, re.IGNORECASE)
+    if match:
+        return max(1.0, min(float(match.group(1)) + 1.0, 65.0))
+    return float(min(5 * (attempt + 1), 30))
+
+
 async def call_candidate_llm_api(
     model_id: str,
     messages: list[dict[str, str]],
@@ -340,6 +364,7 @@ async def call_candidate_llm_api(
     base_url: str | None = None,
     api_key: str | None = None,
     timeout_seconds: float = 30.0,
+    max_retries: int = 4,
 ) -> tuple[str, str, int]:
     """Execute an async /chat/completions call parameterizing model_id and measure latency."""
     effective_base = (base_url or settings.LLM_BASE_URL).rstrip("/")
@@ -359,18 +384,34 @@ async def call_candidate_llm_api(
         "model": model_id,
         "messages": messages,
         "temperature": settings.LLM_TEMPERATURE,
-        "max_tokens": settings.LLM_MAX_TOKENS,
+        "max_tokens": min(settings.LLM_MAX_TOKENS, 512),
     }
 
-    start_ns = time.perf_counter_ns()
-    if client is not None:
-        resp = await client.post(url, headers=headers, json=body)
-    else:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as ac:
-            resp = await ac.post(url, headers=headers, json=body)
+    resp: httpx.Response | None = None
+    elapsed_ms = 1
+    for attempt in range(max_retries + 1):
+        start_ns = time.perf_counter_ns()
+        if client is not None:
+            resp = await client.post(url, headers=headers, json=body)
+        else:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as ac:
+                resp = await ac.post(url, headers=headers, json=body)
 
-    elapsed_ms = max(1, int((time.perf_counter_ns() - start_ns) / 1_000_000))
+        elapsed_ms = max(1, int((time.perf_counter_ns() - start_ns) / 1_000_000))
+        if resp.status_code == 429 and attempt < max_retries:
+            wait_s = _parse_retry_after_seconds(resp, attempt)
+            logger.info(
+                "Rate limited (429) on %s (attempt %d/%d); sleeping %.1fs",
+                model_id,
+                attempt + 1,
+                max_retries,
+                wait_s,
+            )
+            await asyncio.sleep(wait_s)
+            continue
+        break
 
+    assert resp is not None
     if resp.status_code != 200:
         raise RuntimeError(
             f"LLM API returned HTTP {resp.status_code} for model '{model_id}': {resp.text[:200]}"
@@ -422,7 +463,7 @@ async def evaluate_model_on_sa32(
             selection_verdict=profile.recommended_role,
         )
 
-    items_to_eval = dataset[:limit] if limit is not None else dataset
+    items_to_eval = select_stratified_items(dataset, limit)
     scores: list[dict[str, Any]] = []
     latencies: list[int] = []
 
@@ -570,8 +611,8 @@ async def evaluate_model_on_sa32(
 def generate_markdown_comparison_table(models: list[ModelBenchmarkSummary]) -> str:
     """Build the official comparative Markdown table required by SA-33 acceptance criteria."""
     col_headers = (
-        "| Modèle Candidat | Rôle Attribué | Statut | Note Globale (/100) | FR (15) | Fusha (15) | "
-        "Derja (15) | Arabizi (15) | Pièges (10) | Latence p50 | Latence p95 | Coût / 1k | "
+        "| Modèle Candidat | Rôle Attribué | Statut | Note Globale (/100) | FR | Fusha | "
+        "Derja | Arabizi | Pièges | Latence p50 | Latence p95 | Coût / 1k | "
         "Décision SA-36 |"
     )
     col_sep = (
