@@ -616,17 +616,22 @@ def build_rolling_summary(
         elements.append(f"Langue préférée : {lang}")
 
     topic_cues: list[str] = []
-    turns_to_scan = (recent_turns or [])[-6:]
-    for t in turns_to_scan:
-        content = (
+    texts_to_scan: list[str] = [
+        (
             getattr(t, "content", None)
             or (t.get("content") if isinstance(t, dict) else "")
         ).lower()
+        for t in (recent_turns or [])[-6:]
+    ]
+    if latest_query:
+        texts_to_scan.append(latest_query.lower())
+
+    for content in texts_to_scan:
         if any(k in content for k in ["passerelle", "licence", "bac+3"]):
             topic_cues.append("passerelle Bac+3")
         if any(k in content for k in ["glid", "logiciel"]):
             topic_cues.append("Génie Logiciel (GLID)")
-        if any(k in content for k in ["sdia", "data", "ia"]):
+        if re.search(r"\b(sdia|data|ia)\b|intelligence artificielle", content):
             topic_cues.append("Data & IA (SDIA)")
         if any(k in content for k in ["rendez-vous", "entretien", "créneau"]):
             topic_cues.append("prise de rendez-vous")
@@ -939,6 +944,7 @@ async def generate_chat_reply(
     payload: ChatMessageRequest,
     *,
     session_id: str | None = None,
+    candidate_id: str | None = None,
     is_authenticated: bool = False,
     redis_client: Redis | None = None,
     db: AsyncSession | None = None,
@@ -946,6 +952,7 @@ async def generate_chat_reply(
     """Orchestrate conversational memory, dialect detection, intent routing, and LLM completion."""
     start_ns = time.perf_counter_ns()
     resolved_session_id = session_id or payload.session_id or str(uuid4())
+    profile_lookup_id = candidate_id or resolved_session_id
 
     # --- Conversational Memory Integration (SA-37) ---
     hot_svc = HotConversationService(redis_client=redis_client)
@@ -996,7 +1003,7 @@ async def generate_chat_reply(
 
     if is_authenticated and db is not None:
         try:
-            cand_uuid = UUID(str(resolved_session_id))
+            cand_uuid = UUID(str(profile_lookup_id))
             cand_profile = await db.get(CandidateProfile, cand_uuid)
             if cand_profile:
                 if cand_profile.facts and isinstance(cand_profile.facts, dict):
@@ -1014,7 +1021,7 @@ async def generate_chat_reply(
         except Exception as exc:
             logger.debug(
                 "Unable to read CandidateProfile for %s: %s",
-                resolved_session_id,
+                profile_lookup_id,
                 exc,
             )
 
@@ -1107,7 +1114,7 @@ async def generate_chat_reply(
 
     if is_authenticated and db is not None:
         try:
-            cand_uuid = UUID(str(resolved_session_id))
+            cand_uuid = UUID(str(profile_lookup_id))
             cand_profile = await db.get(CandidateProfile, cand_uuid)
             if cand_profile:
                 cand_profile.summary = rolling_summary[:1200]

@@ -317,3 +317,67 @@ def test_t8_rolling_summary_respects_existing_when_no_new_facts():
     summary = build_rolling_summary(existing_summary=existing)
     assert summary == existing
 
+
+def test_t8_rolling_summary_no_false_sdia_and_scans_latest_query():
+    """'étudiant'/'spécialité' must not trigger SDIA; latest_query topics are captured."""
+    turns = [
+        MessageTurn(
+            role="user",
+            content="Je suis étudiant et je cherche une spécialité en Finance à l'ISB.",
+            timestamp=1.0,
+        ),
+    ]
+    summary_finance = build_rolling_summary(recent_turns=turns)
+    assert "Data & IA (SDIA)" not in summary_finance
+
+    summary_ai = build_rolling_summary(
+        recent_turns=[],
+        latest_query="Je m'intéresse à l'IA et la filière SDIA à l'IIT.",
+    )
+    assert "Data & IA (SDIA)" in summary_ai
+
+
+@pytest.mark.asyncio
+async def test_t9_authenticated_candidate_profile_uses_candidate_id():
+    """Authenticated warm memory loads CandidateProfile by candidate_id with non-UUID session."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    cand_uuid = uuid4()
+    fake_profile = SimpleNamespace(
+        facts={"bac_section": "Mathématiques"},
+        current_specialty="GLID",
+        preferred_language="FR",
+        declared_overall_avg=15.25,
+        summary="",
+    )
+    mock_db = AsyncMock()
+    mock_db.get = AsyncMock(return_value=fake_profile)
+    mock_db.commit = AsyncMock()
+
+    payload = _make_payload("Parlez-moi de GLID à l'IIT.")
+    with patch("app.services.llm_service.settings") as mock_settings:
+        mock_settings.LLM_PROVIDER = "mock"
+        mock_settings.LLM_API_KEY = ""
+        mock_settings.LLM_FALLBACK_TO_MOCK = True
+        mock_settings.LLM_MODEL = "smartcampus-fallback-v1"
+        mock_settings.LLM_BASE_URL = "http://localhost"
+        mock_settings.LLM_TEMPERATURE = 0.2
+        mock_settings.LLM_MAX_TOKENS = 512
+        mock_settings.LLM_TIMEOUT_SECONDS = 30
+
+        resp = await generate_chat_reply(
+            payload,
+            session_id="sess-browser-non-uuid",
+            candidate_id=str(cand_uuid),
+            is_authenticated=True,
+            db=mock_db,
+        )
+
+    assert mock_db.get.await_count == 2
+    assert mock_db.commit.await_count == 1
+    assert resp.rolling_summary is not None
+    assert "GLID" in resp.rolling_summary
+    assert "15.25" in resp.rolling_summary
+
+

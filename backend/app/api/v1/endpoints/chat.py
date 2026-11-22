@@ -5,7 +5,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
 from app.core.deps import CurrentActor, decode_hs256_jwt, require_roles
 from app.core.rate_limit import enforce_guest_chat_rate_limit
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse, LlmHealthResponse
@@ -38,14 +40,18 @@ async def post_chat_message(
     response: Response,
     x_session_id: str | None = Header(default=None, alias="X-Session-ID"),
     credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
+    db: AsyncSession = Depends(get_db),
 ) -> ChatMessageResponse:
     is_authenticated = False
     actor_session_id: str | None = None
+    candidate_id: str | None = None
 
     if credentials is not None and credentials.scheme.lower() == "bearer":
         claims = decode_hs256_jwt(credentials.credentials, expected_type="access")
         is_authenticated = True
-        actor_session_id = str(claims.get("candidate_id") or claims["sub"])
+        raw_cand_id = claims.get("candidate_id")
+        candidate_id = str(raw_cand_id) if raw_cand_id else None
+        actor_session_id = str(raw_cand_id or claims["sub"])
     else:
         await enforce_guest_chat_rate_limit(request, response)
 
@@ -53,7 +59,9 @@ async def post_chat_message(
     return await svc.generate_chat_reply(
         payload,
         session_id=resolved_session_id,
+        candidate_id=candidate_id,
         is_authenticated=is_authenticated,
+        db=db if is_authenticated else None,
     )
 
 
