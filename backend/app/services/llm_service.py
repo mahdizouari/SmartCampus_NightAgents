@@ -1134,21 +1134,21 @@ async def generate_chat_reply(
         else:
             reply_text, model_used = await _call_openai_compatible_api(messages)
 
-    # SA-46 / Bonus-5: Output Guardrail Node (HITL Admission promises & ungrounded claims)
-    output_guard = check_output_guardrail(
-        reply_text,
-        context_chunks=payload.context_chunks,
-        lang_code=lang_code,
-        dialect=dialect,
-    )
-    if output_guard.was_modified:
-        reply_text = output_guard.sanitized_text
-        guardrail_triggered = True
-        guardrail_action = (
-            output_guard.guardrail_type.value
-            if output_guard.guardrail_type
-            else "OUTPUT_MODIFIED"
+        # SA-46 / Bonus-5: Output Guardrail Node (HITL Admission promises & ungrounded claims)
+        output_guard = check_output_guardrail(
+            reply_text,
+            context_chunks=payload.context_chunks,
+            lang_code=lang_code,
+            dialect=dialect,
         )
+        if output_guard.was_modified:
+            reply_text = output_guard.sanitized_text
+            guardrail_triggered = True
+            guardrail_action = (
+                output_guard.guardrail_type.value
+                if output_guard.guardrail_type
+                else "OUTPUT_MODIFIED"
+            )
 
     # 4. Persist new user turn and assistant reply to Redis hot history, and sync rolling summary
     try:

@@ -352,3 +352,28 @@ def test_chat_message_endpoint_blocks_off_topic_query(client: TestClient):
     assert body["guardrail_triggered"] is True
     assert body["guardrail_action"] == "INPUT_OFF_TOPIC"
     assert "IIT" in body["reply_text"]
+
+
+def test_input_guardrail_no_false_positives_on_arabic_student_terms():
+    """Legitimate Arabic terms (دروس, فضاء الطالب, الطبيعية, حقوق التسجيل) must not be blocked."""
+    legitimate_queries = [
+        ("شنوة الدروس متاع GLID في الـ IIT؟", "ar-TN", "Tunisian_Derja"),
+        ("وين نلقى فضاء الطالب متاع NAU؟", "ar-TN", "Tunisian_Derja"),
+        ("أحمل بكالوريا العلوم الطبيعية، هل يمكنني الترشح لـ IIT؟", "ar", "Modern_Standard_Arabic"),
+        ("قداش حقوق التسجيل في الـ ISB؟", "ar-TN", "Tunisian_Derja"),
+    ]
+    for query, lang, dialect in legitimate_queries:
+        res = check_input_guardrail(query, lang_code=lang, dialect=dialect)
+        assert not res.is_blocked, f"Unexpectedly blocked legitimate query: {query}"
+
+    # Standalone out-of-corpus Arabic/Derja traps must still be blocked
+    traps = [
+        ("نحب نقرا درو في الـ IIT", "ar-TN", "Tunisian_Derja"),
+        ("هل يوجد تخصص الطب في مجمع NAU؟", "ar", "Modern_Standard_Arabic"),
+        ("هل توجد شعبة الحقوق في ISB؟", "ar", "Modern_Standard_Arabic"),
+    ]
+    for query, lang, dialect in traps:
+        res = check_input_guardrail(query, lang_code=lang, dialect=dialect)
+        assert res.is_blocked, f"Expected trap query to be blocked: {query}"
+        assert res.guardrail_type == GuardrailType.OUT_OF_CORPUS
+

@@ -94,11 +94,11 @@ OUT_OF_CORPUS_PATTERNS: tuple[str, ...] = (
     "faculté de médecine",
     "faculte de medecine",
     "كلية طب",
+    "كلية الطب",
     "طب الأسنان",
     "طب الاسنان",
     "dentaire",
     "chirurgie",
-    "الطب",
     "صيدلة",
     "pharmacie",
     "clinique",
@@ -111,14 +111,14 @@ OUT_OF_CORPUS_PATTERNS: tuple[str, ...] = (
     "droit des affaires",
     "licence en droit",
     "كلية الحقوق",
-    "حقوق",
-    "درو",
+    "شعبة الحقوق",
     "قانون الأعمال",
     # Astrophysics & Space
     "astrophysique",
     "cosmologie",
     "علم الفلك",
-    "فضاء",
+    "علوم الفضاء",
+    "هندسة الفضاء",
     # Theology & Religious Law
     "شريعة",
     "أصول الفقه",
@@ -144,6 +144,20 @@ OUT_OF_CORPUS_PATTERNS: tuple[str, ...] = (
     "bourse garantie",
     "منحة مضمونة",
     "شهادة قبول رسمية",
+)
+
+# Word-boundary Arabic/Derja traps to avoid false positives on "دروس", "الطبيعية",
+# "فضاء الطالب", or "حقوق التسجيل".
+OUT_OF_CORPUS_REGEX_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("الطب", re.compile(r"(?<![\u0600-\u06FF])الطب(?![\u0600-\u06FF])")),
+    ("درو", re.compile(r"(?<![\u0600-\u06FF])درو(?![\u0600-\u06FF])")),
+    (
+        "حقوق_دراسة",
+        re.compile(
+            r"(?<![\u0600-\u06FF])(?:شعبة|إجازة|اجازة|ماستر|دراسة|قراية|نقرا)\s+"
+            r"(?:ال)?حقوق(?![\u0600-\u06FF])"
+        ),
+    ),
 )
 
 OFF_TOPIC_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -375,7 +389,10 @@ def check_input_guardrail(
     # 1. Prompt Injection & Jailbreak Pre-Filter
     for pattern in PROMPT_INJECTION_PATTERNS:
         if pattern.search(lower_query):
-            logger.info("Guardrail triggered: PROMPT_INJECTION on query '%s'", query[:60])
+            logger.info(
+                "Guardrail triggered: PROMPT_INJECTION (query_len=%d)",
+                len(cleaned_query),
+            )
             refusal = build_prompt_injection_refusal(lang_code, dialect)
             return InputGuardrailResult(
                 status=GuardrailStatus.BLOCKED,
@@ -387,7 +404,7 @@ def check_input_guardrail(
     # 2. Out-of-Corpus Academic Traps (Medicine, Law, Criminology, etc.)
     for trap in OUT_OF_CORPUS_PATTERNS:
         if trap in lower_query:
-            logger.info("Guardrail triggered: OUT_OF_CORPUS (match='%s') on query", trap)
+            logger.info("Guardrail triggered: OUT_OF_CORPUS (match='%s')", trap)
             refusal = build_off_topic_refusal(lang_code, dialect)
             return InputGuardrailResult(
                 status=GuardrailStatus.BLOCKED,
@@ -396,10 +413,24 @@ def check_input_guardrail(
                 refusal_message=refusal,
             )
 
+    for label, pattern in OUT_OF_CORPUS_REGEX_PATTERNS:
+        if pattern.search(lower_query):
+            logger.info("Guardrail triggered: OUT_OF_CORPUS (regex='%s')", label)
+            refusal = build_off_topic_refusal(lang_code, dialect)
+            return InputGuardrailResult(
+                status=GuardrailStatus.BLOCKED,
+                guardrail_type=GuardrailType.OUT_OF_CORPUS,
+                reason=f"Query references out-of-corpus domain or prohibited claim: {label}",
+                refusal_message=refusal,
+            )
+
     # 3. Non-Academic Off-Topic Topics (Cooking, Weather, Sports, Politics, etc.)
     for pattern in OFF_TOPIC_PATTERNS:
         if pattern.search(lower_query):
-            logger.info("Guardrail triggered: OFF_TOPIC pattern matched on query '%s'", query[:60])
+            logger.info(
+                "Guardrail triggered: OFF_TOPIC (query_len=%d)",
+                len(cleaned_query),
+            )
             refusal = build_off_topic_refusal(lang_code, dialect)
             return InputGuardrailResult(
                 status=GuardrailStatus.BLOCKED,
