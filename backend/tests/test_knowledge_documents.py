@@ -80,6 +80,11 @@ class MockAsyncSession:
             mock_result.scalar_one.return_value = len(active_docs)
             return mock_result
 
+        # Check for accounts lookup
+        if "accounts" in stmt_str:
+            mock_result.scalar_one_or_none.return_value = uuid.uuid4()
+            return mock_result
+
         # Check for single document by code
         if "documents.code =" in stmt_str:
             mock_result.scalar_one_or_none.return_value = None
