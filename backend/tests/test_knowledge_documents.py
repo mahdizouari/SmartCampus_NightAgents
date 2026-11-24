@@ -104,11 +104,17 @@ class MockAsyncSession:
 
         # Check for single document by ID
         if "documents.id =" in stmt_str:
-            found = None
-            for d in self.documents.values():
-                if d.status != "DELETED":
-                    found = d
-                    break
+            params = statement.compile().params
+            req_id = next((v for v in params.values() if isinstance(v, uuid.UUID)), None)
+            if req_id is not None:
+                doc = self.documents.get(req_id)
+                found = doc if doc and doc.status != "DELETED" else None
+            else:
+                found = None
+                for d in self.documents.values():
+                    if d.status != "DELETED":
+                        found = d
+                        break
             mock_result.scalar_one_or_none.return_value = found
             return mock_result
 

@@ -46,6 +46,8 @@ data/private/
 
 # ── Local services data (Postgres, Redis, MinIO volumes) ──
 .docker-data/
+storage/
+backend/storage/
 *.dump
 *.sqlite3
 
