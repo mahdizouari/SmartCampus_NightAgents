@@ -20,7 +20,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -81,11 +81,11 @@ def sanitize_filename(filename: str) -> str:
     if not filename:
         return f"doc_{uuid.uuid4().hex[:8]}.bin"
 
-    # Strip null bytes and normalize
-    clean = filename.replace("\x00", "").strip()
+    # Strip null bytes and normalize path separators (handles both / and \ on all OSes)
+    clean = filename.replace("\x00", "").strip().replace("\\", "/")
 
     # Extract base filename (removes any leading path / or \)
-    clean = Path(clean).name
+    clean = PurePosixPath(clean).name
 
     # Remove any remaining dangerous characters
     clean = re.sub(r'[\/:*?"<>|\\]', "_", clean)
