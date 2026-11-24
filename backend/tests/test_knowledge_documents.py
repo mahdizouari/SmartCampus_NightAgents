@@ -16,7 +16,13 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
-from app.models.documents_rag import CorpusDocument, CorpusDocumentVersion, DocumentSyncJob
+from app.models.documents_rag import (
+    CorpusDocument,
+    CorpusDocumentVersion,
+    DocumentSyncJob,
+    DocumentSyncLog,
+)
+from app.models.users import AuditLog
 from app.services import file_storage_service as storage_svc
 
 DEFAULT_ADMIN_ID = "00000000-0000-0000-0000-000000000001"
@@ -56,6 +62,8 @@ class MockAsyncSession:
         self.documents: dict[uuid.UUID, CorpusDocument] = {}
         self.versions: dict[uuid.UUID, CorpusDocumentVersion] = {}
         self.jobs: dict[uuid.UUID, DocumentSyncJob] = {}
+        self.sync_logs: list[DocumentSyncLog] = []
+        self.audit_logs: list[AuditLog] = []
         self.accounts: set[uuid.UUID] = {uuid.UUID(DEFAULT_ADMIN_ID)}
         self.programs: set[uuid.UUID] = {uuid.UUID(DEFAULT_PROGRAM_ID)}
 
@@ -66,8 +74,15 @@ class MockAsyncSession:
             self.versions[obj.id] = obj
         elif isinstance(obj, DocumentSyncJob):
             self.jobs[obj.id] = obj
+        elif isinstance(obj, DocumentSyncLog):
+            self.sync_logs.append(obj)
+        elif isinstance(obj, AuditLog):
+            self.audit_logs.append(obj)
 
     async def commit(self):
+        pass
+
+    async def rollback(self):
         pass
 
     async def flush(self):
@@ -78,7 +93,12 @@ class MockAsyncSession:
 
     async def execute(self, statement: Any):
         mock_result = MagicMock()
+        mock_result.rowcount = 0
         stmt_str = str(statement)
+
+        # Handle UPDATE statements gracefully in the lightweight mock
+        if stmt_str.lstrip().upper().startswith("UPDATE "):
+            return mock_result
 
         # Check for accounts lookup
         if "from core.accounts" in stmt_str.lower():
@@ -121,14 +141,22 @@ class MockAsyncSession:
 
         # Check for versions
         if "document_versions" in stmt_str:
-            found_v = next(iter(self.versions.values()), None)
+            all_versions = list(self.versions.values())
+            found_v = all_versions[0] if all_versions else None
             mock_result.scalar_one_or_none.return_value = found_v
+            mock_scalars = MagicMock()
+            mock_scalars.all.return_value = all_versions
+            mock_result.scalars.return_value = mock_scalars
             return mock_result
 
         # Check for sync jobs
         if "document_sync_jobs" in stmt_str:
-            found_j = next(iter(self.jobs.values()), None)
+            all_jobs = list(self.jobs.values())
+            found_j = all_jobs[0] if all_jobs else None
             mock_result.scalar_one_or_none.return_value = found_j
+            mock_scalars = MagicMock()
+            mock_scalars.all.return_value = all_jobs
+            mock_result.scalars.return_value = mock_scalars
             return mock_result
 
         # Default: list documents
@@ -507,11 +535,4 @@ def test_create_document_cleans_up_file_on_db_error(test_client, monkeypatch):
 
     # Check that file was cleaned up from storage and does not exist
     storage_root = settings.effective_storage_root
-    target_file = (
-        storage_root
-        / settings.STORAGE_BUCKET_KNOWLEDGE
-        / "iit"
-        / "IIT_FAIL_CLEANUP"
-        / "cleanup_test.pdf"
-    )
-    assert not target_file.exists()
+    assert list(storage_root.rglob("*.pdf")) == []
