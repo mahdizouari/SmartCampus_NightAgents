@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     chat,
     documents,
     health,
+    knowledge,
     voice_notes,
 )
 
@@ -56,3 +57,11 @@ api_router.include_router(
     prefix="/documents",
     tags=["Documents & VLM Extraction"],
 )
+
+# Include official RAG corpus document management endpoints under /api/v1/knowledge/documents (SA-49)
+api_router.include_router(
+    knowledge.router,
+    prefix="/knowledge/documents",
+    tags=["Knowledge Corpus Management"],
+)
+
