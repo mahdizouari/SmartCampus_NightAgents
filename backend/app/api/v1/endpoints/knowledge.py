@@ -9,7 +9,6 @@ Manages RAG knowledge documents across IIT, ISB, and ISA schools:
 - Strict RBAC: write endpoints require admin, responsable, or direction roles.
 """
 
-import hashlib
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,12 +21,14 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     status,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import CurrentActor, require_roles
 from app.models.catalog import Program
@@ -45,6 +46,7 @@ from app.schemas.knowledge import (
     IndexStatusEnum,
     SchoolCodeEnum,
 )
+from app.services import file_storage_service as storage_svc
 
 router = APIRouter()
 
@@ -53,6 +55,8 @@ RequireDocumentAdmin = Annotated[
     CurrentActor,
     Depends(require_roles("admin", "responsable", "direction")),
 ]
+
+STAFF_ROLES = {"admin", "responsable", "direction", "rh"}
 
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -197,103 +201,120 @@ async def create_document(
 
     current_version: CorpusDocumentVersion | None = None
     latest_job: DocumentSyncJob | None = None
+    saved_storage_paths: list[str] = []
 
-    # 4. Process file or raw content if supplied
-    has_file = file is not None and getattr(file, "filename", None) and file.filename.strip() != ""
-    if has_file:
-        file_bytes = await file.read(MAX_DOCUMENT_FILE_SIZE_BYTES + 1)
-        if len(file_bytes) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Uploaded file cannot be empty (0 bytes).",
-            )
-        if len(file_bytes) > MAX_DOCUMENT_FILE_SIZE_BYTES:
-            max_mb = MAX_DOCUMENT_FILE_SIZE_BYTES // (1024 * 1024)
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File exceeds maximum size of {max_mb}MB.",
-            )
-
-        mime_type = file.content_type or "application/octet-stream"
-        if mime_type not in ALLOWED_MIME_TYPES:
-            allowed = sorted(ALLOWED_MIME_TYPES)
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"File mime type '{mime_type}' not allowed. Must be one of {allowed}.",
-            )
-
-        _validate_magic_bytes(mime_type, file_bytes)
-
-        safe_filename = Path(file.filename or "uploaded_doc").name or "uploaded_doc"
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
-        version_id = uuid.uuid4()
-        storage_path = f"knowledge/{school_code.value}/{doc.code}/{safe_filename}"
-
-        current_version = CorpusDocumentVersion(
-            id=version_id,
-            document_id=doc.id,
-            version_number=1,
-            file_name=safe_filename,
-            file_path_storage=storage_path,
-            mime_type=mime_type,
-            file_size_bytes=len(file_bytes),
-            file_hash_sha256=file_hash,
-            uploaded_by=user_uuid,
-            is_active=True,
+    try:
+        # 4. Process file or raw content if supplied
+        has_file = (
+            file is not None
+            and getattr(file, "filename", None)
+            and file.filename.strip() != ""
         )
-        db.add(current_version)
-        await db.flush()
-        doc.current_version_id = version_id
+        if has_file:
+            file_bytes = await file.read(MAX_DOCUMENT_FILE_SIZE_BYTES + 1)
+            if len(file_bytes) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Uploaded file cannot be empty (0 bytes).",
+                )
+            if len(file_bytes) > MAX_DOCUMENT_FILE_SIZE_BYTES:
+                max_mb = MAX_DOCUMENT_FILE_SIZE_BYTES // (1024 * 1024)
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File exceeds maximum size of {max_mb}MB.",
+                )
 
-        latest_job = DocumentSyncJob(
-            id=uuid.uuid4(),
-            version_id=version_id,
-            action_type="INGEST",
-            pipeline_stage="PARSING",
-            status="PENDING",
-        )
-        db.add(latest_job)
+            mime_type = file.content_type or "application/octet-stream"
+            if mime_type not in ALLOWED_MIME_TYPES:
+                allowed = sorted(ALLOWED_MIME_TYPES)
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=f"File mime type '{mime_type}' not allowed. Must be one of {allowed}.",
+                )
 
-    elif content and content.strip():
-        content_bytes = content.encode("utf-8")
-        if len(content_bytes) > MAX_DOCUMENT_FILE_SIZE_BYTES:
-            max_mb = MAX_DOCUMENT_FILE_SIZE_BYTES // (1024 * 1024)
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Content exceeds maximum size of {max_mb}MB.",
+            _validate_magic_bytes(mime_type, file_bytes)
+
+            safe_name = Path(file.filename or "uploaded_doc").name or "uploaded_doc"
+            meta = storage_svc.save_document_bytes(
+                file_bytes,
+                filename=safe_name,
+                bucket=settings.STORAGE_BUCKET_KNOWLEDGE,
+                sub_path=f"{school_code.value}/{doc.code}/{safe_name}",
+                declared_mime_type=mime_type,
+                allowed_mime_types=ALLOWED_MIME_TYPES,
             )
+            saved_storage_paths.append(meta.storage_path)
+            version_id = uuid.uuid4()
 
-        file_hash = hashlib.sha256(content_bytes).hexdigest()
-        version_id = uuid.uuid4()
-        storage_path = f"knowledge/{school_code.value}/{doc.code}/content.md"
+            current_version = CorpusDocumentVersion(
+                id=version_id,
+                document_id=doc.id,
+                version_number=1,
+                file_name=meta.file_name,
+                file_path_storage=meta.storage_path,
+                mime_type=meta.mime_type,
+                file_size_bytes=meta.file_size_bytes,
+                file_hash_sha256=meta.file_hash_sha256,
+                uploaded_by=user_uuid,
+                is_active=True,
+            )
+            db.add(current_version)
+            await db.flush()
+            doc.current_version_id = version_id
 
-        current_version = CorpusDocumentVersion(
-            id=version_id,
-            document_id=doc.id,
-            version_number=1,
-            file_name="content.md",
-            file_path_storage=storage_path,
-            mime_type="text/markdown",
-            file_size_bytes=len(content_bytes),
-            file_hash_sha256=file_hash,
-            uploaded_by=user_uuid,
-            is_active=True,
-        )
-        db.add(current_version)
-        await db.flush()
-        doc.current_version_id = version_id
+            latest_job = DocumentSyncJob(
+                id=uuid.uuid4(),
+                version_id=version_id,
+                action_type="INGEST",
+                pipeline_stage="PARSING",
+                status="PENDING",
+            )
+            db.add(latest_job)
 
-        latest_job = DocumentSyncJob(
-            id=uuid.uuid4(),
-            version_id=version_id,
-            action_type="INGEST",
-            pipeline_stage="PARSING",
-            status="PENDING",
-        )
-        db.add(latest_job)
+        elif content and content.strip():
+            content_bytes = content.encode("utf-8")
+            meta = storage_svc.save_document_bytes(
+                content_bytes,
+                filename="content.md",
+                bucket=settings.STORAGE_BUCKET_KNOWLEDGE,
+                sub_path=f"{school_code.value}/{doc.code}/content.md",
+                declared_mime_type="text/markdown",
+                allowed_mime_types=ALLOWED_MIME_TYPES,
+            )
+            saved_storage_paths.append(meta.storage_path)
+            version_id = uuid.uuid4()
 
-    await db.commit()
-    await db.refresh(doc)
+            current_version = CorpusDocumentVersion(
+                id=version_id,
+                document_id=doc.id,
+                version_number=1,
+                file_name=meta.file_name,
+                file_path_storage=meta.storage_path,
+                mime_type=meta.mime_type,
+                file_size_bytes=meta.file_size_bytes,
+                file_hash_sha256=meta.file_hash_sha256,
+                uploaded_by=user_uuid,
+                is_active=True,
+            )
+            db.add(current_version)
+            await db.flush()
+            doc.current_version_id = version_id
+
+            latest_job = DocumentSyncJob(
+                id=uuid.uuid4(),
+                version_id=version_id,
+                action_type="INGEST",
+                pipeline_stage="PARSING",
+                status="PENDING",
+            )
+            db.add(latest_job)
+
+        await db.commit()
+        await db.refresh(doc)
+    except Exception:
+        for storage_path in saved_storage_paths:
+            storage_svc.delete_document_bytes(storage_path)
+        raise
 
     return _build_document_response(doc, latest_job, current_version)
 
@@ -481,6 +502,69 @@ async def update_document(
     return _build_document_response(doc, latest_job, current_version)
 
 
+@router.get(
+    "/{document_id}/download",
+    status_code=status.HTTP_200_OK,
+    summary="Download the raw binary file for an official knowledge document (SA-50)",
+)
+async def download_document_file(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: CurrentActor = Depends(
+        require_roles("admin", "responsable", "direction", "student", "rh")
+    ),
+) -> Response:
+    """Stream or return the stored binary document with validated MIME type and filename."""
+    doc_res = await db.execute(
+        select(CorpusDocument).where(
+            CorpusDocument.id == document_id,
+            CorpusDocument.status != DocumentStatusEnum.DELETED.value,
+        )
+    )
+    doc = doc_res.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{document_id}' not found.",
+        )
+
+    # Prevent students and non-staff roles from downloading unpublished DRAFT / ARCHIVED documents
+    if actor.role not in STAFF_ROLES and doc.status != DocumentStatusEnum.PUBLISHED.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only published documents can be downloaded by students.",
+        )
+
+    if not doc.current_version_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{document_id}' has no active file version.",
+        )
+
+    v_res = await db.execute(
+        select(CorpusDocumentVersion).where(
+            CorpusDocumentVersion.id == doc.current_version_id
+        )
+    )
+    version = v_res.scalar_one_or_none()
+    if not version or not version.file_path_storage:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File version storage record not found.",
+        )
+
+    file_bytes, mime_type = storage_svc.read_document_bytes(version.file_path_storage)
+    return Response(
+        content=file_bytes,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{version.file_name}"',
+            "Content-Length": str(len(file_bytes)),
+            "ETag": f'"{version.file_hash_sha256}"',
+        },
+    )
+
+
 @router.delete(
     "/{document_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -503,6 +587,17 @@ async def delete_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document '{document_id}' not found.",
         )
+
+    # Clean up physical storage file if present
+    if doc.current_version_id:
+        v_res = await db.execute(
+            select(CorpusDocumentVersion).where(
+                CorpusDocumentVersion.id == doc.current_version_id
+            )
+        )
+        version = v_res.scalar_one_or_none()
+        if version and version.file_path_storage:
+            storage_svc.delete_document_bytes(version.file_path_storage)
 
     doc.status = DocumentStatusEnum.DELETED.value
     await db.commit()

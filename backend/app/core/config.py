@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -89,6 +91,21 @@ class Settings(BaseSettings):
     WHISPER_MODEL: str = "whisper-large-v3"
     WHISPER_BASE_URL: str = ""  # Defaults to LLM_BASE_URL when empty
     WHISPER_TIMEOUT_SECONDS: float = 60.0
+
+    # Binary File & Object Storage Adapter Settings (SA-50)
+    STORAGE_ROOT: str = "storage"
+    STORAGE_BUCKET_KNOWLEDGE: str = "knowledge"
+    STORAGE_BUCKET_CANDIDATES: str = "candidates"
+    MAX_DOCUMENT_FILE_SIZE_BYTES: int = 25 * 1024 * 1024  # 25 MB
+
+    @property
+    def effective_storage_root(self) -> Path:
+        """Returns the absolute root directory for local object storage (SA-50)."""
+        root_path = Path(self.STORAGE_ROOT)
+        if not root_path.is_absolute():
+            # Resolve relative to backend base dir or current working dir
+            return Path.cwd().resolve() / root_path
+        return root_path.resolve()
 
     @property
     def effective_vlm_base_url(self) -> str:
