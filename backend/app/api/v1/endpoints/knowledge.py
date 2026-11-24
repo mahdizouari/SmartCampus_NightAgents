@@ -1,7 +1,7 @@
 """Official knowledge corpus REST endpoints for SA-49.
 
 Manages RAG knowledge documents across IIT, ISB, and ISA schools:
-- Uploading PDF/Markdown/text brochures
+- Uploading PDF/Markdown/text/DOCX brochures
 - Structured text/markdown creation
 - Listing with filtering (school_code, index_status, is_published)
 - Metadata & publication state updates (publish/unpublish)
@@ -12,6 +12,7 @@ Manages RAG knowledge documents across IIT, ISB, and ISA schools:
 import hashlib
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -24,11 +25,12 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import CurrentActor, require_roles
+from app.models.catalog import Program
 from app.models.documents_rag import CorpusDocument, CorpusDocumentVersion, DocumentSyncJob
 from app.models.users import Account
 from app.schemas.knowledge import (
@@ -52,13 +54,28 @@ RequireDocumentAdmin = Annotated[
     Depends(require_roles("admin", "responsable", "direction")),
 ]
 
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _validate_magic_bytes(mime_type: str, file_bytes: bytes) -> None:
+    """Verify binary file signatures match the declared MIME type."""
+    if mime_type == "application/pdf" and not file_bytes.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid PDF file: missing %PDF- header.",
+        )
+    if mime_type == _DOCX_MIME and not file_bytes.startswith(b"PK\x03\x04"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid DOCX file: missing ZIP/OOXML signature.",
+        )
+
 
 def _build_document_response(
     doc: CorpusDocument,
     latest_job: DocumentSyncJob | None = None,
     current_version: CorpusDocumentVersion | None = None,
 ) -> DocumentResponse:
-    # Determine index status from latest sync job
     index_status = IndexStatusEnum.NOT_INDEXED.value
     if latest_job:
         index_status = latest_job.status
@@ -84,7 +101,6 @@ def _build_document_response(
         description=doc.description,
         school_code=doc.school,
         doc_type=doc.category,
-        academic_year=None,
         target_program_id=doc.target_program_id,
         current_version_id=doc.current_version_id,
         status=doc.status,
@@ -106,27 +122,51 @@ def _build_document_response(
 async def create_document(
     actor: RequireDocumentAdmin,
     db: AsyncSession = Depends(get_db),
-    # Optional file upload for multipart
     file: UploadFile | None = File(default=None),
-    # Form fields matching creation requirements
-    code: str = Form(...),
-    title: str = Form(...),
+    code: str = Form(..., min_length=2, max_length=64, pattern=r"^[A-Za-z0-9._-]+$"),
+    title: str = Form(..., min_length=3, max_length=255),
     school_code: SchoolCodeEnum = Form(...),
     doc_type: DocumentCategoryEnum = Form(...),
-    description: str | None = Form(default=None),
-    academic_year: str | None = Form(default=None),
+    description: str | None = Form(default=None, max_length=2000),
     is_published: bool = Form(default=False),
     target_program_id: str | None = Form(default=None),
     content: str | None = Form(default=None),
 ) -> DocumentResponse:
-    # Handle empty string for target_program_id if sent by Swagger
+    # 1. Verify actor.account_id is a valid existing account (preserve audit attribution)
+    try:
+        user_uuid = uuid.UUID(actor.account_id)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid actor account identifier.",
+        ) from exc
+
+    acc_exists = await db.execute(select(Account.id).where(Account.id == user_uuid))
+    if not acc_exists.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authenticated account not found.",
+        )
+
+    # 2. Validate target_program_id if provided
     parsed_program_id: uuid.UUID | None = None
     if target_program_id and target_program_id.strip():
         try:
             parsed_program_id = uuid.UUID(target_program_id.strip())
-        except ValueError:
-            parsed_program_id = None
-    # 1. Check code uniqueness
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="target_program_id must be a valid UUID.",
+            ) from exc
+
+        prog_res = await db.execute(select(Program.id).where(Program.id == parsed_program_id))
+        if not prog_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Program '{parsed_program_id}' not found.",
+            )
+
+    # 3. Check code uniqueness
     existing_stmt = select(CorpusDocument).where(CorpusDocument.code == code)
     res = await db.execute(existing_stmt)
     if res.scalar_one_or_none():
@@ -134,33 +174,6 @@ async def create_document(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Document with code '{code}' already exists.",
         )
-
-    # Resolve author to an existing account to satisfy core.accounts foreign key
-    user_uuid: uuid.UUID | None = None
-    try:
-        candidate_uuid = uuid.UUID(actor.account_id)
-        acc_exists = await db.execute(select(Account.id).where(Account.id == candidate_uuid))
-        if acc_exists.scalar_one_or_none():
-            user_uuid = candidate_uuid
-    except (ValueError, TypeError):
-        pass
-
-    if user_uuid is None:
-        # Fallback to demo admin or first available account in DB
-        acc_stmt = select(Account.id).limit(1)
-        res_acc = await db.execute(acc_stmt)
-        user_uuid = res_acc.scalar_one_or_none()
-        if user_uuid is None:
-            # Create a fallback system account if empty database
-            user_uuid = uuid.uuid4()
-            sys_account = Account(
-                id=user_uuid,
-                email="admin@smartcampus.tn",
-                full_name="Admin SmartCampus",
-                auth_provider="EMAIL_OTP",
-            )
-            db.add(sys_account)
-            await db.flush()
 
     doc_id = uuid.uuid4()
     initial_status = (
@@ -185,10 +198,15 @@ async def create_document(
     current_version: CorpusDocumentVersion | None = None
     latest_job: DocumentSyncJob | None = None
 
-    # 2. Process file or raw content if supplied
+    # 4. Process file or raw content if supplied
     has_file = file is not None and getattr(file, "filename", None) and file.filename.strip() != ""
     if has_file:
         file_bytes = await file.read(MAX_DOCUMENT_FILE_SIZE_BYTES + 1)
+        if len(file_bytes) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file cannot be empty (0 bytes).",
+            )
         if len(file_bytes) > MAX_DOCUMENT_FILE_SIZE_BYTES:
             max_mb = MAX_DOCUMENT_FILE_SIZE_BYTES // (1024 * 1024)
             raise HTTPException(
@@ -204,15 +222,18 @@ async def create_document(
                 detail=f"File mime type '{mime_type}' not allowed. Must be one of {allowed}.",
             )
 
+        _validate_magic_bytes(mime_type, file_bytes)
+
+        safe_filename = Path(file.filename or "uploaded_doc").name or "uploaded_doc"
         file_hash = hashlib.sha256(file_bytes).hexdigest()
         version_id = uuid.uuid4()
-        storage_path = f"knowledge/{school_code.value}/{doc.code}/{file.filename or 'document'}"
+        storage_path = f"knowledge/{school_code.value}/{doc.code}/{safe_filename}"
 
         current_version = CorpusDocumentVersion(
             id=version_id,
             document_id=doc.id,
             version_number=1,
-            file_name=file.filename or "uploaded_doc",
+            file_name=safe_filename,
             file_path_storage=storage_path,
             mime_type=mime_type,
             file_size_bytes=len(file_bytes),
@@ -221,11 +242,9 @@ async def create_document(
             is_active=True,
         )
         db.add(current_version)
-        # Flush version so it exists, THEN update the document's FK reference
         await db.flush()
         doc.current_version_id = version_id
 
-        # Trigger sync/indexing job
         latest_job = DocumentSyncJob(
             id=uuid.uuid4(),
             version_id=version_id,
@@ -235,8 +254,15 @@ async def create_document(
         )
         db.add(latest_job)
 
-    elif content is not None:
+    elif content and content.strip():
         content_bytes = content.encode("utf-8")
+        if len(content_bytes) > MAX_DOCUMENT_FILE_SIZE_BYTES:
+            max_mb = MAX_DOCUMENT_FILE_SIZE_BYTES // (1024 * 1024)
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Content exceeds maximum size of {max_mb}MB.",
+            )
+
         file_hash = hashlib.sha256(content_bytes).hexdigest()
         version_id = uuid.uuid4()
         storage_path = f"knowledge/{school_code.value}/{doc.code}/content.md"
@@ -254,7 +280,6 @@ async def create_document(
             is_active=True,
         )
         db.add(current_version)
-        # Flush version so it exists, THEN update the document's FK reference
         await db.flush()
         doc.current_version_id = version_id
 
@@ -297,18 +322,11 @@ async def list_documents(
         else:
             query = query.where(CorpusDocument.status != DocumentStatusEnum.PUBLISHED.value)
 
-    # Count total
-    count_query = select(func.count()).select_from(query.subquery())
-    total_res = await db.execute(count_query)
-    total = total_res.scalar_one() or 0
-
-    # Paginate
     query = query.order_by(CorpusDocument.created_at.desc())
-    query = query.offset((page - 1) * page_size).limit(page_size)
     docs_res = await db.execute(query)
     docs = docs_res.scalars().all()
 
-    items: list[DocumentResponse] = []
+    all_items: list[DocumentResponse] = []
     for doc in docs:
         latest_job = None
         current_version = None
@@ -331,10 +349,15 @@ async def list_documents(
         resp = _build_document_response(doc, latest_job, current_version)
         if index_status is not None and resp.index_status != index_status.value:
             continue
-        items.append(resp)
+        all_items.append(resp)
+
+    total = len(all_items)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated_items = all_items[start:end]
 
     return DocumentListResponse(
-        items=items,
+        items=paginated_items,
         total=total,
         page=page,
         page_size=page_size,
@@ -408,6 +431,17 @@ async def update_document(
             detail=f"Document '{document_id}' not found.",
         )
 
+    if payload.target_program_id is not None:
+        prog_res = await db.execute(
+            select(Program.id).where(Program.id == payload.target_program_id)
+        )
+        if not prog_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Program '{payload.target_program_id}' not found.",
+            )
+        doc.target_program_id = payload.target_program_id
+
     if payload.title is not None:
         doc.title = payload.title
     if payload.description is not None:
@@ -416,15 +450,6 @@ async def update_document(
         doc.school = payload.school_code.value
     if payload.doc_type is not None:
         doc.category = payload.doc_type.value
-    if payload.target_program_id is not None:
-        # Verify program exists in DB before setting FK, ignore if invalid
-        from app.models.catalog import Program
-
-        prog_res = await db.execute(
-            select(Program.id).where(Program.id == payload.target_program_id)
-        )
-        if prog_res.scalar_one_or_none():
-            doc.target_program_id = payload.target_program_id
     if payload.status is not None:
         doc.status = payload.status.value
     elif payload.is_published is not None:
@@ -479,6 +504,5 @@ async def delete_document(
             detail=f"Document '{document_id}' not found.",
         )
 
-    # Soft delete / mark as DELETED
     doc.status = DocumentStatusEnum.DELETED.value
     await db.commit()

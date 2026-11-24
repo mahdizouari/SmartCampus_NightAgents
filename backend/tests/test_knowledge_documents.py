@@ -18,13 +18,16 @@ from app.core.database import get_db
 from app.main import app
 from app.models.documents_rag import CorpusDocument, CorpusDocumentVersion, DocumentSyncJob
 
+DEFAULT_ADMIN_ID = "00000000-0000-0000-0000-000000000001"
+DEFAULT_PROGRAM_ID = "00000000-0000-0000-0000-000000000010"
+
 
 def _b64url_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
 def make_test_jwt(
-    sub: str = "admin-uuid-1",
+    sub: str = DEFAULT_ADMIN_ID,
     role: str = "admin",
     exp_offset: int = 3600,
     secret: str | None = None,
@@ -52,6 +55,8 @@ class MockAsyncSession:
         self.documents: dict[uuid.UUID, CorpusDocument] = {}
         self.versions: dict[uuid.UUID, CorpusDocumentVersion] = {}
         self.jobs: dict[uuid.UUID, DocumentSyncJob] = {}
+        self.accounts: set[uuid.UUID] = {uuid.UUID(DEFAULT_ADMIN_ID)}
+        self.programs: set[uuid.UUID] = {uuid.UUID(DEFAULT_PROGRAM_ID)}
 
     def add(self, obj: Any):
         if isinstance(obj, CorpusDocument):
@@ -74,15 +79,22 @@ class MockAsyncSession:
         mock_result = MagicMock()
         stmt_str = str(statement)
 
-        # Check for count query
-        if "count(" in stmt_str.lower():
-            active_docs = [d for d in self.documents.values() if d.status != "DELETED"]
-            mock_result.scalar_one.return_value = len(active_docs)
+        # Check for accounts lookup
+        if "from core.accounts" in stmt_str.lower():
+            params = statement.compile().params
+            acct_val = next(iter(params.values()), None)
+            mock_result.scalar_one_or_none.return_value = (
+                acct_val if acct_val in self.accounts else None
+            )
             return mock_result
 
-        # Check for accounts lookup
-        if "accounts" in stmt_str:
-            mock_result.scalar_one_or_none.return_value = uuid.uuid4()
+        # Check for program lookup
+        if "from core.program" in stmt_str.lower():
+            params = statement.compile().params
+            prog_val = next(iter(params.values()), None)
+            mock_result.scalar_one_or_none.return_value = (
+                prog_val if prog_val in self.programs else None
+            )
             return mock_result
 
         # Check for single document by code
@@ -147,7 +159,22 @@ def test_create_document_unauthorized_fails(test_client):
             "doc_type": "reglement",
         },
     )
-    # Rejects unauthenticated request with 401
+    assert res.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_create_document_unknown_account_unauthorized(test_client):
+    client, _ = test_client
+    unknown_token = make_test_jwt(sub=str(uuid.uuid4()), role="admin")
+    res = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "IIT_REG_2024",
+            "title": "IIT Reglement",
+            "school_code": "iit",
+            "doc_type": "reglement",
+        },
+        headers={"Authorization": f"Bearer {unknown_token}"},
+    )
     assert res.status_code == status.HTTP_401_UNAUTHORIZED
 
 
@@ -164,7 +191,6 @@ def test_create_document_student_forbidden(test_client):
         },
         headers={"Authorization": f"Bearer {student_token}"},
     )
-    # Rejects non-admin/responsable role with 403
     assert res.status_code == status.HTTP_403_FORBIDDEN
 
 
@@ -195,12 +221,40 @@ def test_create_document_admin_success(test_client):
     assert len(mock_db.versions) == 1
 
 
-def test_create_document_file_upload_validation(test_client):
-    client, _ = test_client
+def test_create_document_empty_file_and_magic_bytes_validation(test_client):
+    client, mock_db = test_client
     admin_token = make_test_jwt(role="responsable")
 
-    # Invalid MIME type upload
-    res = client.post(
+    # 0-byte file rejected with 400
+    empty_res = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "ISB_EMPTY_PDF",
+            "title": "Empty PDF",
+            "school_code": "isb",
+            "doc_type": "general_brochure",
+        },
+        files={"file": ("empty.pdf", b"", "application/pdf")},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert empty_res.status_code == status.HTTP_400_BAD_REQUEST
+
+    # Fake PDF without %PDF- magic bytes rejected with 400
+    fake_pdf = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "ISB_FAKE_PDF",
+            "title": "Fake PDF",
+            "school_code": "isb",
+            "doc_type": "general_brochure",
+        },
+        files={"file": ("fake.pdf", b"not a real pdf", "application/pdf")},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert fake_pdf.status_code == status.HTTP_400_BAD_REQUEST
+
+    # Invalid MIME type upload rejected with 415
+    bad_mime = client.post(
         "/api/v1/knowledge/documents",
         data={
             "code": "ISB_EXEC_EXE",
@@ -211,9 +265,9 @@ def test_create_document_file_upload_validation(test_client):
         files={"file": ("malicious.exe", b"binary content", "application/x-msdownload")},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
-    assert res.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+    assert bad_mime.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
 
-    # Valid PDF upload
+    # Valid PDF upload with %PDF- header succeeds
     pdf_res = client.post(
         "/api/v1/knowledge/documents",
         data={
@@ -222,12 +276,46 @@ def test_create_document_file_upload_validation(test_client):
             "school_code": "isa",
             "doc_type": "curriculum",
         },
-        files={"file": ("syllabus.pdf", b"%PDF-1.4 test pdf content", "application/pdf")},
+        files={"file": ("../syllabus.pdf", b"%PDF-1.4 test pdf content", "application/pdf")},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert pdf_res.status_code == status.HTTP_201_CREATED
     assert pdf_res.json()["school_code"] == "isa"
+    assert pdf_res.json()["current_version"]["file_name"] == "syllabus.pdf"
     assert pdf_res.json()["current_version"]["mime_type"] == "application/pdf"
+
+
+def test_create_document_program_id_validation(test_client):
+    client, _ = test_client
+    admin_token = make_test_jwt(role="admin")
+
+    # Malformed UUID -> 422
+    bad_uuid = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "IIT_BAD_PROG",
+            "title": "Bad Program UUID",
+            "school_code": "iit",
+            "doc_type": "curriculum",
+            "target_program_id": "not-a-uuid",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert bad_uuid.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    # Non-existent program UUID -> 404
+    missing_prog = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "IIT_MISSING_PROG",
+            "title": "Missing Program UUID",
+            "school_code": "iit",
+            "doc_type": "curriculum",
+            "target_program_id": str(uuid.uuid4()),
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert missing_prog.status_code == status.HTTP_404_NOT_FOUND
 
 
 def test_list_and_filter_documents(test_client):
@@ -264,6 +352,14 @@ def test_update_and_publish_document(test_client):
         created_by=uuid.uuid4(),
     )
     mock_db.add(doc)
+
+    # Non-existent program in PATCH -> 404
+    bad_patch = client.patch(
+        f"/api/v1/knowledge/documents/{doc_id}",
+        json={"target_program_id": str(uuid.uuid4())},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert bad_patch.status_code == status.HTTP_404_NOT_FOUND
 
     patch_res = client.patch(
         f"/api/v1/knowledge/documents/{doc_id}",

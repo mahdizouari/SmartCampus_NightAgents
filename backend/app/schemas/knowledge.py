@@ -51,22 +51,6 @@ ALLOWED_MIME_TYPES = {
 MAX_DOCUMENT_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
 
 
-class StructuredDocumentCreate(BaseModel):
-    """Payload when creating a document via structured text/markdown."""
-
-    code: str = Field(..., min_length=2, max_length=64, description="Unique reference code")
-    title: str = Field(..., min_length=3, max_length=255, description="Official title")
-    description: str | None = Field(default=None, max_length=2000)
-    school_code: SchoolCodeEnum = Field(..., description="Target school (iit/isb/isa/nau_common)")
-    doc_type: DocumentCategoryEnum = Field(..., description="Document category/type")
-    academic_year: str | None = Field(default=None, max_length=20, description="e.g. 2024-2025")
-    is_published: bool = Field(default=False, description="Initial publication status")
-    target_program_id: UUID | None = Field(default=None, description="Optional program UUID")
-    content: str | None = Field(default=None, description="Structured text/markdown content")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class DocumentUpdate(BaseModel):
     """Payload to update document metadata and publication status."""
 
@@ -74,18 +58,11 @@ class DocumentUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     school_code: SchoolCodeEnum | None = None
     doc_type: DocumentCategoryEnum | None = None
-    academic_year: str | None = Field(default=None, max_length=20)
     target_program_id: UUID | None = None
     is_published: bool | None = None
     status: DocumentStatusEnum | None = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class DocumentPublishStateUpdate(BaseModel):
-    """Payload for quickly publishing or unpublishing a document."""
-
-    is_published: bool = Field(..., description="Set publication state")
 
 
 class DocumentVersionResponse(BaseModel):
@@ -113,7 +90,6 @@ class DocumentResponse(BaseModel):
     description: str | None = None
     school_code: str
     doc_type: str
-    academic_year: str | None = None
     target_program_id: UUID | None = None
     current_version_id: UUID | None = None
     status: str
