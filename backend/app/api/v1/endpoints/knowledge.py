@@ -11,7 +11,7 @@ Manages RAG knowledge documents across IIT, ISB, and ISA schools:
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import (
@@ -26,7 +26,6 @@ from fastapi import (
 )
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import CurrentActor, require_roles
@@ -37,14 +36,12 @@ from app.schemas.knowledge import (
     MAX_DOCUMENT_FILE_SIZE_BYTES,
     DocumentCategoryEnum,
     DocumentListResponse,
-    DocumentPublishStateUpdate,
     DocumentResponse,
     DocumentStatusEnum,
     DocumentUpdate,
     DocumentVersionResponse,
     IndexStatusEnum,
     SchoolCodeEnum,
-    StructuredDocumentCreate,
 )
 
 router = APIRouter()
@@ -94,8 +91,8 @@ def _build_document_response(
         is_published=(doc.status == DocumentStatusEnum.PUBLISHED.value),
         index_status=index_status,
         created_by=doc.created_by,
-        created_at=doc.created_at or datetime.now(timezone.utc),
-        updated_at=doc.updated_at or datetime.now(timezone.utc),
+        created_at=doc.created_at or datetime.now(UTC),
+        updated_at=doc.updated_at or datetime.now(UTC),
         current_version=version_resp,
     )
 
@@ -193,16 +190,18 @@ async def create_document(
     if has_file:
         file_bytes = await file.read(MAX_DOCUMENT_FILE_SIZE_BYTES + 1)
         if len(file_bytes) > MAX_DOCUMENT_FILE_SIZE_BYTES:
+            max_mb = MAX_DOCUMENT_FILE_SIZE_BYTES // (1024 * 1024)
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File exceeds maximum size of {MAX_DOCUMENT_FILE_SIZE_BYTES // (1024 * 1024)}MB.",
+                detail=f"File exceeds maximum size of {max_mb}MB.",
             )
-        
+
         mime_type = file.content_type or "application/octet-stream"
         if mime_type not in ALLOWED_MIME_TYPES:
+            allowed = sorted(ALLOWED_MIME_TYPES)
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"File mime type '{mime_type}' not allowed. Must be one of {sorted(ALLOWED_MIME_TYPES)}.",
+                detail=f"File mime type '{mime_type}' not allowed. Must be one of {allowed}.",
             )
 
         file_hash = hashlib.sha256(file_bytes).hexdigest()
@@ -283,7 +282,7 @@ async def create_document(
 async def list_documents(
     db: AsyncSession = Depends(get_db),
     school_code: SchoolCodeEnum | None = Query(default=None, description="Filter by school"),
-    index_status: IndexStatusEnum | None = Query(default=None, description="Filter by RAG index status"),
+    index_status: IndexStatusEnum | None = Query(default=None, description="RAG index status"),
     is_published: bool | None = Query(default=None, description="Filter by publication state"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -315,7 +314,9 @@ async def list_documents(
         current_version = None
         if doc.current_version_id:
             v_res = await db.execute(
-                select(CorpusDocumentVersion).where(CorpusDocumentVersion.id == doc.current_version_id)
+                select(CorpusDocumentVersion).where(
+                    CorpusDocumentVersion.id == doc.current_version_id
+                )
             )
             current_version = v_res.scalar_one_or_none()
 
@@ -418,14 +419,19 @@ async def update_document(
     if payload.target_program_id is not None:
         # Verify program exists in DB before setting FK, ignore if invalid
         from app.models.catalog import Program
-        prog_res = await db.execute(select(Program.id).where(Program.id == payload.target_program_id))
+
+        prog_res = await db.execute(
+            select(Program.id).where(Program.id == payload.target_program_id)
+        )
         if prog_res.scalar_one_or_none():
             doc.target_program_id = payload.target_program_id
     if payload.status is not None:
         doc.status = payload.status.value
     elif payload.is_published is not None:
         doc.status = (
-            DocumentStatusEnum.PUBLISHED.value if payload.is_published else DocumentStatusEnum.DRAFT.value
+            DocumentStatusEnum.PUBLISHED.value
+            if payload.is_published
+            else DocumentStatusEnum.DRAFT.value
         )
 
     await db.commit()

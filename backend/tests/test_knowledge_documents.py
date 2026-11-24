@@ -7,7 +7,7 @@ import json
 import time
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import status
@@ -17,7 +17,6 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 from app.models.documents_rag import CorpusDocument, CorpusDocumentVersion, DocumentSyncJob
-from app.schemas.knowledge import DocumentCategoryEnum, SchoolCodeEnum
 
 
 def _b64url_encode(raw: bytes) -> str:

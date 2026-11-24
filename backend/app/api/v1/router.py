@@ -58,7 +58,7 @@ api_router.include_router(
     tags=["Documents & VLM Extraction"],
 )
 
-# Include official RAG corpus document management endpoints under /api/v1/knowledge/documents (SA-49)
+# Include official RAG corpus document management endpoints (SA-49)
 api_router.include_router(
     knowledge.router,
     prefix="/knowledge/documents",

@@ -1,20 +1,20 @@
 """Pydantic schemas for SA-49 official RAG corpus document management."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class SchoolCodeEnum(str, Enum):
+class SchoolCodeEnum(StrEnum):
     IIT = "iit"
     ISB = "isb"
     ISA = "isa"
     NAU_COMMON = "nau_common"
 
 
-class DocumentCategoryEnum(str, Enum):
+class DocumentCategoryEnum(StrEnum):
     ADMISSION_RULES = "admission_rules"
     CURRICULUM = "curriculum"
     FEES_SCHEDULE = "fees_schedule"
@@ -26,14 +26,14 @@ class DocumentCategoryEnum(str, Enum):
     PROGRAMME = "programme"
 
 
-class DocumentStatusEnum(str, Enum):
+class DocumentStatusEnum(StrEnum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
     ARCHIVED = "ARCHIVED"
     DELETED = "DELETED"
 
 
-class IndexStatusEnum(str, Enum):
+class IndexStatusEnum(StrEnum):
     NOT_INDEXED = "NOT_INDEXED"
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
@@ -54,10 +54,10 @@ MAX_DOCUMENT_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
 class StructuredDocumentCreate(BaseModel):
     """Payload when creating a document via structured text/markdown."""
 
-    code: str = Field(..., min_length=2, max_length=64, description="Unique document reference code")
+    code: str = Field(..., min_length=2, max_length=64, description="Unique reference code")
     title: str = Field(..., min_length=3, max_length=255, description="Official title")
     description: str | None = Field(default=None, max_length=2000)
-    school_code: SchoolCodeEnum = Field(..., description="Target academic institution (iit, isb, isa, nau_common)")
+    school_code: SchoolCodeEnum = Field(..., description="Target school (iit/isb/isa/nau_common)")
     doc_type: DocumentCategoryEnum = Field(..., description="Document category/type")
     academic_year: str | None = Field(default=None, max_length=20, description="e.g. 2024-2025")
     is_published: bool = Field(default=False, description="Initial publication status")
