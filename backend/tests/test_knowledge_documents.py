@@ -75,7 +75,7 @@ class MockAsyncSession:
         stmt_str = str(statement)
 
         # Check for count query
-        if "count" in stmt_str.lower():
+        if "count(" in stmt_str.lower():
             active_docs = [d for d in self.documents.values() if d.status != "DELETED"]
             mock_result.scalar_one.return_value = len(active_docs)
             return mock_result
