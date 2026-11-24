@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 from app.models.documents_rag import CorpusDocument, CorpusDocumentVersion, DocumentSyncJob
+from app.services import file_storage_service as storage_svc
 
 DEFAULT_ADMIN_ID = "00000000-0000-0000-0000-000000000001"
 DEFAULT_PROGRAM_ID = "00000000-0000-0000-0000-000000000010"
@@ -144,7 +145,11 @@ def mock_db():
 
 
 @pytest.fixture
-def test_client(mock_db):
+def test_client(mock_db, tmp_path, monkeypatch):
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    monkeypatch.setattr(settings, "STORAGE_ROOT", str(storage_root))
+
     async def override_get_db():
         yield mock_db
 
@@ -405,3 +410,108 @@ def test_delete_document_rbac(test_client):
     )
     assert del_ok.status_code == status.HTTP_204_NO_CONTENT
     assert doc.status == "DELETED"
+
+
+def test_download_document_student_draft_forbidden(test_client):
+    """Students cannot download DRAFT/ARCHIVED docs; staff can, and students can once PUBLISHED."""
+    client, mock_db = test_client
+    doc_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    sample_pdf = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+
+    meta = storage_svc.save_document_bytes(
+        sample_pdf,
+        filename="draft_doc.pdf",
+        bucket=settings.STORAGE_BUCKET_KNOWLEDGE,
+        sub_path="iit/IIT_DRAFT/draft_doc.pdf",
+    )
+
+    doc = CorpusDocument(
+        id=doc_id,
+        code="IIT_DRAFT",
+        title="Draft Syllabus",
+        school="iit",
+        category="brochure",
+        status="DRAFT",
+        created_by=uuid.UUID(DEFAULT_ADMIN_ID),
+        current_version_id=version_id,
+    )
+    version = CorpusDocumentVersion(
+        id=version_id,
+        document_id=doc_id,
+        version_number=1,
+        file_name="draft_doc.pdf",
+        file_path_storage=meta.storage_path,
+        mime_type="application/pdf",
+        file_size_bytes=len(sample_pdf),
+        file_hash_sha256=meta.file_hash_sha256,
+        uploaded_by=uuid.UUID(DEFAULT_ADMIN_ID),
+        is_active=True,
+    )
+    mock_db.add(doc)
+    mock_db.add(version)
+
+    student_token = make_test_jwt(role="student")
+    admin_token = make_test_jwt(role="admin")
+
+    # 1. Student cannot download DRAFT document -> 403 Forbidden
+    res_student = client.get(
+        f"/api/v1/knowledge/documents/{doc_id}/download",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert res_student.status_code == status.HTTP_403_FORBIDDEN
+    assert "published" in res_student.json()["detail"].lower()
+
+    # 2. Staff (admin) CAN download DRAFT document -> 200 OK
+    res_admin = client.get(
+        f"/api/v1/knowledge/documents/{doc_id}/download",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert res_admin.status_code == status.HTTP_200_OK
+    assert res_admin.content == sample_pdf
+
+    # 3. Once published, student CAN download -> 200 OK
+    doc.status = "PUBLISHED"
+    res_student_published = client.get(
+        f"/api/v1/knowledge/documents/{doc_id}/download",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert res_student_published.status_code == status.HTTP_200_OK
+    assert res_student_published.content == sample_pdf
+
+
+def test_create_document_cleans_up_file_on_db_error(test_client, monkeypatch):
+    """When DB commit fails during document creation, stored file is deleted from disk."""
+    client, mock_db = test_client
+    admin_token = make_test_jwt(role="admin")
+    sample_pdf = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+
+    # Simulate DB flush/commit error during document creation
+    async def failing_commit():
+        raise RuntimeError("Simulated DB connection failure during commit")
+
+    monkeypatch.setattr(mock_db, "commit", failing_commit)
+
+    with pytest.raises(RuntimeError):
+        client.post(
+            "/api/v1/knowledge/documents",
+            data={
+                "code": "IIT_FAIL_CLEANUP",
+                "title": "Will Fail DB",
+                "school_code": "iit",
+                "doc_type": "brochure",
+            },
+            files={"file": ("cleanup_test.pdf", sample_pdf, "application/pdf")},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+    # Check that file was cleaned up from storage and does not exist
+    storage_root = settings.effective_storage_root
+    target_file = (
+        storage_root
+        / settings.STORAGE_BUCKET_KNOWLEDGE
+        / "iit"
+        / "IIT_FAIL_CLEANUP"
+        / "cleanup_test.pdf"
+    )
+    assert not target_file.exists()

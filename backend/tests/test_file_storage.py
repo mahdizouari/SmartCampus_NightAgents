@@ -132,6 +132,10 @@ def test_sanitize_filename_strips_traversal():
     assert sanitize_filename("folder/subfolder/file.pdf") == "file.pdf"
     assert sanitize_filename("normal_brochure_2026.pdf") == "normal_brochure_2026.pdf"
 
+    # Strips carriage returns and newlines (\r, \n) to prevent header injection
+    assert sanitize_filename("injected\r\nheader.pdf") == "injectedheader.pdf"
+    assert sanitize_filename("path/to/\r\nfile.txt") == "file.txt"
+
     # Empty or dangerous names get safe fallback
     fallback = sanitize_filename("..")
     assert fallback.startswith("doc_") and fallback.endswith(".bin")
@@ -267,11 +271,13 @@ async def test_persist_corpus_document_metadata_postgresql(tmp_path: Path):
     assert target_file.exists()
     assert target_file.read_bytes() == SAMPLE_PDF
 
-    # Verify sync job enqueued
+    # Verify sync job enqueued with required action_type and pipeline_stage
     assert len(mock_db.jobs) == 1
     job = next(iter(mock_db.jobs.values()))
     assert job.version_id == version.id
     assert job.status == "PENDING"
+    assert job.action_type == "INGEST"
+    assert job.pipeline_stage == "PARSING"
 
 
 @pytest.mark.asyncio
@@ -304,6 +310,61 @@ async def test_persist_candidate_document_metadata_postgresql(tmp_path: Path):
     # Physical file stored
     clean_path = doc.uri.replace("file://", "")
     assert (storage_root / clean_path).exists()
+
+
+@pytest.mark.asyncio
+async def test_persist_corpus_metadata_cleans_up_file_on_db_error(tmp_path: Path):
+    """When DB operations fail during corpus persistence, the stored file is deleted."""
+    mock_db = MockAsyncSession()
+    storage_root = tmp_path / "storage"
+
+    # Monkeypatch flush to simulate a DB failure
+    async def failing_flush():
+        raise RuntimeError("Simulated DB failure during flush")
+
+    mock_db.flush = failing_flush
+
+    with pytest.raises(RuntimeError):
+        await persist_corpus_document_metadata(
+            mock_db,
+            code="FAIL_CORPUS_DB",
+            title="Failed Corpus Doc",
+            school_code="iit",
+            doc_type="brochure",
+            file_bytes=SAMPLE_PDF,
+            filename="fail_corpus.pdf",
+            actor_id=uuid.uuid4(),
+            storage_root=storage_root,
+        )
+
+    # Verify no file remains on disk in storage_root
+    created_files = list(storage_root.rglob("*.pdf"))
+    assert len(created_files) == 0
+
+
+@pytest.mark.asyncio
+async def test_persist_candidate_metadata_cleans_up_file_on_db_error(tmp_path: Path):
+    """When DB operations fail during candidate persistence, the stored file is deleted."""
+    mock_db = MockAsyncSession()
+    storage_root = tmp_path / "storage"
+
+    async def failing_flush():
+        raise RuntimeError("Simulated DB failure during candidate flush")
+
+    mock_db.flush = failing_flush
+
+    with pytest.raises(RuntimeError):
+        await persist_candidate_document_metadata(
+            mock_db,
+            candidate_id=uuid.uuid4(),
+            doc_type="RELEVE_BAC",
+            file_bytes=SAMPLE_PNG,
+            filename="fail_candidate.png",
+            storage_root=storage_root,
+        )
+
+    created_files = list(storage_root.rglob("*.png"))
+    assert len(created_files) == 0
 
 
 # ---------------------------------------------------------------------------

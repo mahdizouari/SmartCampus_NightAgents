@@ -76,19 +76,25 @@ _TRAVERSAL_PATTERN = re.compile(r"(\.\.[/\\]|[/\\]\.\.|^\.\.$)")
 def sanitize_filename(filename: str) -> str:
     """
     Sanitize an untrusted filename, stripping directory components, path traversal
-    sequences (../, ..\\), null bytes, and control characters.
+    sequences (../, ..\\), null bytes, carriage returns/newlines, and control characters.
     """
     if not filename:
         return f"doc_{uuid.uuid4().hex[:8]}.bin"
 
-    # Strip null bytes and normalize path separators (handles both / and \ on all OSes)
-    clean = filename.replace("\x00", "").strip().replace("\\", "/")
+    # Strip null bytes, carriage returns, newlines, and normalize path separators
+    clean = (
+        filename.replace("\x00", "")
+        .replace("\r", "")
+        .replace("\n", "")
+        .strip()
+        .replace("\\", "/")
+    )
 
     # Extract base filename (removes any leading path / or \)
     clean = PurePosixPath(clean).name
 
-    # Remove any remaining dangerous characters
-    clean = re.sub(r'[\/:*?"<>|\\]', "_", clean)
+    # Remove any remaining dangerous or control characters (including CRLF and path chars)
+    clean = re.sub(r'[\x00-\x1f\x7f\/:*?"<>|\\]', "_", clean)
     clean = clean.strip(". ")
 
     if not clean or clean == "..":
@@ -445,55 +451,61 @@ async def persist_corpus_document_metadata(
         storage_root=storage_root,
     )
 
-    # 2. Persist CorpusDocument
-    doc_id = uuid.uuid4()
-    initial_status = "PUBLISHED" if is_published else "DRAFT"
+    try:
+        # 2. Persist CorpusDocument
+        doc_id = uuid.uuid4()
+        initial_status = "PUBLISHED" if is_published else "DRAFT"
 
-    doc = CorpusDocument(
-        id=doc_id,
-        code=code,
-        title=title,
-        description=description,
-        school=school_code,
-        category=doc_type,
-        target_program_id=target_program_id,
-        status=initial_status,
-        created_by=actor_id,
-    )
-    db.add(doc)
-    await db.flush()
+        doc = CorpusDocument(
+            id=doc_id,
+            code=code,
+            title=title,
+            description=description,
+            school=school_code,
+            category=doc_type,
+            target_program_id=target_program_id,
+            status=initial_status,
+            created_by=actor_id,
+        )
+        db.add(doc)
+        await db.flush()
 
-    # 3. Persist CorpusDocumentVersion
-    version_id = uuid.uuid4()
-    version = CorpusDocumentVersion(
-        id=version_id,
-        document_id=doc.id,
-        version_number=1,
-        file_name=meta.file_name,
-        file_path_storage=meta.storage_path,
-        mime_type=meta.mime_type,
-        file_size_bytes=meta.file_size_bytes,
-        file_hash_sha256=meta.file_hash_sha256,
-        uploaded_by=actor_id,
-        changelog=changelog,
-        is_active=True,
-    )
-    db.add(version)
-    await db.flush()
+        # 3. Persist CorpusDocumentVersion
+        version_id = uuid.uuid4()
+        version = CorpusDocumentVersion(
+            id=version_id,
+            document_id=doc.id,
+            version_number=1,
+            file_name=meta.file_name,
+            file_path_storage=meta.storage_path,
+            mime_type=meta.mime_type,
+            file_size_bytes=meta.file_size_bytes,
+            file_hash_sha256=meta.file_hash_sha256,
+            uploaded_by=actor_id,
+            changelog=changelog,
+            is_active=True,
+        )
+        db.add(version)
+        await db.flush()
 
-    # Update foreign key current_version_id
-    doc.current_version_id = version_id
+        # Update foreign key current_version_id
+        doc.current_version_id = version_id
 
-    # 4. Enqueue DocumentSyncJob
-    job = DocumentSyncJob(
-        id=uuid.uuid4(),
-        version_id=version_id,
-        status="PENDING",
-    )
-    db.add(job)
-    await db.flush()
+        # 4. Enqueue DocumentSyncJob (requires action_type and pipeline_stage)
+        job = DocumentSyncJob(
+            id=uuid.uuid4(),
+            version_id=version_id,
+            action_type="INGEST",
+            pipeline_stage="PARSING",
+            status="PENDING",
+        )
+        db.add(job)
+        await db.flush()
 
-    return doc, version
+        return doc, version
+    except Exception:
+        delete_document_bytes(meta.storage_path, storage_root=storage_root)
+        raise
 
 
 async def persist_candidate_document_metadata(
@@ -526,19 +538,23 @@ async def persist_candidate_document_metadata(
         storage_root=storage_root,
     )
 
-    conf_dec: Decimal | None = None
-    if min_confidence is not None:
-        conf_dec = Decimal(str(min_confidence)).quantize(Decimal("0.001"))
+    try:
+        conf_dec: Decimal | None = None
+        if min_confidence is not None:
+            conf_dec = Decimal(str(min_confidence)).quantize(Decimal("0.001"))
 
-    doc = CandidateDocument(
-        id=uuid.uuid4(),
-        candidate_id=candidate_id,
-        type=doc_type,
-        uri=meta.storage_uri,
-        ocr_json=ocr_json,
-        min_confidence=conf_dec,
-        verification_status=verification_status,
-    )
-    db.add(doc)
-    await db.flush()
-    return doc
+        doc = CandidateDocument(
+            id=uuid.uuid4(),
+            candidate_id=candidate_id,
+            type=doc_type,
+            uri=meta.storage_uri,
+            ocr_json=ocr_json,
+            min_confidence=conf_dec,
+            verification_status=verification_status,
+        )
+        db.add(doc)
+        await db.flush()
+        return doc
+    except Exception:
+        delete_document_bytes(meta.storage_path, storage_root=storage_root)
+        raise
