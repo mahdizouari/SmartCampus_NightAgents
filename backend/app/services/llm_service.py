@@ -2,9 +2,7 @@
 
 import logging
 import re
-import time
 from typing import Any
-from uuid import UUID, uuid4
 
 import httpx
 from fastapi import HTTPException, status
@@ -12,7 +10,6 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.users import CandidateProfile
 from app.schemas.chat import (
     ActionPrompt,
     ChatCitation,
@@ -23,13 +20,11 @@ from app.schemas.chat import (
     VisionSubAgent,
 )
 from app.services.arabizi_normalizer import normalize_arabizi_to_french
-from app.services.guardrail_service import (
-    check_input_guardrail,
-    check_output_guardrail,
+from app.services.redis_service import (
+    GuestSessionService as GuestSessionService,
 )
 from app.services.redis_service import (
-    GuestSessionService,
-    HotConversationService,
+    HotConversationService as HotConversationService,
 )
 
 logger = logging.getLogger(__name__)
@@ -668,6 +663,7 @@ def _build_messages(
     history_turns: list[Any] | None = None,
     rolling_summary: str | None = None,
     declared_facts: dict[str, Any] | None = None,
+    sub_agent_addon: str | None = None,
 ) -> list[dict[str, str]]:
     register_instruction = _expected_register_label(lang_code, detected_dialect)
     system_content = VISION_SYSTEM_PROMPT + (
@@ -677,6 +673,8 @@ def _build_messages(
         f"- Registre de réponse obligatoire : {register_instruction}\n"
         f"- Intention détectée : {intent}\n"
     )
+    if sub_agent_addon:
+        system_content += f"\n{sub_agent_addon}\n"
     if getattr(payload, "campus_scope", None) and payload.campus_scope != "all":
         system_content += (
             f"- Périmètre d'établissement ciblé (campus_scope) : {payload.campus_scope}\n"
@@ -815,8 +813,14 @@ def _generate_deterministic_fallback_reply(
             "Responsable NAU humain décide après étude du dossier et entretien."
         )
 
+    auth_required_intents = {
+        "PREINSCRIPTION_AND_RELEVE",
+        "TRANSCRIPT_OCR_EXTRACTION",
+        "INTERVIEW_SCHEDULING",
+    }
+
     if lang_code == "ar":
-        if intent == "PREINSCRIPTION_AND_RELEVE" and not is_authenticated:
+        if intent in auth_required_intents and not is_authenticated:
             return (
                 "مرحباً بك في SmartCampus AI. لرفع كشف الأعداد أو استكمال ملف التسجيل الأولي، "
                 "يرجى تسجيل الدخول عبر رمز OTP أو Google OAuth (وفق قاعدة Give or Keep)."
@@ -828,7 +832,7 @@ def _generate_deterministic_fallback_reply(
         )
 
     if dialect == "Arabizi":
-        if intent == "PREINSCRIPTION_AND_RELEVE" and not is_authenticated:
+        if intent in auth_required_intents and not is_authenticated:
             return (
                 "Mar7ba bik fi SmartCampus AI! Bech tsob relevé de notes mte3ek wala tabda "
                 "l'préinscription, lazem ta3mel compte sghir b'code OTP (règle Give or Keep)."
@@ -846,7 +850,7 @@ def _generate_deterministic_fallback_reply(
         )
 
     if dialect == "Tunisian_Derja":
-        if intent == "PREINSCRIPTION_AND_RELEVE" and not is_authenticated:
+        if intent in auth_required_intents and not is_authenticated:
             return (
                 "مرحبا بيك في SmartCampus AI! باش تنجم ترفع كشف الأعداد (relevé de notes) "
                 "أو تبدأ التسجيل الأولي، يلزمك تسجل الدخول برمز OTP أولاً."
@@ -856,7 +860,7 @@ def _generate_deterministic_fallback_reply(
             "أعطيني شعبة البكالوريا أو الاختصاص الي تحب عليه باش نعاونك بالمعلومات الرسمية."
         )
 
-    if intent == "PREINSCRIPTION_AND_RELEVE" and not is_authenticated:
+    if intent in auth_required_intents and not is_authenticated:
         return (
             "Bienvenue sur SmartCampus AI ! Conformément à notre règle « Give or Keep », "
             "l'orientation est libre mais la connexion (par OTP ou Google OAuth) est requise "
@@ -950,258 +954,38 @@ async def generate_chat_reply(
     session_id: str | None = None,
     candidate_id: str | None = None,
     is_authenticated: bool = False,
+    actor_role: str | None = None,
     redis_client: Redis | None = None,
     db: AsyncSession | None = None,
 ) -> ChatMessageResponse:
-    """Orchestrate conversational memory, dialect detection, intent routing, and LLM completion."""
-    start_ns = time.perf_counter_ns()
-    resolved_session_id = session_id or payload.session_id or str(uuid4())
-    profile_lookup_id = candidate_id or resolved_session_id
+    """Orchestrate conversational memory, dialect detection, intent routing, and LLM completion.
 
-    # --- Conversational Memory Integration (SA-37) ---
-    hot_svc = HotConversationService(redis_client=redis_client)
-    guest_svc = GuestSessionService(redis_client=redis_client)
+    Delegates execution through the compiled LangGraph `VisionSupervisor` (SA-69)
+    while preserving 100% backwards compatibility with Sprint 1 schemas and callers.
+    """
+    from app.schemas.agent import ActorRole, VisionTurnInput
+    from app.services.vision_supervisor import get_default_vision_supervisor
 
-    # 1. Fetch recent hot turns from Redis if client payload does not provide explicit history
-    history_turns: list[Any] = []
-    if payload.history:
-        history_turns = list(payload.history)
-    else:
-        try:
-            cached_turns = await hot_svc.get_history(resolved_session_id)
-            if cached_turns:
-                history_turns = list(cached_turns)
-        except Exception as exc:
-            logger.debug(
-                "Unable to read hot history from Redis for %s: %s",
-                resolved_session_id,
-                exc,
-            )
-
-    # 2. Fetch declared facts & rolling summary from Redis guest session & PostgreSQL (if given)
-    declared_facts: dict[str, Any] = {}
-    existing_summary: str | None = None
-
-    try:
-        guest_data = await guest_svc.get_session(resolved_session_id)
-        if guest_data:
-            if isinstance(guest_data.get("declared_facts"), dict):
-                declared_facts.update(guest_data["declared_facts"])
-            for field_name in (
-                "school_target",
-                "current_specialty",
-                "bac_section",
-                "declared_overall_avg",
-                "preferred_language",
-            ):
-                if guest_data.get(field_name) is not None:
-                    declared_facts[field_name] = guest_data[field_name]
-            if guest_data.get("rolling_summary"):
-                existing_summary = str(guest_data["rolling_summary"])
-    except Exception as exc:
-        logger.debug(
-            "Unable to read guest session from Redis for %s: %s",
-            resolved_session_id,
-            exc,
-        )
-
-    if is_authenticated and db is not None:
-        try:
-            cand_uuid = UUID(str(profile_lookup_id))
-            cand_profile = await db.get(CandidateProfile, cand_uuid)
-            if cand_profile:
-                if cand_profile.facts and isinstance(cand_profile.facts, dict):
-                    declared_facts.update(cand_profile.facts)
-                if cand_profile.current_specialty:
-                    declared_facts["current_specialty"] = cand_profile.current_specialty
-                if cand_profile.preferred_language:
-                    declared_facts["preferred_language"] = cand_profile.preferred_language
-                if cand_profile.declared_overall_avg is not None:
-                    declared_facts["declared_overall_avg"] = float(
-                        cand_profile.declared_overall_avg
-                    )
-                if cand_profile.summary and not existing_summary:
-                    existing_summary = cand_profile.summary
-        except Exception as exc:
-            logger.debug(
-                "Unable to read CandidateProfile for %s: %s",
-                profile_lookup_id,
-                exc,
-            )
-
-    # 3. Synthesize updated rolling orientation summary (bounded <= 300 tokens)
-    rolling_summary = build_rolling_summary(
-        declared_facts=declared_facts,
-        recent_turns=history_turns,
-        existing_summary=existing_summary,
-        latest_query=payload.message,
+    resolved_role: ActorRole = (
+        actor_role  # type: ignore[assignment]
+        if actor_role in {"guest", "student", "rh", "responsable", "direction", "admin"}
+        else ("student" if is_authenticated else "guest")
     )
-
-    lang_code, dialect = detect_dialect(
-        payload.message,
-        language_hint=payload.language_hint,
-        explicit_dialect=payload.detectedDialect,
+    turn_input = VisionTurnInput(
+        payload=payload,
+        session_id=session_id,
+        candidate_id=candidate_id,
+        is_authenticated=is_authenticated,
+        actor_role=resolved_role,
+        candidate_status="AUTHENTICATED" if is_authenticated else "ANONYMOUS",
     )
-
-    guardrail_triggered = False
-    guardrail_action: str | None = None
-
-    # SA-46 / Bonus-5: Input Guardrail Node (anti-hors-sujet & prompt injection)
-    input_guard = check_input_guardrail(
-        payload.message,
-        lang_code=lang_code,
-        dialect=dialect,
+    supervisor = get_default_vision_supervisor()
+    turn_output = await supervisor.run_turn(
+        turn_input,
+        redis_client=redis_client,
+        db=db,
     )
-    if input_guard.is_blocked:
-        guardrail_triggered = True
-        guardrail_action = (
-            input_guard.guardrail_type.value
-            if input_guard.guardrail_type
-            else "INPUT_BLOCKED"
-        )
-        reply_text = input_guard.refusal_message or FRENCH_REFORMULATION_FALLBACK_FR
-        used_fallback = True
-        provider = "guardrail_node"
-        model_used = "smartcampus-guardrail-v1"
-        intent = "OUT_OF_CORPUS_TRAP"
-        sub_agent = "1.1_Listener"
-        action_prompt = None
-        suggested_actions = [
-            "Découvrir les vraies filières IIT / ISB / ISA",
-            "Parler à un conseiller NAU",
-        ]
-        confidence = 1.0
-        needs_reformulation = False
-        reformulation_msg = None
-        citations = []
-    else:
-        intent, sub_agent, action_prompt, suggested_actions = classify_intent_and_subagent(
-            payload.message,
-            is_authenticated=is_authenticated,
-            lang_code=lang_code,
-        )
-        if intent == "CLARIFICATION_REQUIRED":
-            confidence, needs_reformulation = 0.25, True
-        else:
-            confidence, needs_reformulation = assess_comprehension_confidence(
-                payload.message,
-                lang_code=lang_code,
-                intent=intent,
-            )
-        reformulation_msg = (
-            _build_reformulation_fallback_reply(lang_code, dialect)
-            if needs_reformulation
-            else None
-        )
-        citations = _build_citations(payload.context_chunks)
-        messages = _build_messages(
-            payload,
-            lang_code,
-            dialect,
-            intent,
-            history_turns=history_turns,
-            rolling_summary=rolling_summary,
-            declared_facts=declared_facts,
-        )
-
-        provider = settings.LLM_PROVIDER.lower().strip()
-        can_call_remote = provider == "ollama" or (
-            provider == "openai_compatible" and bool(settings.LLM_API_KEY.strip())
-        )
-
-        used_fallback = False
-        if needs_reformulation:
-            # SA-34 safety fallback: never guess on unintelligible/ambiguous dialect inputs;
-            # explicitly request a clear French reformulation.
-            used_fallback = True
-            reply_text = reformulation_msg or FRENCH_REFORMULATION_FALLBACK_FR
-            model_used = "smartcampus-clarification-fallback-v1"
-        elif provider == "mock" or (not can_call_remote and settings.LLM_FALLBACK_TO_MOCK):
-            used_fallback = True
-            reply_text = _generate_deterministic_fallback_reply(
-                lang_code=lang_code,
-                dialect=dialect,
-                intent=intent,
-                is_authenticated=is_authenticated,
-                citations=citations,
-            )
-            model_used = "smartcampus-fallback-v1"
-        elif not can_call_remote:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="LLM_API_KEY is not configured and LLM_FALLBACK_TO_MOCK is disabled.",
-            )
-        else:
-            reply_text, model_used = await _call_openai_compatible_api(messages)
-
-        # SA-46 / Bonus-5: Output Guardrail Node (HITL Admission promises & ungrounded claims)
-        output_guard = check_output_guardrail(
-            reply_text,
-            context_chunks=payload.context_chunks,
-            lang_code=lang_code,
-            dialect=dialect,
-        )
-        if output_guard.was_modified:
-            reply_text = output_guard.sanitized_text
-            guardrail_triggered = True
-            guardrail_action = (
-                output_guard.guardrail_type.value
-                if output_guard.guardrail_type
-                else "OUTPUT_MODIFIED"
-            )
-
-    # 4. Persist new user turn and assistant reply to Redis hot history, and sync rolling summary
-    try:
-        await hot_svc.add_turn(resolved_session_id, role="user", content=payload.message)
-        await hot_svc.add_turn(resolved_session_id, role="assistant", content=reply_text)
-        await guest_svc.update_fields(
-            resolved_session_id,
-            {"rolling_summary": rolling_summary},
-        )
-    except Exception as exc:
-        logger.debug(
-            "Unable to persist turn to Redis for %s: %s",
-            resolved_session_id,
-            exc,
-        )
-
-    if is_authenticated and db is not None:
-        try:
-            cand_uuid = UUID(str(profile_lookup_id))
-            cand_profile = await db.get(CandidateProfile, cand_uuid)
-            if cand_profile:
-                cand_profile.summary = rolling_summary[:1200]
-                await db.commit()
-        except Exception as exc:
-            logger.debug("Unable to update CandidateProfile summary in DB: %s", exc)
-
-    elapsed_ms = max(1, int((time.perf_counter_ns() - start_ns) / 1_000_000))
-
-    return ChatMessageResponse(
-        session_id=resolved_session_id,
-        sessionId=resolved_session_id,
-        reply_text=reply_text,
-        reply=reply_text,
-        sub_agent=sub_agent,
-        subAgent=sub_agent,
-        detected_language=lang_code,
-        detectedDialect=dialect,
-        intent=intent,
-        citations=citations,
-        suggested_actions=suggested_actions,
-        actionPrompt=action_prompt,
-        provider=provider,
-        model_used=model_used,
-        latency_ms=elapsed_ms,
-        used_fallback=used_fallback,
-        comprehension_confidence=confidence,
-        needs_reformulation=needs_reformulation,
-        reformulation_prompt=reformulation_msg,
-        rolling_summary=rolling_summary,
-        history_turn_count=len(history_turns),
-        guardrail_triggered=guardrail_triggered,
-        guardrail_action=guardrail_action,
-    )
+    return turn_output.response
 
 
 def get_llm_health() -> LlmHealthResponse:
