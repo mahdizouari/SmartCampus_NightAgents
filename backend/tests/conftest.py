@@ -7,6 +7,15 @@ import app.core.redis as redis_mod
 from app.core.rate_limit import clear_rate_limit_store_for_tests
 from app.main import app
 from app.services.guest_session_service import clear_guest_session_store_for_tests
+from app.services.vision_supervisor import reset_default_vision_supervisor
+
+
+@pytest.fixture(autouse=True)
+def _reset_vision_supervisor_singleton():
+    """Ensure the process-wide VisionSupervisor singleton & MemorySaver reset between tests."""
+    reset_default_vision_supervisor()
+    yield
+    reset_default_vision_supervisor()
 
 
 @pytest.fixture(autouse=True)

@@ -19,7 +19,7 @@ track recommendation, pre-inscription & QCM orchestration):
                                                           --> output_guardrail
                                                                 --> persist_memory --> END
 
-Non-negotiable SmartCampus AI (SC V3 / V4 & U6) invariants:
+Non-negotiable SmartCampus AI (SC V3 & U6) invariants:
 1. Local-first open-source model compatibility (Ollama / local vLLM / QLoRA — zero
    hardcoded external cloud API dependency; 100% offline/CI-safe fallback mode).
 2. Human-in-the-Loop (HITL) admissions: no node, tool, or helper may transition a
@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -48,6 +50,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.users import CandidateProfile, OutboxEvent
 from app.schemas.agent import (
     FORBIDDEN_AGENT_STATUSES,
@@ -144,6 +147,10 @@ _READER_EXPLICIT_CUES: tuple[str, ...] = (
     "lecture ocr",
     "scanner mon bulletin",
     "analyser mon bulletin",
+    "استخراج الأعداد",
+    "الأعداد المستخرجة",
+    "مراجعة الأعداد",
+    "استخراج النقاط",
 )
 
 # Custom node handler signature for Sprint 2 teammates (SA-74, SA-82, SA-84).
@@ -340,18 +347,29 @@ class DefaultActionGuard:
                 audit_required=False,
             )
 
-        requested_candidate_id = arguments.get("candidate_id")
-        if (
-            context.actor_role == "student"
-            and requested_candidate_id is not None
-            and context.candidate_id is not None
-            and str(requested_candidate_id) != str(context.candidate_id)
-        ):
-            return ActionGuardDecision(
-                allowed=False,
-                reason="Anti-IDOR violation: students may only access their own candidate dossier.",
-                audit_required=True,
-            )
+        if context.actor_role == "student":
+            if tool.permission_level != "PUBLIC_READ" and context.candidate_id is None:
+                return ActionGuardDecision(
+                    allowed=False,
+                    reason=(
+                        "Anti-IDOR violation: authenticated student context is missing a "
+                        "bound candidate_id for a non-public tool."
+                    ),
+                    audit_required=True,
+                )
+            requested_candidate_id = arguments.get("candidate_id")
+            if requested_candidate_id is not None and (
+                context.candidate_id is None
+                or str(requested_candidate_id) != str(context.candidate_id)
+            ):
+                return ActionGuardDecision(
+                    allowed=False,
+                    reason=(
+                        "Anti-IDOR violation: students may only access their own "
+                        "candidate dossier."
+                    ),
+                    audit_required=True,
+                )
 
         return ActionGuardDecision(
             allowed=True,
@@ -477,18 +495,28 @@ def _build_hitl_checkpoint_graph(checkpointer: BaseCheckpointSaver) -> Any:
 
     async def apply_human_confirmation(state: _HitlCheckpointState) -> dict[str, Any]:
         response = state.get("human_response") or {}
+        spec = state.get("interrupt_spec") or {}
+        reason = spec.get("reason")
         proposed_status = response.get("target_status")
         if isinstance(proposed_status, str):
             assert_vision_status_transition_allowed(
                 proposed_status,
                 current_status=state.get("candidate_status"),
+                require_current_status=True,
             )
 
         approved = bool(response.get("confirmed", response.get("approved", False)))
+        requires_inpdp_consent = (
+            reason == "CONSENT_AND_SUBMIT" or proposed_status == "PREINSCRIBED"
+        )
+        if requires_inpdp_consent and response.get("consent_granted") is not True:
+            approved = False
+
         updates: dict[str, Any] = {
             "checkpoint_approved": approved,
             "checkpoint_status": "CONFIRMED" if approved else "DECLINED",
             "hitl_resume_payload": response,
+            "outbox_events": [],
         }
         if isinstance(proposed_status, str) and approved:
             updates["candidate_status"] = proposed_status
@@ -550,6 +578,127 @@ def _should_route_to_reader(text: str, current_intent: str) -> bool:
     return any(cue in lower for cue in _READER_EXPLICIT_CUES)
 
 
+_VALID_HITL_REASONS: frozenset[str] = frozenset(
+    {
+        "AUTH_REQUIRED",
+        "RELEVE_CONFIRMATION",
+        "CONSENT_AND_SUBMIT",
+        "RH_MISMATCH_ESCALATION",
+    }
+)
+_VALID_ACTION_PROMPTS: frozenset[str] = frozenset(
+    {
+        "AUTH_REQUIRED",
+        "UPLOAD_RELEVE",
+        "BOOK_SLOT",
+        "CONFIRM_SHORTLIST",
+    }
+)
+
+
+def _resolve_identity_and_scope(turn_input: VisionTurnInput) -> tuple[str, str, str]:
+    """Return `(resolved_session_id, memory_scope_key, resolved_thread_id)` strictly by auth scope.
+
+    Prevents cross-user IDOR/history/checkpoint poisoning between anonymous guests,
+    authenticated students (`candidate:<candidate_id>`), and authenticated staff
+    (`account:<account_id>`).
+    """
+    payload = turn_input.payload
+    if turn_input.is_authenticated:
+        if turn_input.candidate_id:
+            cand_str = str(turn_input.candidate_id)
+            resolved_session_id = cand_str
+            memory_scope_key = f"candidate:{cand_str}"
+        else:
+            acct_str = (
+                str(turn_input.account_id)
+                if turn_input.account_id
+                else (turn_input.session_id or payload.session_id or str(uuid4()))
+            )
+            resolved_session_id = acct_str
+            memory_scope_key = f"account:{acct_str}"
+    else:
+        resolved_session_id = turn_input.session_id or payload.session_id or str(uuid4())
+        memory_scope_key = f"guest:{resolved_session_id}"
+
+    resolved_thread_id = turn_input.thread_id or f"vision:{memory_scope_key}"
+    return resolved_session_id, memory_scope_key, resolved_thread_id
+
+
+def _normalize_langgraph_interrupt_spec(
+    raw_interrupt: Any,
+    *,
+    sub_agent: VisionSubAgent,
+    fallback_action_prompt: ActionPrompt | None = None,
+) -> HitlInterruptSpec:
+    """Normalize a LangGraph `Interrupt` from a custom handler into `HitlInterruptSpec`."""
+    intr_val = getattr(raw_interrupt, "value", raw_interrupt)
+    default_prompt = (
+        "Votre confirmation explicite est requise avant de poursuivre cette étape."
+    )
+    default_reason = (
+        "RELEVE_CONFIRMATION" if sub_agent == "1.4_Reader" else "CONSENT_AND_SUBMIT"
+    )
+
+    if isinstance(intr_val, HitlInterruptSpec):
+        if not intr_val.prompt_message.strip():
+            return intr_val.model_copy(update={"prompt_message": default_prompt})
+        return intr_val
+
+    if isinstance(intr_val, dict):
+        try:
+            validated = HitlInterruptSpec.model_validate(intr_val)
+            if not validated.prompt_message.strip():
+                return validated.model_copy(update={"prompt_message": default_prompt})
+            return validated
+        except Exception:
+            pass
+        raw_reason = str(intr_val.get("reason") or "")
+        reason = raw_reason if raw_reason in _VALID_HITL_REASONS else default_reason
+        raw_sub = intr_val.get("sub_agent")
+        resolved_sub: VisionSubAgent = (
+            raw_sub if raw_sub in SUBAGENT_TO_NODE else sub_agent
+        )
+        prompt_msg = str(
+            intr_val.get("prompt_message")
+            or intr_val.get("message")
+            or intr_val.get("prompt")
+            or ""
+        ).strip() or default_prompt
+        raw_action = intr_val.get("action_prompt")
+        action_prompt: ActionPrompt | None = (
+            raw_action
+            if isinstance(raw_action, str) and raw_action in _VALID_ACTION_PROMPTS
+            else fallback_action_prompt
+        )
+        req_fields_raw = intr_val.get("required_confirmation_fields")
+        req_fields = (
+            [str(f) for f in req_fields_raw]
+            if isinstance(req_fields_raw, (list, tuple))
+            else []
+        )
+        nested_payload = intr_val.get("payload")
+        payload_dict = dict(nested_payload) if isinstance(nested_payload, dict) else dict(intr_val)
+        return HitlInterruptSpec(
+            reason=reason,  # type: ignore[arg-type]
+            sub_agent=resolved_sub,
+            prompt_message=prompt_msg,
+            action_prompt=action_prompt,
+            required_confirmation_fields=req_fields,
+            payload=payload_dict,
+        )
+
+    prompt_text = str(intr_val).strip() if intr_val is not None else ""
+    return HitlInterruptSpec(
+        reason=default_reason,  # type: ignore[arg-type]
+        sub_agent=sub_agent,
+        prompt_message=prompt_text or default_prompt,
+        action_prompt=fallback_action_prompt,
+        required_confirmation_fields=[],
+        payload={"raw_interrupt": intr_val} if intr_val is not None else {},
+    )
+
+
 def _derive_next_candidate_status(
     current_status: CandidateStatus,
     *,
@@ -596,8 +745,13 @@ class VisionSupervisor:
         subagent_configs: dict[VisionSubAgent, SubAgentConfig] | None = None,
         tool_dispatcher: ToolDispatcherProtocol | None = None,
         action_guard: ActionGuardProtocol | None = None,
+        max_active_hitl_threads: int = 256,
     ) -> None:
+        if max_active_hitl_threads < 1:
+            raise ValueError("max_active_hitl_threads must be >= 1.")
         self.checkpointer: BaseCheckpointSaver = checkpointer or MemorySaver()
+        self._max_active_hitl_threads: int = max_active_hitl_threads
+        self._active_hitl_threads: OrderedDict[str, float] = OrderedDict()
         self._subagent_configs: dict[VisionSubAgent, SubAgentConfig] = (
             dict(subagent_configs)
             if subagent_configs is not None
@@ -609,6 +763,38 @@ class VisionSupervisor:
 
         self.compiled_graph = self._compile_supervisor_graph()
         self.hitl_checkpoint_graph = _build_hitl_checkpoint_graph(self.checkpointer)
+
+    @staticmethod
+    def _hitl_thread_id(thread_id: str) -> str:
+        """Return dedicated `vision_hitl:` namespace so HITL pauses never collide with chats."""
+        prefix = "vision_hitl:"
+        return thread_id if thread_id.startswith(prefix) else f"{prefix}{thread_id}"
+
+    async def _prune_memory_checkpoint(self, thread_id: str) -> None:
+        """Delete an in-process `MemorySaver` thread checkpoint to prevent unbounded RAM growth."""
+        if not isinstance(self.checkpointer, MemorySaver):
+            return
+        try:
+            if hasattr(self.checkpointer, "adelete_thread"):
+                await self.checkpointer.adelete_thread(thread_id)
+            elif hasattr(self.checkpointer, "delete_thread"):
+                self.checkpointer.delete_thread(thread_id)
+        except Exception as exc:
+            logger.debug("Unable to prune MemorySaver checkpoint for %s: %s", thread_id, exc)
+
+    async def _track_active_hitl_thread(self, checkpoint_thread_id: str) -> None:
+        """Track a paused HITL thread and evict oldest threads beyond `max_active_hitl_threads`."""
+        if checkpoint_thread_id in self._active_hitl_threads:
+            self._active_hitl_threads.move_to_end(checkpoint_thread_id)
+        self._active_hitl_threads[checkpoint_thread_id] = time.monotonic()
+        while len(self._active_hitl_threads) > self._max_active_hitl_threads:
+            evicted_tid, _ = self._active_hitl_threads.popitem(last=False)
+            await self._prune_memory_checkpoint(evicted_tid)
+
+    async def _release_hitl_thread(self, checkpoint_thread_id: str) -> None:
+        """Remove a finished thread from active HITL tracking and prune MemorySaver."""
+        self._active_hitl_threads.pop(checkpoint_thread_id, None)
+        await self._prune_memory_checkpoint(checkpoint_thread_id)
 
     # ── Extension Seams (SA-70, SA-71, SA-73, SA-74, SA-75) ──────────────────
 
@@ -821,16 +1007,24 @@ class VisionSupervisor:
             spec = available.get(tool_name)
 
             if spec is None or tool_name not in sub_cfg.allowed_tools:
-                records.append(
-                    ToolCallRecord(
-                        tool_name=tool_name or "unknown",
-                        sub_agent=sub_agent,
-                        permission_level="PUBLIC_READ",
-                        arguments=tool_args,
-                        status="BLOCKED_RBAC",
-                        error=f"Tool '{tool_name}' is not allowed for sub-agent '{sub_agent}'.",
-                    ).model_dump()
+                rec = ToolCallRecord(
+                    tool_name=tool_name or "unknown",
+                    sub_agent=sub_agent,
+                    permission_level=spec.permission_level if spec is not None else "PUBLIC_READ",
+                    arguments=tool_args,
+                    status="BLOCKED_RBAC",
+                    error=f"Tool '{tool_name}' is not allowed for sub-agent '{sub_agent}'.",
+                    source_attribution=spec.source_attribution if spec is not None else None,
                 )
+                records.append(rec.model_dump())
+                safe_name = tool_name[:100] if len(tool_name) >= 2 else "unknown_tool"
+                audit_spec = spec or AgentToolSpec(
+                    name=safe_name,
+                    description="Blocked unauthorized or unregistered tool invocation attempt.",
+                    allowed_sub_agents=(sub_agent,),
+                    permission_level="PUBLIC_READ",
+                )
+                await guard.record_audit(audit_spec, rec, context)
                 continue
 
             t0 = time.perf_counter_ns()
@@ -976,7 +1170,11 @@ class VisionSupervisor:
                 detail="LLM_API_KEY is not configured and LLM_FALLBACK_TO_MOCK is disabled.",
             )
 
-        reply_text, model_used = await llm_mod._call_openai_compatible_api(messages)
+        reply_text, model_used = await llm_mod._call_openai_compatible_api(
+            messages,
+            temperature=sub_cfg.temperature,
+            max_tokens=sub_cfg.max_tokens,
+        )
         return {
             "draft_reply": reply_text,
             "citations": citations_dicts,
@@ -1081,44 +1279,63 @@ class VisionSupervisor:
         session_id = str(state.get("session_id") or "")
         candidate_id = state.get("candidate_id")
         is_authenticated = bool(state.get("is_authenticated", False))
+        memory_scope_key = str(
+            state.get("memory_scope_key")
+            or (
+                f"candidate:{candidate_id}"
+                if (is_authenticated and candidate_id)
+                else (f"account:{session_id}" if is_authenticated else f"guest:{session_id}")
+            )
+        )
 
         # 1. Load Hot Redis conversation history (last 6-8 turns, bounded <= 16 messages)
+        # Keyed strictly by auth scope (guest:<sid> vs candidate:<cid> vs account:<aid>).
         hot_svc = llm_mod.HotConversationService(redis_client=redis_client)
-        guest_svc = llm_mod.GuestSessionService(redis_client=redis_client)
 
         history_turns: list[Any] = []
         if req_payload.history:
             history_turns = list(req_payload.history)
         else:
             try:
-                cached_turns = await hot_svc.get_history(session_id)
+                cached_turns = await hot_svc.get_history(memory_scope_key)
                 if cached_turns:
                     history_turns = list(cached_turns)
             except Exception as exc:
-                logger.debug("Unable to read hot history from Redis for %s: %s", session_id, exc)
+                logger.debug(
+                    "Unable to read hot history from Redis for %s: %s", memory_scope_key, exc
+                )
 
-        # 2. Load Warm declared facts & rolling summary (Redis guest + PG CandidateProfile if auth)
+        # 2. Load Warm declared facts & rolling summary:
+        #    - Unauthenticated guests ONLY read Redis GuestSessionService (7-day TTL).
+        #    - Authenticated callers NEVER read GuestSessionService (prevents IDOR/poisoning);
+        #      authenticated students read PostgreSQL CandidateProfile via JWT candidate_id.
         declared_facts: dict[str, Any] = dict(state.get("declared_facts") or {})
         existing_summary: str | None = state.get("rolling_summary") or None
 
-        try:
-            guest_data = await guest_svc.get_session(session_id)
-            if guest_data:
-                if isinstance(guest_data.get("declared_facts"), dict):
-                    declared_facts.update(guest_data["declared_facts"])
-                for field_name in (
-                    "school_target",
-                    "current_specialty",
-                    "bac_section",
-                    "declared_overall_avg",
-                    "preferred_language",
-                ):
-                    if guest_data.get(field_name) is not None:
-                        declared_facts[field_name] = guest_data[field_name]
-                if guest_data.get("rolling_summary"):
-                    existing_summary = str(guest_data["rolling_summary"])
-        except Exception as exc:
-            logger.debug("Unable to read guest session from Redis for %s: %s", session_id, exc)
+        if not is_authenticated:
+            guest_svc = llm_mod.GuestSessionService(
+                redis_client=redis_client,
+                default_ttl=settings.GUEST_SESSION_TTL_SECONDS,
+            )
+            try:
+                guest_data = await guest_svc.get_session(session_id)
+                if guest_data:
+                    if isinstance(guest_data.get("declared_facts"), dict):
+                        declared_facts.update(guest_data["declared_facts"])
+                    for field_name in (
+                        "school_target",
+                        "current_education_level",
+                        "current_specialty",
+                        "bac_section",
+                        "declared_overall_avg",
+                        "preferred_language",
+                    ):
+                        if guest_data.get(field_name) is not None:
+                            declared_facts[field_name] = guest_data[field_name]
+                    if guest_data.get("rolling_summary"):
+                        existing_summary = str(guest_data["rolling_summary"])
+            except Exception as exc:
+                logger.debug("Unable to read guest session from Redis for %s: %s", session_id, exc)
 
         # Strict Give-or-Keep + anti-IDOR separation: ONLY read CandidateProfile when
         # authenticated with a verified JWT candidate_id (never fall back to session_id).
@@ -1129,6 +1346,9 @@ class VisionSupervisor:
                 if cand_profile:
                     if cand_profile.facts and isinstance(cand_profile.facts, dict):
                         declared_facts.update(cand_profile.facts)
+                    edu_level = getattr(cand_profile, "current_education_level", None)
+                    if edu_level:
+                        declared_facts["current_education_level"] = edu_level
                     if cand_profile.current_specialty:
                         declared_facts["current_specialty"] = cand_profile.current_specialty
                     if cand_profile.preferred_language:
@@ -1145,6 +1365,10 @@ class VisionSupervisor:
                     candidate_id,
                     exc,
                 )
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
 
         user_message = str(state.get("user_message") or "")
         rolling_summary = llm_mod.build_rolling_summary(
@@ -1319,6 +1543,7 @@ class VisionSupervisor:
                     assert_vision_status_transition_allowed(
                         proposed_status,
                         current_status=state.get("candidate_status"),
+                        require_current_status=True,
                     )
                 custom_out["nodes_visited"] = visited
                 custom_out.setdefault("active_sub_agent", sub_agent)
@@ -1452,23 +1677,44 @@ class VisionSupervisor:
         session_id = str(state.get("session_id") or "")
         candidate_id = state.get("candidate_id")
         is_authenticated = bool(state.get("is_authenticated", False))
+        memory_scope_key = str(
+            state.get("memory_scope_key")
+            or (
+                f"candidate:{candidate_id}"
+                if (is_authenticated and candidate_id)
+                else (f"account:{session_id}" if is_authenticated else f"guest:{session_id}")
+            )
+        )
 
         user_message = str(state.get("user_message") or "")
         final_reply = str(state.get("final_reply") or "")
         rolling_summary = str(state.get("rolling_summary") or "")
 
         hot_svc = llm_mod.HotConversationService(redis_client=redis_client)
-        guest_svc = llm_mod.GuestSessionService(redis_client=redis_client)
 
         try:
-            await hot_svc.add_turn(session_id, role="user", content=user_message)
-            await hot_svc.add_turn(session_id, role="assistant", content=final_reply)
-            await guest_svc.update_fields(
-                session_id,
-                {"rolling_summary": rolling_summary},
-            )
+            await hot_svc.add_turn(memory_scope_key, role="user", content=user_message)
+            await hot_svc.add_turn(memory_scope_key, role="assistant", content=final_reply)
         except Exception as exc:
-            logger.debug("Unable to persist turn to Redis for %s: %s", session_id, exc)
+            logger.debug("Unable to persist hot turns to Redis for %s: %s", memory_scope_key, exc)
+
+        # NEVER write authenticated summaries/state into GuestSessionService (prevents IDOR leaks).
+        if not is_authenticated:
+            guest_ttl = settings.GUEST_SESSION_TTL_SECONDS
+            guest_svc = llm_mod.GuestSessionService(
+                redis_client=redis_client,
+                default_ttl=guest_ttl,
+            )
+            try:
+                await guest_svc.update_fields(
+                    session_id,
+                    {"rolling_summary": rolling_summary},
+                    ttl_seconds=guest_ttl,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Unable to persist guest rolling_summary to Redis for %s: %s", session_id, exc
+                )
 
         # Anti-IDOR: persist CandidateProfile ONLY using the authenticated JWT candidate_id.
         if is_authenticated and candidate_id and db is not None:
@@ -1477,9 +1723,14 @@ class VisionSupervisor:
                 cand_profile = await db.get(CandidateProfile, cand_uuid)
                 if cand_profile:
                     cand_profile.summary = rolling_summary[:1200]
+                    cand_profile.updated_at = datetime.now(UTC)
                     await db.commit()
             except Exception as exc:
                 logger.debug("Unable to update CandidateProfile summary in DB: %s", exc)
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
 
         elapsed = max(
             1,
@@ -1505,18 +1756,24 @@ class VisionSupervisor:
         """Execute one full VISION supervisor turn through the compiled LangGraph graph."""
         start_ns = time.perf_counter_ns()
         payload = turn_input.payload
-        resolved_session_id = turn_input.session_id or payload.session_id or str(uuid4())
-        resolved_thread_id = turn_input.thread_id or f"vision:{resolved_session_id}"
+        resolved_session_id, memory_scope_key, resolved_thread_id = _resolve_identity_and_scope(
+            turn_input
+        )
 
         initial_status: CandidateStatus = turn_input.candidate_status
         if turn_input.is_authenticated and initial_status == "ANONYMOUS":
             initial_status = "AUTHENTICATED"
-        assert_vision_status_transition_allowed(initial_status)
+        assert_vision_status_transition_allowed(
+            initial_status,
+            current_status=turn_input.candidate_status,
+        )
 
         initial_state: VisionAgentState = {
             "thread_id": resolved_thread_id,
             "session_id": resolved_session_id,
+            "memory_scope_key": memory_scope_key,
             "candidate_id": turn_input.candidate_id,
+            "account_id": turn_input.account_id,
             "is_authenticated": turn_input.is_authenticated,
             "actor_role": turn_input.actor_role,
             "campus_scope": payload.campus_scope or "all",
@@ -1526,8 +1783,8 @@ class VisionSupervisor:
             "is_voice": payload.isVoice,
             "language_hint": payload.language_hint,
             "explicit_dialect": payload.detectedDialect,
-            # Explicitly reset all per-turn transient keys so MemorySaver never
-            # leaks Turn N-1 state into Turn N (e.g., when Turn N blocks at input_guardrail).
+            # Explicitly reset all per-turn transient keys so checkpointers never
+            # leak Turn N-1 state into Turn N (e.g., when Turn N blocks at input_guardrail).
             "normalized_french_query": None,
             "intent": "GENERAL_ORIENTATION",
             "comprehension_confidence": 1.0,
@@ -1572,19 +1829,79 @@ class VisionSupervisor:
             }
         }
 
-        final_state: VisionAgentState = await self.compiled_graph.ainvoke(
-            initial_state,
-            config=graph_config,
-        )
+        is_langgraph_interrupted = False
+        raw_lg_interrupts: list[Any] = []
+        try:
+            final_state: VisionAgentState = await self.compiled_graph.ainvoke(
+                initial_state,
+                config=graph_config,
+            )
+
+            raw_lg_interrupts = list(final_state.get("__interrupt__") or [])
+            if not raw_lg_interrupts:
+                snapshot = await self.compiled_graph.aget_state(graph_config)
+                for task in snapshot.tasks or ():
+                    raw_lg_interrupts.extend(getattr(task, "interrupts", ()) or ())
+            is_langgraph_interrupted = bool(raw_lg_interrupts)
+
+            if is_langgraph_interrupted:
+                await self._track_active_hitl_thread(resolved_thread_id)
+        finally:
+            if not is_langgraph_interrupted:
+                await self._release_hitl_thread(resolved_thread_id)
 
         reply_text = str(final_state.get("final_reply") or final_state.get("draft_reply") or "")
         sub_agent: VisionSubAgent = final_state.get("active_sub_agent", "1.1_Listener")
+        detected_language = str(final_state.get("detected_language") or "fr")
+        detected_dialect = final_state.get("detected_dialect", "French")
+        guardrail_triggered = bool(final_state.get("guardrail_triggered", False))
+        guardrail_action = final_state.get("guardrail_action")
+        action_prompt: ActionPrompt | None = final_state.get("action_prompt")
+
+        raw_hitl = final_state.get("hitl_interrupt")
+        hitl_spec = HitlInterruptSpec.model_validate(raw_hitl) if raw_hitl else None
+
+        if is_langgraph_interrupted:
+            hitl_spec = _normalize_langgraph_interrupt_spec(
+                raw_lg_interrupts[0],
+                sub_agent=sub_agent,
+                fallback_action_prompt=action_prompt,
+            )
+            action_prompt = hitl_spec.action_prompt or action_prompt
+            raw_prompt_reply = (
+                reply_text.strip()
+                or hitl_spec.prompt_message.strip()
+                or "Votre confirmation explicite est requise avant de poursuivre cette étape."
+            )
+            guard_res = check_output_guardrail(
+                raw_prompt_reply,
+                context_chunks=final_state.get("retrieved_chunks") or None,
+                lang_code=detected_language,
+                dialect=detected_dialect,
+            )
+            reply_text = guard_res.sanitized_text if guard_res.was_modified else raw_prompt_reply
+            if guard_res.was_modified:
+                guardrail_triggered = True
+                guardrail_action = (
+                    guard_res.guardrail_type.value
+                    if guard_res.guardrail_type
+                    else "OUTPUT_MODIFIED"
+                )
+                hitl_spec = hitl_spec.model_copy(update={"prompt_message": reply_text})
+
         citations = [
             ChatCitation.model_validate(c) for c in (final_state.get("citations") or [])
         ]
         elapsed_ms = int(
             final_state.get("latency_ms")
             or max(1, int((time.perf_counter_ns() - start_ns) / 1_000_000))
+        )
+
+        default_provider = "hitl_interrupt" if is_langgraph_interrupted else "mock"
+        default_model = (
+            "langgraph-hitl-checkpoint"
+            if is_langgraph_interrupted
+            else "smartcampus-fallback-v1"
         )
 
         response = ChatMessageResponse(
@@ -1594,14 +1911,14 @@ class VisionSupervisor:
             reply=reply_text,
             sub_agent=sub_agent,
             subAgent=sub_agent,
-            detected_language=str(final_state.get("detected_language") or "fr"),
-            detectedDialect=final_state.get("detected_dialect", "French"),
+            detected_language=detected_language,
+            detectedDialect=detected_dialect,
             intent=str(final_state.get("intent") or "GENERAL_ORIENTATION"),
             citations=citations,
             suggested_actions=list(final_state.get("suggested_actions") or []),
-            actionPrompt=final_state.get("action_prompt"),
-            provider=str(final_state.get("provider") or "mock"),
-            model_used=str(final_state.get("model_used") or "smartcampus-fallback-v1"),
+            actionPrompt=action_prompt,
+            provider=str(final_state.get("provider") or default_provider),
+            model_used=str(final_state.get("model_used") or default_model),
             latency_ms=elapsed_ms,
             used_fallback=bool(final_state.get("used_fallback", False)),
             comprehension_confidence=float(final_state.get("comprehension_confidence", 1.0)),
@@ -1609,12 +1926,10 @@ class VisionSupervisor:
             reformulation_prompt=final_state.get("reformulation_prompt"),
             rolling_summary=final_state.get("rolling_summary"),
             history_turn_count=final_state.get("history_turn_count"),
-            guardrail_triggered=bool(final_state.get("guardrail_triggered", False)),
-            guardrail_action=final_state.get("guardrail_action"),
+            guardrail_triggered=guardrail_triggered,
+            guardrail_action=guardrail_action,
         )
 
-        raw_hitl = final_state.get("hitl_interrupt")
-        hitl_spec = HitlInterruptSpec.model_validate(raw_hitl) if raw_hitl else None
         tool_call_models = [
             ToolCallRecord.model_validate(rec) for rec in (final_state.get("tool_calls") or [])
         ]
@@ -1641,17 +1956,21 @@ class VisionSupervisor:
         interrupt_spec: HitlInterruptSpec,
         candidate_status: CandidateStatus = "AUTHENTICATED",
     ) -> dict[str, Any]:
-        """Start a real LangGraph `interrupt()` HITL pause checkpoint under `thread_id`.
+        """Start a LangGraph `interrupt()` HITL pause checkpoint under `vision_hitl:{thread_id}`.
 
         Suspends execution at `await_human_confirmation` and returns the interrupt
         payload persisted in `self.checkpointer` so the UI / student / RH can confirm
         and resume via `resume_hitl_turn(thread_id=..., resume_payload=...)`.
         """
-        assert_vision_status_transition_allowed(candidate_status)
-        cfg = {"configurable": {"thread_id": thread_id}}
+        assert_vision_status_transition_allowed(
+            candidate_status,
+            current_status=candidate_status,
+        )
+        checkpoint_tid = self._hitl_thread_id(thread_id)
+        cfg = {"configurable": {"thread_id": checkpoint_tid}}
         result = await self.hitl_checkpoint_graph.ainvoke(
             {
-                "thread_id": thread_id,
+                "thread_id": checkpoint_tid,
                 "candidate_status": candidate_status,
                 "interrupt_spec": interrupt_spec.model_dump(),
                 "checkpoint_status": "PENDING",
@@ -1662,8 +1981,11 @@ class VisionSupervisor:
         )
         snapshot = await self.hitl_checkpoint_graph.aget_state(cfg)
         interrupts = result.get("__interrupt__") or []
+        if interrupts:
+            await self._track_active_hitl_thread(checkpoint_tid)
         return {
             "thread_id": thread_id,
+            "checkpoint_thread_id": checkpoint_tid,
             "interrupted": bool(interrupts),
             "interrupt_value": interrupts[0].value if interrupts else None,
             "next_nodes": list(snapshot.next),
@@ -1677,15 +1999,38 @@ class VisionSupervisor:
         resume_payload: dict[str, Any],
     ) -> dict[str, Any]:
         """Resume a paused LangGraph HITL checkpoint using `Command(resume=...)`."""
+        checkpoint_tid = self._hitl_thread_id(thread_id)
+        cfg = {"configurable": {"thread_id": checkpoint_tid}}
+        snapshot = await self.hitl_checkpoint_graph.aget_state(cfg)
+        has_pending_interrupt = any(
+            bool(getattr(task, "interrupts", ())) for task in (snapshot.tasks or ())
+        )
+        if "await_human_confirmation" not in (snapshot.next or ()) or not has_pending_interrupt:
+            raise ValueError(
+                f"No active paused HITL checkpoint found for thread_id='{thread_id}'. "
+                f"Start a checkpoint with run_hitl_checkpoint() before resuming."
+            )
+
+        current_status = snapshot.values.get("candidate_status")
+        if not isinstance(current_status, str):
+            raise ValueError(
+                f"Paused HITL checkpoint for thread_id='{thread_id}' is missing candidate_status."
+            )
+
         proposed_status = resume_payload.get("target_status")
         if isinstance(proposed_status, str):
-            assert_vision_status_transition_allowed(proposed_status)
+            assert_vision_status_transition_allowed(
+                proposed_status,
+                current_status=current_status,
+                require_current_status=True,
+            )
 
-        cfg = {"configurable": {"thread_id": thread_id}}
         resumed = await self.hitl_checkpoint_graph.ainvoke(
             Command(resume=resume_payload),
             config=cfg,
         )
+        if not resumed.get("__interrupt__"):
+            await self._release_hitl_thread(checkpoint_tid)
         return {
             "thread_id": thread_id,
             "interrupted": False,

@@ -134,7 +134,7 @@ _DOMAIN_ANCHOR_RE = re.compile(
     r"architecture|أركيتكتور|أرشيتكتور|عمارة|finance|فينونس|مالية|marketing|تسويق|"
     r"business|إدارة الأعمال|mécanique|ميكانيك|civil|سيفيل|industriel|énergétique|"
     r"bac|باك|بكالوريا|passerelle|باسرال|معابر|éligib|eligib|moyenne|معدل|شروط|"
-    r"relevé|releve|رولفي|كشف|dossier|دوسيا|ملف|préinscription|preinscription|ترسيم|تسجيل|"
+    r"relevé|releve|رولفي|كشف|الأعداد|النقاط|dossier|دوسيا|ملف|préinscription|preinscription|ترسيم|تسجيل|"
     r"rendez-vous|rdv|رونديفو|موعد|مقابلة|entretien|slot|créneau|creneau|"
     r"guest|invité|انفيتي|كونت|compte|inpdp|données|بيانات|الروبو|intelligence artificielle|l'ia|"
     r"médecine|medecine|طب|صيدلة|pharmacie|droit|درو|حقوق|astrophysique|شريعة|"
@@ -594,6 +594,10 @@ def build_rolling_summary(
     if school:
         elements.append(f"Établissement cible : {str(school).upper()}")
 
+    edu_level = facts.get("current_education_level") or facts.get("education_level")
+    if edu_level:
+        elements.append(f"Niveau d'études : {edu_level}")
+
     specialty = (
         facts.get("current_specialty")
         or facts.get("specialty")
@@ -890,8 +894,13 @@ def _generate_deterministic_fallback_reply(
     )
 
 
-async def _call_openai_compatible_api(messages: list[dict[str, str]]) -> tuple[str, str]:
-    """Call an OpenAI-compatible /chat/completions endpoint via httpx."""
+async def _call_openai_compatible_api(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> tuple[str, str]:
+    """Call an OpenAI-compatible /chat/completions endpoint via httpx (also serves local Ollama)."""
     base_url = settings.LLM_BASE_URL.rstrip("/")
     url = f"{base_url}/chat/completions"
 
@@ -902,8 +911,8 @@ async def _call_openai_compatible_api(messages: list[dict[str, str]]) -> tuple[s
     request_body = {
         "model": settings.LLM_MODEL,
         "messages": messages,
-        "temperature": settings.LLM_TEMPERATURE,
-        "max_tokens": settings.LLM_MAX_TOKENS,
+        "temperature": settings.LLM_TEMPERATURE if temperature is None else temperature,
+        "max_tokens": settings.LLM_MAX_TOKENS if max_tokens is None else max_tokens,
     }
 
     try:
@@ -953,6 +962,7 @@ async def generate_chat_reply(
     *,
     session_id: str | None = None,
     candidate_id: str | None = None,
+    account_id: str | None = None,
     is_authenticated: bool = False,
     actor_role: str | None = None,
     redis_client: Redis | None = None,
@@ -975,6 +985,7 @@ async def generate_chat_reply(
         payload=payload,
         session_id=session_id,
         candidate_id=candidate_id,
+        account_id=account_id,
         is_authenticated=is_authenticated,
         actor_role=resolved_role,
         candidate_status="AUTHENTICATED" if is_authenticated else "ANONYMOUS",

@@ -9,7 +9,7 @@ Defines stable, local-first, provider-agnostic interfaces consumed by:
 - Sub-agent specialized prompt/tool registry (`SA-75`, Melek)
 - Transactional pre-inscription / QCM outbox handoff (`SA-82`, `SA-83`, `SA-84`)
 
-Non-negotiable governance invariants (SC V3 / V4):
+Non-negotiable governance invariants (SC V3):
 - Humans decide admissions: no agent, node, or tool may set `ADMITTED`, `WAITLIST`, or `REJECTED`.
 - Strict VISION <-> JARVIS decoupling: VISION never imports or calls JARVIS directly; it emits
   outbox specifications persisted to `core.outbox` on `PREINSCRIBED` and `QCM_DONE`.
@@ -79,6 +79,22 @@ JarvisSubAgent = Literal["2.1_Scheduler", "2.2_Messenger", "2.3_Fixer"]
 # Hard HITL lock: ONLY a human NAU Responsable may emit these decisions.
 FORBIDDEN_AGENT_STATUSES: frozenset[str] = frozenset({"ADMITTED", "WAITLIST", "REJECTED"})
 
+# Statuses VISION is permitted to transition a candidate INTO (excludes human-only
+# decisions and JARVIS/interview-owned milestones SCHEDULED, INTERVIEWED, DORMANT, WITHDRAWN).
+VISION_ASSIGNABLE_STATUSES: frozenset[str] = frozenset(
+    {
+        "ANONYMOUS",
+        "PROFILING",
+        "ELIGIBLE",
+        "INELIGIBLE",
+        "ORIENTED",
+        "AUTHENTICATED",
+        "PREINSCRIBED",
+        "QCM_DONE",
+        "ESCALATED",
+    }
+)
+
 # Allowed candidate status transitions reachable by VISION front-office steps (1-7).
 # Notice ADMITTED / WAITLIST / REJECTED are strictly absent, and SCHEDULED is owned by
 # JARVIS 2.1_Scheduler after outbox handoff.
@@ -124,13 +140,16 @@ RESERVED_CATALOG_TOOL_NAMES: tuple[str, ...] = (
 def assert_vision_status_transition_allowed(
     target_status: str,
     current_status: str | None = None,
+    *,
+    require_current_status: bool = False,
 ) -> None:
     """Enforce HITL admission locks and valid VISION front-office candidate status transitions.
 
     Raises:
         PermissionError: If target_status is a human-only admission decision
             (`ADMITTED`, `WAITLIST`, `REJECTED`) or a transition forbidden to VISION.
-        ValueError: If target_status or current_status is not a canonical `CandidateStatus`.
+        ValueError: If target_status or current_status is not a canonical `CandidateStatus`,
+            or if `require_current_status=True` and `current_status` is missing.
     """
     if target_status in FORBIDDEN_AGENT_STATUSES:
         raise PermissionError(
@@ -146,6 +165,15 @@ def assert_vision_status_transition_allowed(
         )
 
     if current_status is None:
+        if require_current_status:
+            raise ValueError(
+                "current_status is required to validate a VISION candidate status transition."
+            )
+        if target_status not in VISION_ASSIGNABLE_STATUSES:
+            raise PermissionError(
+                f"VISION is not allowed to assign candidate status '{target_status}' "
+                f"without an authorized transition from a matching current_status."
+            )
         return
 
     if current_status not in CANDIDATE_STATUS_VALUES:
@@ -362,6 +390,7 @@ class VisionTurnInput(BaseModel):
     payload: ChatMessageRequest
     session_id: str | None = None
     candidate_id: str | None = None
+    account_id: str | None = None
     is_authenticated: bool = False
     actor_role: ActorRole = "guest"
     candidate_status: CandidateStatus = "ANONYMOUS"
@@ -394,7 +423,9 @@ class VisionAgentState(TypedDict, total=False):
     # Identity, Threading & Give-or-Keep Auth
     thread_id: str
     session_id: str
+    memory_scope_key: str
     candidate_id: str | None
+    account_id: str | None
     is_authenticated: bool
     actor_role: ActorRole
     campus_scope: CampusScope

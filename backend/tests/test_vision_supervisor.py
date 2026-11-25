@@ -496,6 +496,7 @@ async def test_hitl_consent_and_submit_resume_emits_outbox_and_blocks_admission_
         thread_id=tid_ok,
         resume_payload={
             "confirmed": True,
+            "consent_granted": True,
             "target_status": "PREINSCRIBED",
             "candidate_id": str(cand_id),
             "school_code": "iit",
@@ -1045,4 +1046,838 @@ async def test_anonymous_reader_fallback_mentions_auth_and_guard_blocks_decision
         dec = await guard.authorize(spec, {field_name: bad_val}, ctx)
         assert dec.allowed is False
         assert "HITL" in (dec.reason or "")
+
+
+# ---------------------------------------------------------------------------
+# 10. PR #102 Review Regression Tests (Must-Fix #1-#5 & Minor Polish #1-#2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_authenticated_turn_never_touches_guest_session_and_namespaces_keys():
+    """Must Fix #1a/#1b: Auth turns skip GuestSessionService and scope hot history & thread_id."""
+    supervisor = VisionSupervisor()
+    own_cand = str(uuid4())
+    victim_cand = str(uuid4())
+
+    mock_hot = AsyncMock()
+    mock_hot.get_history = AsyncMock(return_value=[])
+    mock_hot.add_turn = AsyncMock()
+
+    with (
+        patch("app.services.llm_service.HotConversationService", return_value=mock_hot),
+        patch("app.services.llm_service.GuestSessionService") as mock_guest_cls,
+    ):
+        # 1. Authenticated student trying to pass another user's session_id stays bound to own id
+        out_student = await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(
+                    message="Quelles sont les filières à l'IIT ?",
+                    session_id=victim_cand,
+                ),
+                session_id=victim_cand,
+                candidate_id=own_cand,
+                account_id="acc-student-1",
+                is_authenticated=True,
+                actor_role="student",
+            )
+        )
+        assert out_student.response.session_id == own_cand
+        assert out_student.thread_id == f"vision:candidate:{own_cand}"
+        mock_guest_cls.assert_not_called()
+        mock_hot.get_history.assert_awaited_with(f"candidate:{own_cand}")
+        assert all(
+            call.args[0] == f"candidate:{own_cand}" for call in mock_hot.add_turn.call_args_list
+        )
+
+        # 2. Authenticated staff without candidate_id uses account:<account_id> scope
+        mock_hot.get_history.reset_mock()
+        mock_hot.add_turn.reset_mock()
+        out_staff = await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(
+                    message="Quelles sont les filières à l'ISB ?",
+                    session_id=victim_cand,
+                ),
+                session_id=victim_cand,
+                candidate_id=None,
+                account_id="acc-staff-42",
+                is_authenticated=True,
+                actor_role="responsable",
+            )
+        )
+        assert out_staff.response.session_id == "acc-staff-42"
+        assert out_staff.thread_id == "vision:account:acc-staff-42"
+        mock_guest_cls.assert_not_called()
+        mock_hot.get_history.assert_awaited_with("account:acc-staff-42")
+
+        # 3. Unauthenticated caller passing victim candidate UUID stays isolated in guest:<uuid>
+        mock_hot.get_history.reset_mock()
+        mock_hot.add_turn.reset_mock()
+        mock_guest_inst = AsyncMock()
+        mock_guest_inst.get_session = AsyncMock(return_value=None)
+        mock_guest_inst.update_fields = AsyncMock()
+        mock_guest_cls.return_value = mock_guest_inst
+
+        mock_db = AsyncMock()
+        out_guest = await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(
+                    message="Quelles sont les filières à l'IIT ?",
+                    session_id=own_cand,
+                ),
+                session_id=own_cand,
+                is_authenticated=False,
+                actor_role="guest",
+            ),
+            db=mock_db,
+        )
+        assert out_guest.thread_id == f"vision:guest:{own_cand}"
+        mock_hot.get_history.assert_awaited_with(f"guest:{own_cand}")
+        mock_db.get.assert_not_awaited()
+        # GuestSessionService MUST preserve 7-day TTL (604800s), never 86400s
+        assert mock_guest_cls.call_args.kwargs["default_ttl"] == settings.GUEST_SESSION_TTL_SECONDS
+        assert (
+            mock_guest_inst.update_fields.call_args.kwargs["ttl_seconds"]
+            == settings.GUEST_SESSION_TTL_SECONDS
+        )
+
+
+def test_chat_endpoint_binds_authenticated_student_ignoring_spoofed_session(client: TestClient):
+    """Must Fix #1b: POST /api/v1/chat/message ignores spoofed session_id/X-Session-ID when auth."""
+    own_cand = str(uuid4())
+    victim_cand = str(uuid4())
+    token = create_access_token(
+        account_id="acc-own-1",
+        role="student",
+        candidate_id=own_cand,
+    )
+    resp = client.post(
+        "/api/v1/chat/message",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Session-ID": victim_cand,
+        },
+        json={
+            "message": "Quelles sont les filières à l'IIT ?",
+            "session_id": victim_cand,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["session_id"] == own_cand
+    assert body["sessionId"] == own_cand
+
+
+@pytest.mark.asyncio
+async def test_default_action_guard_blocks_student_with_missing_candidate_id():
+    """Must Fix #1c: student with candidate_id=None is denied on non-PUBLIC_READ or IDOR args."""
+    guard = DefaultActionGuard()
+    auth_read_spec = AgentToolSpec(
+        name="get_transcript_extraction_status_tool",
+        description="Read candidate transcript extraction status.",
+        allowed_sub_agents=("1.4_Reader",),
+        permission_level="AUTH_READ",
+    )
+    auth_write_spec = AgentToolSpec(
+        name="submit_preinscription_tool",
+        description="Submit pre-inscription dossier.",
+        allowed_sub_agents=("1.6_Registrar",),
+        permission_level="AUTH_STATE_CHANGE",
+    )
+    public_spec = AgentToolSpec(
+        name="list_school_programs_tool",
+        description="List public catalog programs.",
+        allowed_sub_agents=("1.2_Librarian",),
+        permission_level="PUBLIC_READ",
+    )
+
+    student_no_cand = ToolExecutionContext(
+        session_id="s-no-cand",
+        candidate_id=None,
+        is_authenticated=True,
+        actor_role="student",
+    )
+    for spec in (auth_read_spec, auth_write_spec):
+        dec = await guard.authorize(spec, {}, student_no_cand)
+        assert dec.allowed is False
+        assert "Anti-IDOR" in (dec.reason or "")
+        assert dec.audit_required is True
+
+    # Even on PUBLIC_READ, supplying a foreign candidate_id when candidate_id=None is blocked
+    dec_pub_idor = await guard.authorize(
+        public_spec,
+        {"candidate_id": str(uuid4())},
+        student_no_cand,
+    )
+    assert dec_pub_idor.allowed is False
+    assert "Anti-IDOR" in (dec_pub_idor.reason or "")
+
+    # PUBLIC_READ without candidate_id remains allowed
+    dec_pub_ok = await guard.authorize(public_spec, {"school_code": "iit"}, student_no_cand)
+    assert dec_pub_ok.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_memory_saver_prunes_normal_turns_and_caps_hitl_threads_fifo():
+    """Must Fix #2: Non-interrupted turns prune MemorySaver; HITL threads evict FIFO beyond cap."""
+    supervisor = VisionSupervisor(max_active_hitl_threads=2)
+    assert isinstance(supervisor.checkpointer, MemorySaver)
+
+    # 1. Normal turn cleans up its thread from MemorySaver
+    out = await supervisor.run_turn(
+        VisionTurnInput(
+            payload=ChatMessageRequest(message="Quelles sont les filières à l'IIT ?"),
+            session_id="prune-me-1",
+            is_authenticated=False,
+        )
+    )
+    assert out.thread_id not in supervisor.checkpointer.storage
+
+    # 2. FIFO/LRU cap on HITL checkpoints evicts oldest thread (t1) when 3rd (t3) is created
+    spec = HitlInterruptSpec(
+        reason="RELEVE_CONFIRMATION",
+        sub_agent="1.4_Reader",
+        prompt_message="Confirmez vos notes.",
+    )
+    await supervisor.run_hitl_checkpoint(thread_id="t1", interrupt_spec=spec)
+    await supervisor.run_hitl_checkpoint(thread_id="t2", interrupt_spec=spec)
+    assert "vision_hitl:t1" in supervisor.checkpointer.storage
+    assert "vision_hitl:t2" in supervisor.checkpointer.storage
+
+    await supervisor.run_hitl_checkpoint(thread_id="t3", interrupt_spec=spec)
+    assert "vision_hitl:t1" not in supervisor.checkpointer.storage
+    assert "vision_hitl:t2" in supervisor.checkpointer.storage
+    assert "vision_hitl:t3" in supervisor.checkpointer.storage
+
+    with pytest.raises(ValueError, match="No active paused HITL checkpoint"):
+        await supervisor.resume_hitl_turn(thread_id="t1", resume_payload={"confirmed": True})
+
+    # 3. Resuming t3 cleans up its checkpoint once finished
+    res = await supervisor.resume_hitl_turn(thread_id="t3", resume_payload={"confirmed": True})
+    assert res["checkpoint_approved"] is True
+    assert "vision_hitl:t3" not in supervisor.checkpointer.storage
+
+
+@pytest.mark.asyncio
+async def test_hitl_namespace_isolated_from_librarian_turn_and_rejects_uninitialized_resume():
+    """Must Fix #3a/#3b: Dedicated vision_hitl: namespace avoids clobbering; uninit resume fails."""
+    supervisor = VisionSupervisor()
+    shared_tid = f"vision:candidate:{uuid4()}"
+
+    # 1. Uninitialized thread_id MUST raise ValueError (cannot bypass state transitions)
+    with pytest.raises(ValueError, match="No active paused HITL checkpoint"):
+        await supervisor.resume_hitl_turn(
+            thread_id="never-started-thread",
+            resume_payload={"confirmed": True, "target_status": "PREINSCRIBED"},
+        )
+
+    # 2. Pause HITL checkpoint, then run a concurrent 1.2_Librarian turn on the same thread_id
+    spec = HitlInterruptSpec(
+        reason="RELEVE_CONFIRMATION",
+        sub_agent="1.4_Reader",
+        prompt_message="Confirmez vos notes extraites.",
+    )
+    paused = await supervisor.run_hitl_checkpoint(
+        thread_id=shared_tid,
+        interrupt_spec=spec,
+        candidate_status="AUTHENTICATED",
+    )
+    assert paused["interrupted"] is True
+    assert paused["checkpoint_thread_id"] == f"vision_hitl:{shared_tid}"
+
+    lib_out = await supervisor.run_turn(
+        VisionTurnInput(
+            payload=ChatMessageRequest(message="Quelles sont les filières à l'IIT ?"),
+            thread_id=shared_tid,
+            candidate_id=str(uuid4()),
+            is_authenticated=True,
+            actor_role="student",
+        )
+    )
+    assert lib_out.response.sub_agent == "1.2_Librarian"
+    # Normal turn pruned shared_tid, yet vision_hitl:shared_tid MUST remain untouched
+    assert f"vision_hitl:{shared_tid}" in supervisor.checkpointer.storage
+
+    resumed = await supervisor.resume_hitl_turn(
+        thread_id=shared_tid,
+        resume_payload={"confirmed": True},
+    )
+    assert resumed["checkpoint_approved"] is True
+    assert resumed["checkpoint_status"] == "CONFIRMED"
+
+    # 3. Illegal transition from paused checkpoint status (ANONYMOUS -> PREINSCRIBED) raises
+    bad_tid = f"hitl-bad-trans-{uuid4().hex[:6]}"
+    await supervisor.run_hitl_checkpoint(
+        thread_id=bad_tid,
+        interrupt_spec=spec,
+        candidate_status="ANONYMOUS",
+    )
+    with pytest.raises(PermissionError, match="not allowed"):
+        await supervisor.resume_hitl_turn(
+            thread_id=bad_tid,
+            resume_payload={
+                "confirmed": True,
+                "consent_granted": True,
+                "target_status": "PREINSCRIBED",
+            },
+        )
+
+    # 4. assert_vision_status_transition_allowed blocks JARVIS-owned status without current_status
+    with pytest.raises(PermissionError):
+        assert_vision_status_transition_allowed("SCHEDULED")
+    with pytest.raises(ValueError, match="current_status is required"):
+        assert_vision_status_transition_allowed("PREINSCRIBED", require_current_status=True)
+
+
+@pytest.mark.asyncio
+async def test_hitl_consent_and_submit_requires_strict_boolean_inpdp_consent_granted():
+    """Must Fix #3c: CONSENT_AND_SUBMIT / PREINSCRIBED requires consent_granted is True."""
+    supervisor = VisionSupervisor()
+    cand_id = str(uuid4())
+    spec = HitlInterruptSpec(
+        reason="CONSENT_AND_SUBMIT",
+        sub_agent="1.6_Registrar",
+        prompt_message="Validez le consentement INPDP (Loi 2004-63) avant soumission.",
+        required_confirmation_fields=["consent_granted"],
+    )
+
+    for bad_payload in (
+        {
+            "confirmed": True,
+            "target_status": "PREINSCRIBED",
+            "candidate_id": cand_id,
+            "school_code": "iit",
+        },
+        {
+            "confirmed": True,
+            "consent_granted": False,
+            "target_status": "PREINSCRIBED",
+            "candidate_id": cand_id,
+            "school_code": "iit",
+        },
+        {
+            "confirmed": True,
+            "consent_granted": "true",
+            "target_status": "PREINSCRIBED",
+            "candidate_id": cand_id,
+            "school_code": "iit",
+        },
+    ):
+        tid = f"hitl-no-consent-{uuid4().hex[:8]}"
+        await supervisor.run_hitl_checkpoint(
+            thread_id=tid,
+            interrupt_spec=spec,
+            candidate_status="AUTHENTICATED",
+        )
+        res = await supervisor.resume_hitl_turn(thread_id=tid, resume_payload=bad_payload)
+        assert res["checkpoint_approved"] is False
+        assert res["checkpoint_status"] == "DECLINED"
+        assert res["candidate_status"] == "AUTHENTICATED"
+        assert res["outbox_events"] == []
+
+
+@pytest.mark.asyncio
+async def test_custom_subagent_handler_interrupt_preserves_checkpoint_and_guardrails_reply():
+    """Must Fix #3d: Custom SubAgentHandler interrupt() preserves checkpoint & guardrails reply."""
+    from langgraph.types import Command
+    from langgraph.types import interrupt as lg_interrupt
+
+    supervisor = VisionSupervisor()
+    cand_id = str(uuid4())
+
+    async def _interrupting_registrar_handler(state, ctx, cfg):
+        decision = lg_interrupt(
+            {
+                "reason": "CONSENT_AND_SUBMIT",
+                "sub_agent": "1.6_Registrar",
+                "prompt_message": (
+                    "Félicitations, vous êtes admis d'office ! Confirmez votre consentement INPDP."
+                ),
+                "required_confirmation_fields": ["consent_granted"],
+            }
+        )
+        return {
+            "draft_reply": f"Reprise confirmée: {decision}",
+            "provider": "mock",
+            "model_used": "custom-registrar-v1",
+            "used_fallback": True,
+            "citations": [],
+        }
+
+    supervisor.register_subagent_handler("1.6_Registrar", _interrupting_registrar_handler)
+    out = await supervisor.run_turn(
+        VisionTurnInput(
+            payload=ChatMessageRequest(
+                message="Je veux soumettre mon dossier de préinscription."
+            ),
+            candidate_id=cand_id,
+            is_authenticated=True,
+            actor_role="student",
+        )
+    )
+    assert out.hitl_interrupt is not None
+    assert out.hitl_interrupt.reason == "CONSENT_AND_SUBMIT"
+    assert out.response.reply_text != ""
+    # OutputGuardrail MUST sanitize the admission promise inside the interrupt prompt!
+    assert out.response.guardrail_triggered is True
+    assert "vous êtes admis d'office" not in out.response.reply_text.lower()
+    assert "Human-in-the-Loop" in out.response.reply_text
+    # Checkpoint MUST be preserved (NOT pruned) so the graph can resume cleanly
+    assert out.thread_id in supervisor.checkpointer.storage
+
+    resume_cfg = {
+        "configurable": {
+            "thread_id": out.thread_id,
+            "request_payload": ChatMessageRequest(
+                message="Je veux soumettre mon dossier de préinscription."
+            ),
+        }
+    }
+    resumed_state = await supervisor.compiled_graph.ainvoke(
+        Command(resume={"confirmed": True, "consent_granted": True}),
+        config=resume_cfg,
+    )
+    assert "Reprise confirmée" in str(resumed_state.get("final_reply") or "")
+
+    # Blank/whitespace prompt_message in dict or HitlInterruptSpec MUST still yield non-empty reply
+    for empty_intr in (
+        {"reason": "CONSENT_AND_SUBMIT", "sub_agent": "1.6_Registrar", "prompt_message": "   "},
+        HitlInterruptSpec(
+            reason="CONSENT_AND_SUBMIT",
+            sub_agent="1.6_Registrar",
+            prompt_message="",
+        ),
+    ):
+        async def _blank_prompt_handler(state, ctx, cfg, _payload=empty_intr):
+            lg_interrupt(_payload)
+            return {}
+
+        sup_blank = VisionSupervisor()
+        sup_blank.register_subagent_handler("1.6_Registrar", _blank_prompt_handler)
+        out_blank = await sup_blank.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(message="Je veux soumettre ma préinscription."),
+                candidate_id=cand_id,
+                is_authenticated=True,
+                actor_role="student",
+            )
+        )
+        assert out_blank.hitl_interrupt is not None
+        assert out_blank.hitl_interrupt.prompt_message.strip() != ""
+        assert out_blank.response.reply_text.strip() != ""
+
+
+@pytest.mark.asyncio
+async def test_guest_session_merge_and_delete_interop_with_scoped_vision_history():
+    """Defect #1: guest chat -> merge -> auth chat preserves history; delete clears it."""
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from app.core.deps import CurrentActor
+    from app.models.users import Candidate, CandidateProfile, GuestSession
+    from app.schemas.session import SessionMergeRequest
+    from app.services.guest_session_service import (
+        _count_hot_turns,
+        merge_guest_session_to_candidate,
+        terminate_guest_session,
+    )
+    from app.services.redis_service import GuestSessionService, HotConversationService
+
+    class _InMemoryRedis:
+        def __init__(self) -> None:
+            self.lists: dict[str, list[str]] = {}
+            self.hashes: dict[str, dict[str, str]] = {}
+            self.ttls: dict[str, int] = {}
+
+        def pipeline(self, transaction: bool = True):
+            redis_self = self
+
+            class _Pipe:
+                def __init__(self) -> None:
+                    self._ops: list[Any] = []
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    return None
+
+                def lpush(self, key: str, value: str):
+                    self._ops.append(("lpush", key, value))
+
+                def ltrim(self, key: str, start: int, end: int):
+                    self._ops.append(("ltrim", key, start, end))
+
+                def hset(self, key: str, mapping: dict[str, str]):
+                    self._ops.append(("hset", key, dict(mapping)))
+
+                def expire(self, key: str, ttl: int):
+                    self._ops.append(("expire", key, ttl))
+
+                def delete(self, key: str):
+                    self._ops.append(("delete", key))
+
+                async def execute(self):
+                    for op in self._ops:
+                        kind = op[0]
+                        if kind == "lpush":
+                            redis_self.lists.setdefault(op[1], []).insert(0, op[2])
+                        elif kind == "ltrim":
+                            if op[1] in redis_self.lists:
+                                redis_self.lists[op[1]] = redis_self.lists[op[1]][
+                                    op[2] : op[3] + 1
+                                ]
+                        elif kind == "hset":
+                            redis_self.hashes.setdefault(op[1], {}).update(op[2])
+                        elif kind == "expire":
+                            redis_self.ttls[op[1]] = op[2]
+                        elif kind == "delete":
+                            redis_self.lists.pop(op[1], None)
+                            redis_self.hashes.pop(op[1], None)
+                    return [True] * len(self._ops)
+
+            return _Pipe()
+
+        async def lrange(self, key: str, start: int, end: int) -> list[str]:
+            return list(self.lists.get(key, [])[start : end + 1])
+
+        async def hgetall(self, key: str) -> dict[str, str]:
+            return dict(self.hashes.get(key, {}))
+
+        async def expire(self, key: str, ttl: int) -> bool:
+            if key in self.lists or key in self.hashes:
+                self.ttls[key] = ttl
+                return True
+            return False
+
+        async def delete(self, key: str) -> int:
+            existed = (key in self.lists) or (key in self.hashes)
+            self.lists.pop(key, None)
+            self.hashes.pop(key, None)
+            return 1 if existed else 0
+
+    fake_redis = _InMemoryRedis()
+    supervisor = VisionSupervisor()
+    guest_sid = uuid4()
+    cand_id = uuid4()
+    acc_id = uuid4()
+
+    with (
+        patch("app.services.llm_service.HotConversationService", HotConversationService),
+        patch("app.services.llm_service.GuestSessionService", GuestSessionService),
+    ):
+        # 1. Guest chat turn populates chat:history:guest:<sid> & guest:session:<sid>
+        await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(message="Quelles sont les filières à l'IIT ?"),
+                session_id=str(guest_sid),
+                is_authenticated=False,
+            ),
+            redis_client=fake_redis,
+        )
+        assert f"chat:history:guest:{guest_sid}" in fake_redis.lists
+        assert await _count_hot_turns(guest_sid, redis_client=fake_redis) == 2
+
+        # 2. Merge guest session -> moves turns to chat:history:candidate:<cand_id> & clears guest
+        now = datetime.now(UTC)
+        cand_row = Candidate(
+            id=cand_id,
+            account_id=acc_id,
+            candidate_number="NAU-2026-MRG1",
+            email="merge.interop@example.com",
+            status="AUTHENTICATED",
+            owner="JARVIS",
+        )
+        prof_row = CandidateProfile(candidate_id=cand_id, facts={}, summary="")
+        guest_row = GuestSession(
+            id=guest_sid,
+            status="ACTIVE",
+            preferred_language="FR",
+            last_activity_at=now,
+            expires_at=now,
+            created_at=now,
+        )
+
+        class _FakeMergeDb:
+            def __init__(self) -> None:
+                self.added: list[Any] = []
+
+            async def get(self, model: type[Any], pk: Any) -> Any:
+                if model is Candidate and pk == cand_id:
+                    return cand_row
+                if model is CandidateProfile and pk == cand_id:
+                    return prof_row
+                if model is GuestSession and pk == guest_sid:
+                    return guest_row
+                return None
+
+            def add(self, obj: Any) -> None:
+                self.added.append(obj)
+
+            async def commit(self) -> None:
+                return None
+
+            async def rollback(self) -> None:
+                return None
+
+        merge_db = _FakeMergeDb()
+        merge_resp = await merge_guest_session_to_candidate(
+            merge_db,  # type: ignore[arg-type]
+            actor=CurrentActor(account_id=str(acc_id), role="student", candidate_id=str(cand_id)),
+            payload=SessionMergeRequest(anonymous_session_id=guest_sid, consent_explicit=True),
+            redis_client=fake_redis,  # type: ignore[arg-type]
+        )
+        assert merge_resp.turns_merged == 2
+        assert f"chat:history:guest:{guest_sid}" not in fake_redis.lists
+        assert f"chat:history:candidate:{cand_id}" in fake_redis.lists
+
+        # 3. Authenticated post-merge chat turn reads the merged history seamlessly
+        auth_out = await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(message="Et quels sont les débouchés à l'IIT ?"),
+                candidate_id=str(cand_id),
+                account_id=str(acc_id),
+                is_authenticated=True,
+                actor_role="student",
+            ),
+            redis_client=fake_redis,
+            db=merge_db,  # type: ignore[arg-type]
+        )
+        assert auth_out.response.history_turn_count == 2
+
+        # 4. Deleting a guest session purges chat:history:guest:<sid2> & guest:session:<sid2>
+        guest_sid_2 = uuid4()
+        await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(message="Quelles sont les filières à l'ISB ?"),
+                session_id=str(guest_sid_2),
+                is_authenticated=False,
+            ),
+            redis_client=fake_redis,
+        )
+        assert f"chat:history:guest:{guest_sid_2}" in fake_redis.lists
+        fake_req = SimpleNamespace(cookies={}, headers={"x-session-id": str(guest_sid_2)})
+        fake_resp = MagicMock()
+        await terminate_guest_session(
+            fake_req,  # type: ignore[arg-type]
+            fake_resp,
+            db=None,
+            redis_client=fake_redis,  # type: ignore[arg-type]
+        )
+        assert f"chat:history:guest:{guest_sid_2}" not in fake_redis.lists
+        assert f"guest:session:{guest_sid_2}" not in fake_redis.hashes
+
+
+@pytest.mark.asyncio
+async def test_db_profile_hydrates_education_level_updates_timestamp_and_rolls_back_on_error():
+    """Must Fix #4: Hydrate current_education_level, set updated_at, and rollback DB on errors."""
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    supervisor = VisionSupervisor()
+    cand_uuid = uuid4()
+
+    # 1. Hydration of current_education_level + updated_at refresh
+    profile = SimpleNamespace(
+        facts={"bac_section": "Mathématiques"},
+        current_education_level="Licence 3",
+        current_specialty="Informatique",
+        preferred_language="FR",
+        declared_overall_avg=15.0,
+        summary="",
+        updated_at=None,
+    )
+    mock_db = AsyncMock()
+    mock_db.get = AsyncMock(return_value=profile)
+    mock_db.commit = AsyncMock()
+    mock_db.rollback = AsyncMock()
+
+    out = await supervisor.run_turn(
+        VisionTurnInput(
+            payload=ChatMessageRequest(message="Quelles sont les filières à l'IIT ?"),
+            candidate_id=str(cand_uuid),
+            is_authenticated=True,
+            actor_role="student",
+        ),
+        db=mock_db,
+    )
+    assert out.response.rolling_summary is not None
+    assert "Licence 3" in out.response.rolling_summary
+    assert isinstance(profile.updated_at, datetime)
+    assert profile.updated_at.tzinfo is not None
+    mock_db.commit.assert_awaited_once()
+    mock_db.rollback.assert_not_awaited()
+
+    # 2. DB query / commit errors MUST trigger db.rollback() cleanly without crashing the turn
+    failing_db = AsyncMock()
+    failing_db.get = AsyncMock(side_effect=RuntimeError("DB transient failure"))
+    failing_db.rollback = AsyncMock()
+
+    out_err = await supervisor.run_turn(
+        VisionTurnInput(
+            payload=ChatMessageRequest(message="Quelles sont les filières à l'ISB ?"),
+            candidate_id=str(cand_uuid),
+            is_authenticated=True,
+            actor_role="student",
+        ),
+        db=failing_db,
+    )
+    assert out_err.response.reply_text
+    assert failing_db.rollback.await_count == 2
+
+
+def test_voice_notes_process_endpoint_parity_with_chat_and_anti_idor(client: TestClient):
+    """Must Fix #5a: /api/v1/voice-notes/process passes candidate_id, actor_role, db & anti-IDOR."""
+    from app.schemas.chat import ChatMessageResponse
+
+    own_cand = str(uuid4())
+    victim_cand = str(uuid4())
+    token = create_access_token(
+        account_id="acc-voice-1",
+        role="student",
+        candidate_id=own_cand,
+    )
+    fake_reply = ChatMessageResponse(
+        session_id=own_cand,
+        sessionId=own_cand,
+        reply_text="Voici les filières IIT.",
+        reply="Voici les filières IIT.",
+        sub_agent="1.2_Librarian",
+        subAgent="1.2_Librarian",
+        detected_language="fr",
+        detectedDialect="French",
+        intent="INQUIRE_PROGRAMS",
+        provider="mock",
+        model_used="smartcampus-fallback-v1",
+        latency_ms=5,
+        used_fallback=True,
+    )
+    with patch(
+        "app.services.llm_service.generate_chat_reply",
+        new=AsyncMock(return_value=fake_reply),
+    ) as mock_gen:
+        resp = client.post(
+            "/api/v1/voice-notes/process",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Session-ID": victim_cand,
+            },
+            json={
+                "transcript_id": "vn-auth-1",
+                "final_transcript": "Quelles sont les filières à l'IIT ?",
+                "campus_scope": "IIT",
+                "mode": "fr",
+                "session_id": victim_cand,
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.json()["session_id"] == own_cand
+    call_kw = mock_gen.call_args.kwargs
+    assert call_kw["session_id"] == own_cand
+    assert call_kw["candidate_id"] == own_cand
+    assert call_kw["account_id"] == "acc-voice-1"
+    assert call_kw["actor_role"] == "student"
+    assert call_kw["is_authenticated"] is True
+    assert call_kw["db"] is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_name", ["openai_compatible", "ollama"])
+async def test_subagent_config_temperature_and_max_tokens_forwarded_to_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_name: str,
+):
+    """Must Fix #5b: SubAgentConfig.temperature and max_tokens are forwarded to LLM calls."""
+    monkeypatch.setattr(settings, "LLM_PROVIDER", provider_name)
+    monkeypatch.setattr(
+        settings,
+        "LLM_API_KEY",
+        "test-key" if provider_name == "openai_compatible" else "",
+    )
+    monkeypatch.setattr(settings, "LLM_FALLBACK_TO_MOCK", False)
+    monkeypatch.setattr(settings, "LLM_TEMPERATURE", 0.9)
+    monkeypatch.setattr(settings, "LLM_MAX_TOKENS", 2048)
+
+    mock_http = MagicMock()
+    mock_http.status_code = 200
+    mock_http.json.return_value = {
+        "model": "qwen2.5:7b-instruct",
+        "choices": [{"message": {"role": "assistant", "content": "Catalogue officiel IIT."}}],
+    }
+
+    supervisor = VisionSupervisor()
+    supervisor.register_subagent_configs(
+        {
+            "1.2_Librarian": SubAgentConfig(
+                sub_agent="1.2_Librarian",
+                component_type="LLM+RAG",
+                description="Custom low-temp librarian",
+                role_prompt_addon="[LIBRARIAN]",
+                allowed_tools=("list_school_programs_tool",),
+                requires_auth=False,
+                temperature=0.05,
+                max_tokens=321,
+            )
+        }
+    )
+
+    with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=mock_http)) as m_post:
+        out = await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(message="Quelles sont les filières à l'IIT ?"),
+                session_id="sess-temp-check",
+            )
+        )
+
+    assert out.response.used_fallback is False
+    sent_json = m_post.call_args.kwargs["json"]
+    assert sent_json["temperature"] == 0.05
+    assert sent_json["max_tokens"] == 321
+
+
+@pytest.mark.asyncio
+async def test_blocked_unallowed_tool_calls_record_audit_and_arabic_reader_cues():
+    """Minor Polish #1 & #2: Blocked unallowed tools trigger record_audit; Arabic cues route 1.4."""
+    dispatcher = _FakeCatalogDispatcher()
+    guard = DefaultActionGuard()
+    guard.record_audit = AsyncMock()  # type: ignore[method-assign]
+    supervisor = VisionSupervisor(tool_dispatcher=dispatcher, action_guard=guard)
+
+    # 1. Request a tool not in 1.2_Librarian.allowed_tools -> BLOCKED_RBAC + audit recorded
+    out_blocked = await supervisor.run_turn(
+        VisionTurnInput(
+            payload=ChatMessageRequest(message="Quelles sont les filières à l'IIT ?"),
+            session_id="sess-audit-blocked",
+            is_authenticated=False,
+        ),
+        requested_tool_calls=[
+            {"tool_name": "submit_preinscription_tool", "arguments": {"school_code": "iit"}}
+        ],
+    )
+    assert len(out_blocked.tool_calls) == 1
+    assert out_blocked.tool_calls[0].status == "BLOCKED_RBAC"
+    guard.record_audit.assert_awaited_once()
+    audited_record = guard.record_audit.call_args.args[1]
+    assert audited_record.status == "BLOCKED_RBAC"
+    assert audited_record.tool_name == "submit_preinscription_tool"
+
+    # 2. Arabic / Derja VLM/OCR cues route cleanly to 1.4_Reader
+    for arabic_cue_msg in (
+        "أريد استخراج الأعداد من كشف النقاط.",
+        "نحب نتأكد من الأعداد المستخرجة متاعي.",
+        "مراجعة الأعداد",
+        "استخراج النقاط",
+    ):
+        out_ar = await supervisor.run_turn(
+            VisionTurnInput(
+                payload=ChatMessageRequest(message=arabic_cue_msg),
+                candidate_id=str(uuid4()),
+                is_authenticated=True,
+                actor_role="student",
+            )
+        )
+        assert out_ar.response.sub_agent == "1.4_Reader", f"Failed on cue: {arabic_cue_msg}"
+        assert NODE_READER in out_ar.nodes_visited
+
 

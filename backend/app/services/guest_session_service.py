@@ -137,6 +137,7 @@ async def _persist_guest_state(
                 redis_client=redis_client,
                 ttl_seconds=ttl_seconds,
             )
+            await chat_svc.redis.expire(chat_svc.get_key(f"guest:{sid}"), ttl_seconds)
             await chat_svc.redis.expire(chat_svc.get_key(sid), ttl_seconds)
             remote = await guest_svc.get_session(sid)
             if remote:
@@ -191,7 +192,10 @@ async def _count_hot_turns(
         return 0
     try:
         chat_svc = HotConversationService(redis_client=redis_client)
-        turns = await chat_svc.get_history(str(session_id))
+        sid_str = str(session_id)
+        turns = await chat_svc.get_history(f"guest:{sid_str}")
+        if not turns:
+            turns = await chat_svc.get_history(sid_str)
         return len(turns)
     except Exception:
         if redis_client is None:
@@ -543,6 +547,7 @@ async def terminate_guest_session(
             guest_svc = GuestSessionService(redis_client=redis_client)
             chat_svc = HotConversationService(redis_client=redis_client)
             await guest_svc.delete_session(sid_str)
+            await chat_svc.clear_history(f"guest:{sid_str}")
             await chat_svc.clear_history(sid_str)
         except Exception:
             if redis_client is None:
@@ -676,16 +681,20 @@ async def merge_guest_session_to_candidate(
     cand_str = str(candidate.id)
     now = datetime.now(UTC)
 
-    # 3. Transfer hot conversation history in Redis
+    # 3. Transfer hot conversation history in Redis (scoped guest:<sid> -> candidate:<cid>)
     chat_svc = HotConversationService(redis_client=redis_client)
     turns_merged = 0
     try:
-        turns = await chat_svc.get_history(sid_str)
+        turns = await chat_svc.get_history(f"guest:{sid_str}")
+        if not turns:
+            turns = await chat_svc.get_history(sid_str)
         if turns:
-            await chat_svc.add_turns(cand_str, turns)
+            await chat_svc.add_turns(f"candidate:{cand_str}", turns)
             if str(actor.account_id) != cand_str:
-                await chat_svc.add_turns(str(actor.account_id), turns)
+                await chat_svc.add_turns(f"account:{actor.account_id}", turns)
             turns_merged = len(turns)
+        await chat_svc.clear_history(f"guest:{sid_str}")
+        await chat_svc.clear_history(sid_str)
     except Exception:
         turns_merged = 0
 
