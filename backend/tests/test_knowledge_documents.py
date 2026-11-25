@@ -141,21 +141,43 @@ class MockAsyncSession:
 
         # Check for versions
         if "document_versions" in stmt_str:
-            all_versions = list(self.versions.values())
-            found_v = all_versions[0] if all_versions else None
+            compiled = statement.compile()
+            sql_lower = str(compiled).lower()
+            params = dict(compiled.params)
+            rows = list(self.versions.values())
+            if "document_versions.document_id in" in sql_lower:
+                doc_ids = set(params.get("document_id_1") or [])
+                rows = [v for v in rows if v.document_id in doc_ids]
+            elif "document_versions.document_id =" in sql_lower:
+                req_doc = params.get("document_id_1")
+                rows = [v for v in rows if v.document_id == req_doc]
+            if "document_versions.id =" in sql_lower:
+                req_id = params.get("id_1")
+                rows = [v for v in rows if v.id == req_id]
+            rows.sort(key=lambda v: v.version_number, reverse=True)
+            found_v = rows[0] if rows else None
             mock_result.scalar_one_or_none.return_value = found_v
             mock_scalars = MagicMock()
-            mock_scalars.all.return_value = all_versions
+            mock_scalars.all.return_value = rows
             mock_result.scalars.return_value = mock_scalars
             return mock_result
 
         # Check for sync jobs
         if "document_sync_jobs" in stmt_str:
-            all_jobs = list(self.jobs.values())
-            found_j = all_jobs[0] if all_jobs else None
+            compiled = statement.compile()
+            sql_lower = str(compiled).lower()
+            params = dict(compiled.params)
+            rows = list(self.jobs.values())
+            if "document_sync_jobs.version_id in" in sql_lower:
+                ver_ids = set(params.get("version_id_1") or [])
+                rows = [j for j in rows if j.version_id in ver_ids]
+            elif "document_sync_jobs.version_id =" in sql_lower:
+                req_ver = params.get("version_id_1")
+                rows = [j for j in rows if j.version_id == req_ver]
+            found_j = rows[0] if rows else None
             mock_result.scalar_one_or_none.return_value = found_j
             mock_scalars = MagicMock()
-            mock_scalars.all.return_value = all_jobs
+            mock_scalars.all.return_value = rows
             mock_result.scalars.return_value = mock_scalars
             return mock_result
 

@@ -11,9 +11,12 @@ Manages RAG knowledge documents across IIT, ISB, ISA, and nau_common:
 - Strict RBAC + school-scope isolation for NAU_RESPONSABLE actors.
 """
 
+import re
+import unicodedata
 import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -29,6 +32,7 @@ from fastapi import (
 )
 from fastapi import Path as FastAPIPath
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -71,7 +75,7 @@ RequireDocumentAdmin = Annotated[
     Depends(require_roles("admin", "responsable", "direction")),
 ]
 
-# Strict SA-56 write RBAC for version mutations & rollback (matches rbac_matrix.md & SA-14 §7)
+# Strict SA-56 write RBAC for version mutations, rollback, and deletion (rbac_matrix.md & SA-14 §7)
 RequireDocumentVersionWriter = Annotated[
     CurrentActor,
     Depends(require_roles("admin", "responsable")),
@@ -84,6 +88,33 @@ RequireDocumentStaffReader = Annotated[
 ]
 
 STAFF_ROLES = {"admin", "responsable", "direction", "rh"}
+
+
+def _build_content_disposition(file_name: str) -> str:
+    """Build an ASCII-safe + RFC 5987 UTF-8 Content-Disposition attachment header."""
+    cleaned = file_name.replace("\r", "").replace("\n", "").replace("\x00", "").strip()
+    if not cleaned:
+        cleaned = "document"
+
+    ascii_candidate = (
+        cleaned.replace("\u0153", "oe")
+        .replace("\u0152", "OE")
+        .replace("\u00e6", "ae")
+        .replace("\u00c6", "AE")
+        .replace("\u2019", "_")
+        .replace("\u2018", "_")
+    )
+    normalized = unicodedata.normalize("NFKD", ascii_candidate)
+    ascii_raw = normalized.encode("ascii", "ignore").decode("ascii")
+    ascii_safe = re.sub(r'["\\;\x00-\x1f\x7f]', "_", ascii_raw).strip(" .")
+    stem, dot, ext = ascii_safe.rpartition(".")
+    if dot and not stem.strip("_- "):
+        ascii_safe = f"document.{ext}" if ext else "document"
+    elif not ascii_safe or not ascii_safe.strip("_- "):
+        ascii_safe = "document"
+
+    encoded_utf8 = quote(cleaned, safe="")
+    return f'attachment; filename="{ascii_safe}"; filename*=UTF-8\'\'{encoded_utf8}'
 
 
 def _build_document_response(
@@ -150,10 +181,13 @@ async def _load_document_or_404(
     document_id: uuid.UUID,
     *,
     include_deleted: bool = False,
+    for_update: bool = False,
 ) -> CorpusDocument:
     stmt = select(CorpusDocument).where(CorpusDocument.id == document_id)
     if not include_deleted:
         stmt = stmt.where(CorpusDocument.status != DocumentStatusEnum.DELETED.value)
+    if for_update:
+        stmt = stmt.with_for_update()
     doc_res = await db.execute(stmt)
     doc = doc_res.scalar_one_or_none()
     if not doc:
@@ -299,6 +333,9 @@ async def create_document(
             detail=f"Document with code '{code}' already exists.",
         )
 
+    # 4. Validate uploaded file or inline content BEFORE mutating DB or disk
+    raw_bytes, safe_name, mime_type = await _read_upload_or_content(file, content)
+
     doc_id = uuid.uuid4()
     initial_status = (
         DocumentStatusEnum.PUBLISHED.value if is_published else DocumentStatusEnum.DRAFT.value
@@ -315,17 +352,16 @@ async def create_document(
         status=initial_status,
         created_by=user_uuid,
     )
-    db.add(doc)
-    # Flush the document FIRST so it exists in DB before we reference it via FK
-    await db.flush()
 
     current_version: CorpusDocumentVersion | None = None
     latest_job: DocumentSyncJob | None = None
     saved_storage_paths: list[str] = []
 
     try:
-        # 4. Process file or raw content if supplied
-        raw_bytes, safe_name, mime_type = await _read_upload_or_content(file, content)
+        db.add(doc)
+        # Flush the document FIRST so it exists in DB before we reference it via FK
+        await db.flush()
+
         if raw_bytes is not None and safe_name is not None and mime_type is not None:
             canonical_bytes = sync_svc.prepare_bytes_for_storage(raw_bytes, mime_type)
             versioned_sub_path = sync_svc.build_versioned_sub_path(
@@ -406,11 +442,22 @@ async def create_document(
         )
 
         await db.commit()
-        await db.refresh(doc)
+    except IntegrityError as exc:
+        await db.rollback()
+        for storage_path in saved_storage_paths:
+            storage_svc.delete_document_bytes(storage_path)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Document with code '{code}' already exists.",
+        ) from exc
     except Exception:
+        await db.rollback()
         for storage_path in saved_storage_paths:
             storage_svc.delete_document_bytes(storage_path)
         raise
+
+    # Refresh strictly AFTER commit so a post-commit failure can never delete committed disk files
+    await db.refresh(doc)
 
     return _build_document_response(doc, latest_job, current_version, current_version)
 
@@ -441,16 +488,74 @@ async def list_documents(
 
     query = query.order_by(CorpusDocument.created_at.desc())
     docs_res = await db.execute(query)
-    docs = docs_res.scalars().all()
+    docs = list(docs_res.scalars().all())
+
+    versions_by_doc: dict[uuid.UUID, list[CorpusDocumentVersion]] = {}
+    version_by_id: dict[uuid.UUID, CorpusDocumentVersion] = {}
+    latest_job_by_version: dict[uuid.UUID, DocumentSyncJob] = {}
+
+    if docs:
+        doc_ids = [doc.id for doc in docs]
+        versions_res = await db.execute(
+            select(CorpusDocumentVersion)
+            .where(CorpusDocumentVersion.document_id.in_(doc_ids))
+            .order_by(CorpusDocumentVersion.version_number.desc())
+        )
+        all_versions = list(versions_res.scalars().all())
+        for ver in all_versions:
+            versions_by_doc.setdefault(ver.document_id, []).append(ver)
+            version_by_id[ver.id] = ver
+        for doc_vers in versions_by_doc.values():
+            doc_vers.sort(key=lambda v: v.version_number, reverse=True)
+
+        needed_version_ids: set[uuid.UUID] = set()
+        for doc in docs:
+            doc_vers = versions_by_doc.get(doc.id, [])
+            cur_ver = (
+                version_by_id.get(doc.current_version_id)
+                if doc.current_version_id is not None
+                else None
+            )
+            lat_ver = doc_vers[0] if doc_vers else cur_ver
+            if cur_ver is not None:
+                needed_version_ids.add(cur_ver.id)
+            if lat_ver is not None:
+                needed_version_ids.add(lat_ver.id)
+
+        if needed_version_ids:
+            jobs_res = await db.execute(
+                select(DocumentSyncJob)
+                .where(DocumentSyncJob.version_id.in_(list(needed_version_ids)))
+                .order_by(DocumentSyncJob.created_at.desc())
+            )
+            all_jobs = list(jobs_res.scalars().all())
+            all_jobs.sort(
+                key=lambda j: j.created_at or datetime.min.replace(tzinfo=UTC),
+                reverse=True,
+            )
+            for job in all_jobs:
+                if job.version_id not in latest_job_by_version:
+                    latest_job_by_version[job.version_id] = job
 
     all_items: list[DocumentResponse] = []
     for doc in docs:
-        (
-            current_version,
-            latest_version,
-            current_job,
-            latest_version_job,
-        ) = await _load_doc_version_and_job(db, doc)
+        doc_vers = versions_by_doc.get(doc.id, [])
+        current_version = (
+            version_by_id.get(doc.current_version_id)
+            if doc.current_version_id is not None
+            else None
+        )
+        latest_version = doc_vers[0] if doc_vers else current_version
+        current_job = (
+            latest_job_by_version.get(current_version.id)
+            if current_version is not None
+            else None
+        )
+        latest_version_job = (
+            latest_job_by_version.get(latest_version.id)
+            if latest_version is not None
+            else None
+        )
         resp = _build_document_response(
             doc,
             current_version=current_version,
@@ -602,7 +707,7 @@ async def update_document(
     actor: RequireDocumentAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> DocumentResponse:
-    doc = await _load_document_or_404(db, document_id)
+    doc = await _load_document_or_404(db, document_id, for_update=True)
     sync_svc.enforce_document_school_scope(actor, doc.school)
     if payload.school_code is not None:
         sync_svc.enforce_document_school_scope(actor, payload.school_code.value)
@@ -661,6 +766,10 @@ async def download_document_file(
             detail="Access denied. Only published documents can be downloaded by students.",
         )
 
+    # Enforce school scope for scoped responsable actors on unpublished DRAFT / ARCHIVED documents
+    if doc.status != DocumentStatusEnum.PUBLISHED.value:
+        sync_svc.enforce_document_school_scope(actor, doc.school)
+
     if not doc.current_version_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -684,7 +793,7 @@ async def download_document_file(
         content=file_bytes,
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{version.file_name}"',
+            "Content-Disposition": _build_content_disposition(version.file_name),
             "Content-Length": str(len(file_bytes)),
             "ETag": f'"{version.file_hash_sha256}"',
         },
@@ -785,7 +894,7 @@ async def download_document_version_file(
         content=file_bytes,
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{version.file_name}"',
+            "Content-Disposition": _build_content_disposition(version.file_name),
             "Content-Length": str(len(file_bytes)),
             "ETag": f'"{version.file_hash_sha256}"',
         },
@@ -847,7 +956,7 @@ async def list_document_sync_jobs(
 )
 async def delete_document(
     document_id: uuid.UUID,
-    actor: RequireDocumentAdmin,
+    actor: RequireDocumentVersionWriter,
     db: AsyncSession = Depends(get_db),
     purge_storage: bool = Query(
         default=False,
@@ -856,7 +965,7 @@ async def delete_document(
         ),
     ),
 ) -> None:
-    doc = await _load_document_or_404(db, document_id)
+    doc = await _load_document_or_404(db, document_id, for_update=True)
     await sync_svc.record_document_deletion(
         db,
         doc=doc,

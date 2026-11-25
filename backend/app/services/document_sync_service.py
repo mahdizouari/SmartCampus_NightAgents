@@ -554,12 +554,16 @@ async def cancel_superseded_pending_jobs(
     *,
     document_id: uuid.UUID,
     exclude_version_id: uuid.UUID | None = None,
+    max_version_number: int | None = None,
     reason: str = "Superseded by newer document change",
 ) -> list[DocumentSyncJob]:
-    """Cancel PENDING jobs on older versions of the same document without touching PROCESSING."""
+    """Cancel PENDING jobs on target versions of the same document without touching PROCESSING."""
     versions = await _fetch_document_versions(db, document_id)
     target_version_ids = [
-        v.id for v in versions if exclude_version_id is None or v.id != exclude_version_id
+        v.id
+        for v in versions
+        if (exclude_version_id is None or v.id != exclude_version_id)
+        and (max_version_number is None or v.version_number <= max_version_number)
     ]
     if not target_version_ids:
         return []
@@ -601,13 +605,23 @@ async def enqueue_sync_job(
     log_message: str | None = None,
     log_details: dict[str, Any] | None = None,
     cancel_superseded_for_document_id: uuid.UUID | None = None,
+    cancel_max_version_number: int | None = None,
 ) -> tuple[DocumentSyncJob, bool]:
     """Create a deduplicated PENDING DocumentSyncJob and emit its initial DocumentSyncLog.
 
+    Guarantees a single version never accumulates conflicting PENDING jobs:
+    - Exact match (PENDING or PROCESSING) is reused.
+    - Requested REINDEX when a PENDING INGEST already awaits execution on the same version
+      reuses that PENDING INGEST job (appending a CHANGE_DETECTOR log noting reuse).
+    - Action flips on the same version (e.g. INGEST/REINDEX <-> DEACTIVATE/PURGE) cancel
+      any superseded PENDING jobs on that same version before inserting the new job.
+
     Returns:
-        (job, created) where created=False if an identical PENDING/PROCESSING job already exists.
+        (job, created) where created=False if an existing active job was reused.
     """
     existing_jobs = await _fetch_jobs_for_versions(db, [version_id])
+
+    # 1a. Exact match deduplication (PENDING or PROCESSING)
     for job in existing_jobs:
         if job.action_type == action_type and job.status in (
             SyncJobStatusEnum.PENDING.value,
@@ -623,15 +637,64 @@ async def enqueue_sync_job(
             )
             return job, False
 
+    # 1b. Reuse an unstarted PENDING INGEST job when REINDEX is requested on the same version
+    if action_type == SyncActionTypeEnum.REINDEX.value:
+        for job in existing_jobs:
+            if (
+                job.action_type == SyncActionTypeEnum.INGEST.value
+                and job.status == SyncJobStatusEnum.PENDING.value
+            ):
+                append_sync_log(
+                    db,
+                    job_id=job.id,
+                    stage=SYNC_LOG_STAGE_CHANGE_DETECTOR,
+                    level=SyncLogLevelEnum.INFO.value,
+                    message=(
+                        "Reused existing PENDING INGEST sync job instead of creating "
+                        "conflicting REINDEX job."
+                    ),
+                    details={
+                        **(log_details or {}),
+                        "requested_action_type": action_type,
+                        "reused_job_id": str(job.id),
+                        "reused_action_type": job.action_type,
+                    },
+                )
+                return job, False
+
+    # 2. Cancel conflicting PENDING jobs on the SAME version (action flip, e.g. INGEST->DEACTIVATE)
+    now = datetime.now(UTC)
+    for job in existing_jobs:
+        if job.status == SyncJobStatusEnum.PENDING.value:
+            job.status = SyncJobStatusEnum.CANCELLED.value
+            job.completed_at = now
+            append_sync_log(
+                db,
+                job_id=job.id,
+                stage=SYNC_LOG_STAGE_CHANGE_DETECTOR,
+                level=SyncLogLevelEnum.INFO.value,
+                message=(
+                    f"Cancelled conflicting PENDING {job.action_type} job on version "
+                    f"{version_id}; superseded by {action_type}."
+                ),
+                details={
+                    **(log_details or {}),
+                    "cancelled_job_id": str(job.id),
+                    "cancelled_action_type": job.action_type,
+                    "superseded_by_action_type": action_type,
+                },
+            )
+
+    # 3. Cancel superseded PENDING jobs on other target versions of the same document
     if cancel_superseded_for_document_id is not None:
         await cancel_superseded_pending_jobs(
             db,
             document_id=cancel_superseded_for_document_id,
             exclude_version_id=version_id,
+            max_version_number=cancel_max_version_number,
             reason=f"Superseded by new {action_type} job for version {version_id}",
         )
 
-    now = datetime.now(UTC)
     new_job = DocumentSyncJob(
         id=uuid.uuid4(),
         version_id=version_id,
@@ -667,8 +730,13 @@ async def _find_cross_document_hash_matches(
     file_hash_sha256: str,
     *,
     exclude_document_id: uuid.UUID | None = None,
+    actor: CurrentActor | None = None,
 ) -> list[CrossDocumentHashMatch]:
-    """Find versions under OTHER documents that share the exact same SHA-256 checksum."""
+    """Find versions under OTHER documents that share the exact same SHA-256 checksum.
+
+    For school-scoped ``responsable`` callers, restricts cross-school matches to publicly
+    ``PUBLISHED`` active versions so unpublished drafts from other schools are never leaked.
+    """
     stmt = select(CorpusDocumentVersion).where(
         CorpusDocumentVersion.file_hash_sha256 == file_hash_sha256
     )
@@ -680,19 +748,42 @@ async def _find_cross_document_hash_matches(
     if not isinstance(matching_versions, list):
         matching_versions = list(matching_versions)
 
-    matches: list[CrossDocumentHashMatch] = []
-    for ver in matching_versions:
-        if exclude_document_id is not None and ver.document_id == exclude_document_id:
-            continue
-        doc_res = await db.execute(
-            select(CorpusDocument).where(
-                CorpusDocument.id == ver.document_id,
-                CorpusDocument.status != DocumentStatusEnum.DELETED.value,
-            )
+    candidate_versions = [
+        ver
+        for ver in matching_versions
+        if exclude_document_id is None or ver.document_id != exclude_document_id
+    ]
+    if not candidate_versions:
+        return []
+
+    other_doc_ids = list({ver.document_id for ver in candidate_versions})
+    docs_res = await db.execute(
+        select(CorpusDocument).where(
+            CorpusDocument.id.in_(other_doc_ids),
+            CorpusDocument.status != DocumentStatusEnum.DELETED.value,
         )
-        other_doc = doc_res.scalar_one_or_none()
+    )
+    raw_docs = docs_res.scalars().all()
+    if not isinstance(raw_docs, list):
+        raw_docs = list(raw_docs)
+    docs_by_id = {
+        d.id: d for d in raw_docs if d.status != DocumentStatusEnum.DELETED.value
+    }
+
+    scoped_school = (
+        actor.school_scope.strip().lower()
+        if actor is not None and actor.role == "responsable" and actor.school_scope
+        else None
+    )
+
+    matches: list[CrossDocumentHashMatch] = []
+    for ver in candidate_versions:
+        other_doc = docs_by_id.get(ver.document_id)
         if other_doc is None:
             continue
+        if scoped_school is not None and other_doc.school.strip().lower() != scoped_school:
+            if other_doc.status != DocumentStatusEnum.PUBLISHED.value or not ver.is_active:
+                continue
         matches.append(
             CrossDocumentHashMatch(
                 document_id=other_doc.id,
@@ -785,6 +876,7 @@ async def detect_document_change(
             db,
             incoming_hash,
             exclude_document_id=doc.id if doc else None,
+            actor=actor,
         )
 
     # Case 1: Brand-new document code (not yet in core.documents)
@@ -1111,6 +1203,7 @@ async def create_document_version(
         db,
         incoming_hash,
         exclude_document_id=doc.id,
+        actor=actor,
     )
 
     # Guard A: Unchanged vs currently active version -> idempotent skip (no disk write / no job)
@@ -1213,6 +1306,15 @@ async def create_document_version(
         await db.flush()
 
         if should_activate:
+            await db.execute(
+                update(KnowledgeChunk)
+                .where(
+                    KnowledgeChunk.document_id == doc.id,
+                    KnowledgeChunk.version_id != new_version.id,
+                    KnowledgeChunk.is_active.is_(True),
+                )
+                .values(is_active=False)
+            )
             await db.execute(
                 update(CorpusDocumentVersion)
                 .where(
@@ -1567,16 +1669,17 @@ async def record_document_metadata_change(
     if payload.school_code is not None:
         enforce_document_school_scope(actor, payload.school_code.value)
 
+    fields_set = payload.model_fields_set
     incoming: dict[str, Any] = {}
     if payload.title is not None:
         incoming["title"] = payload.title
-    if payload.description is not None:
+    if "description" in fields_set:
         incoming["description"] = payload.description
     if payload.school_code is not None:
         incoming["school"] = payload.school_code.value
     if payload.doc_type is not None:
         incoming["category"] = payload.doc_type.value
-    if payload.target_program_id is not None:
+    if "target_program_id" in fields_set:
         incoming["target_program_id"] = payload.target_program_id
 
     if payload.status is not None:
@@ -1671,6 +1774,11 @@ async def record_document_metadata_change(
                 cancel_superseded_for_document_id=doc.id,
             )
         elif rag_relevant_changed and doc.status == DocumentStatusEnum.PUBLISHED.value:
+            versions = await _fetch_document_versions(db, doc.id)
+            current_ver = next(
+                (v for v in versions if v.id == doc.current_version_id),
+                None,
+            )
             sync_job, _ = await enqueue_sync_job(
                 db,
                 version_id=doc.current_version_id,
@@ -1685,7 +1793,10 @@ async def record_document_metadata_change(
                     "document_id": str(doc.id),
                     "changed_fields": sorted(metadata_diff.keys()),
                 },
-                cancel_superseded_for_document_id=doc.id,
+                cancel_superseded_for_document_id=doc.id if current_ver is not None else None,
+                cancel_max_version_number=(
+                    current_ver.version_number if current_ver is not None else None
+                ),
             )
 
     record_document_audit(
@@ -1889,18 +2000,24 @@ async def list_document_sync_jobs_with_logs(
 
     jobs = await _fetch_jobs_for_versions(db, version_ids, status_filter=status_filter)
     limited_jobs = jobs[:limit]
+    job_ids = [job.id for job in limited_jobs]
+
+    logs_by_job_id: dict[uuid.UUID, list[DocumentSyncLog]] = {}
+    if job_ids:
+        logs_res = await db.execute(
+            select(DocumentSyncLog)
+            .where(DocumentSyncLog.job_id.in_(job_ids))
+            .order_by(DocumentSyncLog.created_at.asc())
+        )
+        all_logs = logs_res.scalars().all()
+        if not isinstance(all_logs, list):
+            all_logs = list(all_logs)
+        for lg in all_logs:
+            logs_by_job_id.setdefault(lg.job_id, []).append(lg)
 
     items: list[DocumentSyncJobWithLogsResponse] = []
     for job in limited_jobs:
-        logs_res = await db.execute(
-            select(DocumentSyncLog)
-            .where(DocumentSyncLog.job_id == job.id)
-            .order_by(DocumentSyncLog.created_at.asc())
-        )
-        raw_logs = logs_res.scalars().all()
-        if not isinstance(raw_logs, list):
-            raw_logs = list(raw_logs)
-
+        raw_logs = logs_by_job_id.get(job.id, [])
         base_job = serialize_sync_job(job)
         items.append(
             DocumentSyncJobWithLogsResponse(

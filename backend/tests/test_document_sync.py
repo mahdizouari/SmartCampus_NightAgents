@@ -24,13 +24,15 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -118,6 +120,15 @@ class SyncFakeAsyncSession:
         self.programs: set[uuid.UUID] = {PROGRAM_ID}
         self._next_log_id = 1
         self._pending_objects: list[Any] = []
+        self._last_ts: datetime = datetime.now(UTC)
+        self.executed_sql: list[str] = []
+
+    def _monotonic_ts(self, candidate: datetime | None) -> datetime:
+        ts = candidate or datetime.now(UTC)
+        if ts <= self._last_ts:
+            ts = self._last_ts + timedelta(microseconds=1)
+        self._last_ts = ts
+        return ts
 
     def add(self, obj: Any) -> None:
         now = datetime.now(UTC)
@@ -135,7 +146,7 @@ class SyncFakeAsyncSession:
         elif isinstance(obj, DocumentSyncJob):
             if obj.id is None:
                 obj.id = uuid.uuid4()
-            obj.created_at = obj.created_at or now
+            obj.created_at = self._monotonic_ts(obj.created_at)
             if obj.embedding_model is None:
                 obj.embedding_model = sync_svc.DEFAULT_EMBEDDING_MODEL
             if obj.chunk_size is None:
@@ -151,7 +162,7 @@ class SyncFakeAsyncSession:
             if getattr(obj, "id", None) is None:
                 obj.id = self._next_log_id
                 self._next_log_id += 1
-            obj.created_at = obj.created_at or now
+            obj.created_at = self._monotonic_ts(obj.created_at)
             self.sync_logs.append(obj)
         elif isinstance(obj, KnowledgeChunk):
             if obj.id is None:
@@ -193,6 +204,7 @@ class SyncFakeAsyncSession:
         sql = str(compiled)
         sql_lower = sql.lower()
         params = dict(compiled.params)
+        self.executed_sql.append(sql_lower)
 
         # ── UPDATE knowledge.chunks ──────────────────────────────────────────
         if sql_lower.startswith("update knowledge.chunks"):
@@ -202,6 +214,8 @@ class SyncFakeAsyncSession:
             count = 0
             for chunk in self.chunks.values():
                 if doc_id is not None and chunk.document_id != doc_id:
+                    continue
+                if "is_active is true" in sql_lower and not chunk.is_active:
                     continue
                 if "version_id !=" in sql_lower and chunk.version_id == ver_id:
                     continue
@@ -241,12 +255,17 @@ class SyncFakeAsyncSession:
         if "from core.documents" in sql_lower:
             rows = list(self.documents.values())
             if "documents.status !=" in sql_lower:
-                excluded = params.get("status_1", "DELETED")
-                rows = [d for d in rows if d.status != excluded]
+                excluded_statuses = {
+                    v for k, v in params.items() if k.startswith("status_") and isinstance(v, str)
+                } or {"DELETED"}
+                rows = [d for d in rows if d.status not in excluded_statuses]
             elif "documents.status =" in sql_lower:
                 req_status = params.get("status_1")
                 rows = [d for d in rows if d.status == req_status]
-            if "documents.id =" in sql_lower:
+            if "documents.id in" in sql_lower:
+                req_ids = set(params.get("id_1") or [])
+                rows = [d for d in rows if d.id in req_ids]
+            elif "documents.id =" in sql_lower:
                 req_id = params.get("id_1")
                 rows = [d for d in rows if d.id == req_id]
             if "documents.code =" in sql_lower:
@@ -264,7 +283,10 @@ class SyncFakeAsyncSession:
             if "document_versions.id =" in sql_lower:
                 req_id = params.get("id_1")
                 rows = [v for v in rows if v.id == req_id]
-            if "document_versions.document_id !=" in sql_lower:
+            if "document_versions.document_id in" in sql_lower:
+                req_docs = set(params.get("document_id_1") or [])
+                rows = [v for v in rows if v.document_id in req_docs]
+            elif "document_versions.document_id !=" in sql_lower:
                 excl_doc = params.get("document_id_1")
                 rows = [v for v in rows if v.document_id != excl_doc]
             elif "document_versions.document_id =" in sql_lower:
@@ -309,8 +331,12 @@ class SyncFakeAsyncSession:
 
         # ── SELECT core.document_sync_logs ───────────────────────────────────
         if "from core.document_sync_logs" in sql_lower:
-            req_job = params.get("job_id_1")
-            rows = [lg for lg in self.sync_logs if lg.job_id == req_job]
+            if "document_sync_logs.job_id in" in sql_lower:
+                req_jobs = set(params.get("job_id_1") or [])
+                rows = [lg for lg in self.sync_logs if lg.job_id in req_jobs]
+            else:
+                req_job = params.get("job_id_1")
+                rows = [lg for lg in self.sync_logs if lg.job_id == req_job]
             rows.sort(key=lambda lg: lg.created_at or datetime.min.replace(tzinfo=UTC))
             return _FakeResult(rows)
 
@@ -1434,5 +1460,594 @@ def test_patch_status_deleted_mime_fallback_and_scope_ordering(sync_env):
         j.version_id in doc_ver_ids and j.status == "CANCELLED"
         for j in fake_db.jobs.values()
     )
+
+
+# ---------------------------------------------------------------------------
+# 7. PR #101 Review Regression Tests (Must Fixes #1-#6 & Minor Polish #1-#3)
+# ---------------------------------------------------------------------------
+
+
+def test_pr101_must_fix_1_sync_job_reuse_ingest_and_same_version_flip(sync_env):
+    """Must Fix #1: PATCH publish reuses PENDING INGEST; action flips cancel conflicting PENDING."""
+    client, fake_db, _ = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+
+    # 1. Create DRAFT doc with v1 -> enqueues PENDING INGEST on v1
+    create_res = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "IIT_MF1_CONFLICT",
+            "title": "Must Fix 1 Draft Doc",
+            "school_code": "iit",
+            "doc_type": "brochure",
+            "is_published": "false",
+        },
+        files={"file": ("mf1.pdf", PDF_V1, "application/pdf")},
+        headers=admin_headers,
+    )
+    assert create_res.status_code == status.HTTP_201_CREATED
+    doc_id = uuid.UUID(create_res.json()["id"])
+    v1_id = uuid.UUID(create_res.json()["current_version"]["id"])
+
+    v1_pending = [
+        j for j in fake_db.jobs.values() if j.version_id == v1_id and j.status == "PENDING"
+    ]
+    assert len(v1_pending) == 1
+    ingest_job_id = v1_pending[0].id
+    assert v1_pending[0].action_type == "INGEST"
+
+    # 2. Publish via PATCH -> must REUSE existing PENDING INGEST (no conflicting REINDEX)
+    pub_res = client.patch(
+        f"/api/v1/knowledge/documents/{doc_id}",
+        json={"is_published": True},
+        headers=admin_headers,
+    )
+    assert pub_res.status_code == status.HTTP_200_OK
+    v1_pending_after_pub = [
+        j for j in fake_db.jobs.values() if j.version_id == v1_id and j.status == "PENDING"
+    ]
+    assert len(v1_pending_after_pub) == 1
+    assert v1_pending_after_pub[0].id == ingest_job_id
+    assert v1_pending_after_pub[0].action_type == "INGEST"
+    assert any(
+        lg.job_id == ingest_job_id
+        and lg.stage == "CHANGE_DETECTOR"
+        and "reused" in lg.message.lower()
+        for lg in fake_db.sync_logs
+    )
+
+    # 3. Unpublish (PUBLISHED -> DRAFT) -> cancels PENDING INGEST on v1 & queues PENDING DEACTIVATE
+    unpub_res = client.patch(
+        f"/api/v1/knowledge/documents/{doc_id}",
+        json={"is_published": False},
+        headers=admin_headers,
+    )
+    assert unpub_res.status_code == status.HTTP_200_OK
+    assert fake_db.jobs[ingest_job_id].status == "CANCELLED"
+    v1_pending_after_unpub = [
+        j for j in fake_db.jobs.values() if j.version_id == v1_id and j.status == "PENDING"
+    ]
+    assert len(v1_pending_after_unpub) == 1
+    deact_job_id = v1_pending_after_unpub[0].id
+    assert v1_pending_after_unpub[0].action_type == "DEACTIVATE"
+
+    # 4. Re-publish (DRAFT -> PUBLISHED) -> cancels PENDING DEACTIVATE & queues PENDING REINDEX
+    repub_res = client.patch(
+        f"/api/v1/knowledge/documents/{doc_id}",
+        json={"is_published": True},
+        headers=admin_headers,
+    )
+    assert repub_res.status_code == status.HTTP_200_OK
+    assert fake_db.jobs[deact_job_id].status == "CANCELLED"
+    v1_pending_after_repub = [
+        j for j in fake_db.jobs.values() if j.version_id == v1_id and j.status == "PENDING"
+    ]
+    assert len(v1_pending_after_repub) == 1
+    assert v1_pending_after_repub[0].action_type == "REINDEX"
+
+
+def test_pr101_must_fix_2_patch_preserves_staged_v2_pending_job(sync_env):
+    """Must Fix #2: PATCH on v1 must NOT cancel a newer staged v2's PENDING indexing job."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+
+    doc, v1, _ = _seed_doc_with_v1(
+        fake_db, storage_root, code="IIT_MF2_STAGED", job_status="SYNCED"
+    )
+
+    # Upload staged v2 (activate_immediately=false -> v1 stays current, v2 has PENDING REINDEX)
+    res_v2 = client.post(
+        f"/api/v1/knowledge/documents/{doc.id}/versions",
+        data={"activate_immediately": "false"},
+        files={"file": ("guide.pdf", PDF_V2, "application/pdf")},
+        headers=admin_headers,
+    )
+    assert res_v2.status_code == status.HTTP_201_CREATED
+    v2_job_id = uuid.UUID(res_v2.json()["sync_job"]["id"])
+    assert doc.current_version_id == v1.id
+    assert fake_db.jobs[v2_job_id].status == "PENDING"
+
+    # Edit RAG-relevant metadata via PATCH while v2 is staged
+    patch_res = client.patch(
+        f"/api/v1/knowledge/documents/{doc.id}",
+        json={"title": "Updated Title While V2 Staged"},
+        headers=admin_headers,
+    )
+    assert patch_res.status_code == status.HTTP_200_OK
+    assert patch_res.json()["index_status"] == IndexStatusEnum.STALE.value
+    # Staged v2's PENDING job MUST remain PENDING (not cancelled!)
+    assert fake_db.jobs[v2_job_id].status == "PENDING"
+
+    # Even if v1's REINDEX completes (SYNCED), GET /{id} MUST stay STALE because v2 is PENDING
+    for job in fake_db.jobs.values():
+        if job.version_id == v1.id and job.status == "PENDING":
+            job.status = "SYNCED"
+
+    get_res = client.get(f"/api/v1/knowledge/documents/{doc.id}")
+    assert get_res.status_code == status.HTTP_200_OK
+    assert get_res.json()["index_status"] == IndexStatusEnum.STALE.value
+
+
+def test_pr101_must_fix_3_activate_immediately_deactivates_old_chunks(sync_env):
+    """Must Fix #3: create_document_version(activate_immediately=True) deactivates old chunks."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+
+    doc, v1, _ = _seed_doc_with_v1(
+        fake_db, storage_root, code="IIT_MF3_CHUNKS", with_chunks=3
+    )
+    v1_chunks = [c for c in fake_db.chunks.values() if c.version_id == v1.id]
+    assert len(v1_chunks) == 3
+    assert all(c.is_active for c in v1_chunks)
+
+    res_v2 = client.post(
+        f"/api/v1/knowledge/documents/{doc.id}/versions",
+        data={"activate_immediately": "true", "changelog": "Force activate v2"},
+        files={"file": ("guide_v2.pdf", PDF_V2, "application/pdf")},
+        headers=admin_headers,
+    )
+    assert res_v2.status_code == status.HTTP_201_CREATED
+    v2_id = uuid.UUID(res_v2.json()["version"]["id"])
+    assert res_v2.json()["activated"] is True
+    assert doc.current_version_id == v2_id
+    assert fake_db.versions[v1.id].is_active is False
+    assert all(not c.is_active for c in fake_db.chunks.values() if c.version_id == v1.id)
+
+
+def test_pr101_must_fix_4_create_document_refresh_safety_and_integrity_error(
+    sync_env, monkeypatch
+):
+    """Must Fix #4: validate pre-flush, IntegrityError->409+rollback, post-commit refresh safe."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+
+    # A. Invalid file rejected BEFORE db.add / db.flush -> 0 DB docs created
+    bad_res = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "IIT_MF4_BAD_FILE",
+            "title": "Invalid Empty File",
+            "school_code": "iit",
+            "doc_type": "brochure",
+        },
+        files={"file": ("empty.pdf", b"", "application/pdf")},
+        headers=admin_headers,
+    )
+    assert bad_res.status_code == status.HTTP_400_BAD_REQUEST
+    assert len(fake_db.documents) == 0
+
+    # B. Concurrent IntegrityError on commit -> 409 Conflict, rollback called, disk file cleaned
+    rollback_called = False
+    orig_rollback = fake_db.rollback
+    orig_commit = fake_db.commit
+
+    async def tracked_rollback():
+        nonlocal rollback_called
+        rollback_called = True
+        await orig_rollback()
+
+    async def integrity_commit():
+        raise IntegrityError("INSERT INTO core.documents", {}, Exception("uq_documents_code"))
+
+    monkeypatch.setattr(fake_db, "rollback", tracked_rollback)
+    monkeypatch.setattr(fake_db, "commit", integrity_commit)
+
+    conflict_res = client.post(
+        "/api/v1/knowledge/documents",
+        data={
+            "code": "IIT_MF4_RACE",
+            "title": "Concurrent Duplicate Code",
+            "school_code": "iit",
+            "doc_type": "brochure",
+        },
+        files={"file": ("race.pdf", PDF_V1, "application/pdf")},
+        headers=admin_headers,
+    )
+    assert conflict_res.status_code == status.HTTP_409_CONFLICT
+    assert rollback_called is True
+    assert len(fake_db.documents) == 0
+    assert list(storage_root.rglob("*.pdf")) == []
+
+    # C. Post-commit db.refresh error MUST NOT delete the committed physical file on disk
+    monkeypatch.setattr(fake_db, "commit", orig_commit)
+    monkeypatch.setattr(fake_db, "rollback", orig_rollback)
+
+    async def failing_refresh(_obj: Any):
+        raise RuntimeError("Simulated post-commit refresh failure")
+
+    monkeypatch.setattr(fake_db, "refresh", failing_refresh)
+
+    with pytest.raises(RuntimeError, match="Simulated post-commit refresh failure"):
+        client.post(
+            "/api/v1/knowledge/documents",
+            data={
+                "code": "IIT_MF4_REFRESH_OK",
+                "title": "Committed Before Refresh Fails",
+                "school_code": "iit",
+                "doc_type": "brochure",
+            },
+            files={"file": ("committed.pdf", PDF_V1, "application/pdf")},
+            headers=admin_headers,
+        )
+
+    pdf_files = list(storage_root.rglob("*.pdf"))
+    assert len(pdf_files) == 1
+    assert pdf_files[0].read_bytes() == PDF_V1
+
+
+def test_pr101_must_fix_5_cross_school_isolation_and_direction_delete_403(sync_env):
+    """Must Fix #5: scoped responsable draft download/hash isolation & direction DELETE 403."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+    resp_iit_headers = {
+        "Authorization": f"Bearer {_make_token(RESP_IIT_ID, 'responsable', school_scope='iit')}"
+    }
+    dir_headers = {"Authorization": f"Bearer {_make_token(DIRECTION_ID, 'direction')}"}
+    rh_headers = {"Authorization": f"Bearer {_make_token(RH_ID, 'rh')}"}
+
+    isb_draft, _, _ = _seed_doc_with_v1(
+        fake_db,
+        storage_root,
+        code="ISB_DRAFT_SECRET",
+        school="isb",
+        doc_status="DRAFT",
+        file_bytes=PDF_V2,
+        filename="isb_secret.pdf",
+    )
+    isb_archived, _, _ = _seed_doc_with_v1(
+        fake_db,
+        storage_root,
+        code="ISB_ARCHIVED_SECRET",
+        school="isb",
+        doc_status="ARCHIVED",
+        file_bytes=PDF_V3,
+        filename="isb_archived.pdf",
+    )
+    isb_pub, _, _ = _seed_doc_with_v1(
+        fake_db,
+        storage_root,
+        code="ISB_PUBLIC_DOC",
+        school="isb",
+        doc_status="PUBLISHED",
+        file_bytes=MD_V1_LF,
+        filename="isb_public.md",
+        mime_type="text/markdown",
+    )
+    iit_draft, iit_v1, _ = _seed_doc_with_v1(
+        fake_db,
+        storage_root,
+        code="IIT_OWN_DRAFT",
+        school="iit",
+        doc_status="DRAFT",
+        file_bytes=PDF_V1,
+        filename="iit_draft.pdf",
+    )
+    iit_v1_path = storage_root / iit_v1.file_path_storage
+
+    # 1. IIT responsable gets 403 downloading unpublished ISB DRAFT/ARCHIVED docs
+    assert (
+        client.get(
+            f"/api/v1/knowledge/documents/{isb_draft.id}/download",
+            headers=resp_iit_headers,
+        ).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+    assert (
+        client.get(
+            f"/api/v1/knowledge/documents/{isb_archived.id}/download",
+            headers=resp_iit_headers,
+        ).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+    assert (
+        client.get(
+            f"/api/v1/knowledge/documents/{isb_draft.id}/versions/1/download",
+            headers=resp_iit_headers,
+        ).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+    # Allowed on published ISB doc and own-school IIT draft
+    assert (
+        client.get(
+            f"/api/v1/knowledge/documents/{isb_pub.id}/download",
+            headers=resp_iit_headers,
+        ).status_code
+        == status.HTTP_200_OK
+    )
+    assert (
+        client.get(
+            f"/api/v1/knowledge/documents/{iit_draft.id}/download",
+            headers=resp_iit_headers,
+        ).status_code
+        == status.HTTP_200_OK
+    )
+
+    # 2. Cross-document hash matches do NOT leak ISB unpublished drafts to IIT responsable
+    probe_draft = client.post(
+        "/api/v1/knowledge/documents/check-changes",
+        data={"code": "IIT_HASH_PROBE", "school_code": "iit"},
+        files={"file": ("probe.pdf", PDF_V2, "application/pdf")},
+        headers=resp_iit_headers,
+    )
+    assert probe_draft.status_code == status.HTTP_200_OK
+    assert probe_draft.json()["cross_document_matches"] == []
+
+    # Same guarantee on POST /{id}/versions
+    ver_upload = client.post(
+        f"/api/v1/knowledge/documents/{iit_draft.id}/versions",
+        files={"file": ("iit_v2.pdf", PDF_V2, "application/pdf")},
+        headers=resp_iit_headers,
+    )
+    assert ver_upload.status_code == status.HTTP_201_CREATED
+    assert ver_upload.json()["cross_document_matches"] == []
+
+    # Published active ISB doc IS visible in cross-document matches for IIT responsable
+    probe_pub = client.post(
+        "/api/v1/knowledge/documents/check-changes",
+        data={"code": "IIT_PUB_PROBE", "school_code": "iit"},
+        files={"file": ("pub.md", MD_V1_LF, "text/markdown")},
+        headers=resp_iit_headers,
+    )
+    assert probe_pub.status_code == status.HTTP_200_OK
+    assert [m["document_code"] for m in probe_pub.json()["cross_document_matches"]] == [
+        "ISB_PUBLIC_DOC"
+    ]
+
+    # Admin sees all cross-school matches including ISB drafts
+    admin_probe = client.post(
+        "/api/v1/knowledge/documents/check-changes",
+        data={"code": "ADMIN_PROBE"},
+        files={"file": ("probe.pdf", PDF_V2, "application/pdf")},
+        headers=admin_headers,
+    )
+    assert admin_probe.status_code == status.HTTP_200_OK
+    assert "ISB_DRAFT_SECRET" in {
+        m["document_code"] for m in admin_probe.json()["cross_document_matches"]
+    }
+
+    # 3. Direction (and RH) are strictly read-only -> 403 on DELETE & DELETE ?purge_storage=true
+    assert (
+        client.delete(
+            f"/api/v1/knowledge/documents/{iit_draft.id}",
+            headers=dir_headers,
+        ).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+    assert (
+        client.delete(
+            f"/api/v1/knowledge/documents/{iit_draft.id}?purge_storage=true",
+            headers=dir_headers,
+        ).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+    assert (
+        client.delete(
+            f"/api/v1/knowledge/documents/{iit_draft.id}?purge_storage=true",
+            headers=rh_headers,
+        ).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+    assert iit_draft.status == "DRAFT"
+    assert iit_v1_path.exists()
+
+    # Scoped IIT responsable CAN delete own IIT doc (even with purge_storage=true)
+    del_own = client.delete(
+        f"/api/v1/knowledge/documents/{iit_draft.id}?purge_storage=true",
+        headers=resp_iit_headers,
+    )
+    assert del_own.status_code == status.HTTP_204_NO_CONTENT
+    assert iit_draft.status == "DELETED"
+    assert not iit_v1_path.exists()
+
+
+def test_pr101_must_fix_6_select_for_update_on_patch_and_delete(sync_env):
+    """Must Fix #6: PATCH /{id} and DELETE /{id} lock CorpusDocument with SELECT ... FOR UPDATE."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+    doc, _, _ = _seed_doc_with_v1(fake_db, storage_root, code="IIT_MF6_LOCK")
+
+    fake_db.executed_sql.clear()
+    patch_res = client.patch(
+        f"/api/v1/knowledge/documents/{doc.id}",
+        json={"title": "Locked Metadata Update"},
+        headers=admin_headers,
+    )
+    assert patch_res.status_code == status.HTTP_200_OK
+    assert any(
+        "from core.documents" in q and "for update" in q for q in fake_db.executed_sql
+    )
+
+    fake_db.executed_sql.clear()
+    del_res = client.delete(
+        f"/api/v1/knowledge/documents/{doc.id}",
+        headers=admin_headers,
+    )
+    assert del_res.status_code == status.HTTP_204_NO_CONTENT
+    assert any(
+        "from core.documents" in q and "for update" in q for q in fake_db.executed_sql
+    )
+
+
+def test_pr101_minor_polish_1_batch_queries_eliminate_n_plus_1(sync_env):
+    """Minor Polish #1: list_documents & list_document_sync_jobs use bulk IN queries (no N+1)."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+
+    seeded_docs: list[CorpusDocument] = []
+    for idx in range(5):
+        doc, ver, job = _seed_doc_with_v1(
+            fake_db,
+            storage_root,
+            code=f"IIT_BATCH_{idx}",
+            job_status="SYNCED",
+        )
+        seeded_docs.append(doc)
+        if idx == 0:
+            # Add two more jobs + logs on doc 0 to test sync-jobs log batching
+            for extra_idx in range(2):
+                extra_job = DocumentSyncJob(
+                    id=uuid.uuid4(),
+                    version_id=ver.id,
+                    action_type="REINDEX",
+                    pipeline_stage="COMPLETED",
+                    status="SYNCED",
+                )
+                fake_db.add(extra_job)
+                fake_db.add(
+                    DocumentSyncLog(
+                        job_id=extra_job.id,
+                        stage="CHANGE_DETECTOR",
+                        level="INFO",
+                        message=f"Extra log {extra_idx}",
+                        details={},
+                    )
+                )
+            fake_db.add(
+                DocumentSyncLog(
+                    job_id=job.id,
+                    stage="CHANGE_DETECTOR",
+                    level="INFO",
+                    message="Initial log",
+                    details={},
+                )
+            )
+
+    # 1. GET /documents across 5 docs must issue exactly 3 bulk SQL queries (not 15-20!)
+    fake_db.executed_sql.clear()
+    list_res = client.get("/api/v1/knowledge/documents")
+    assert list_res.status_code == status.HTTP_200_OK
+    assert list_res.json()["total"] == 5
+    assert len(fake_db.executed_sql) == 3
+    assert any(
+        "from core.document_versions" in q and "document_id in" in q
+        for q in fake_db.executed_sql
+    )
+    assert any(
+        "from core.document_sync_jobs" in q and "version_id in" in q
+        for q in fake_db.executed_sql
+    )
+
+    # 2. GET /{id}/sync-jobs across 3 jobs must batch-load all DocumentSyncLogs in 1 IN query
+    fake_db.executed_sql.clear()
+    jobs_res = client.get(
+        f"/api/v1/knowledge/documents/{seeded_docs[0].id}/sync-jobs",
+        headers=admin_headers,
+    )
+    assert jobs_res.status_code == status.HTTP_200_OK
+    items = jobs_res.json()["items"]
+    assert len(items) == 3
+    assert all(len(item["logs"]) == 1 for item in items)
+    log_queries = [q for q in fake_db.executed_sql if "from core.document_sync_logs" in q]
+    assert len(log_queries) == 1
+    assert "job_id in" in log_queries[0]
+
+
+def test_pr101_minor_polish_2_patch_clears_nullable_fields(sync_env):
+    """Minor Polish #2: explicit null clears description and unlinks target_program_id."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+
+    doc, v1, _ = _seed_doc_with_v1(fake_db, storage_root, code="IIT_NULLABLE_PATCH")
+    doc.target_program_id = PROGRAM_ID
+    doc.description = "Linked program description"
+    jobs_before = len(fake_db.jobs)
+
+    # 1. Explicit null clears description without triggering REINDEX (cosmetic field)
+    clear_desc = client.patch(
+        f"/api/v1/knowledge/documents/{doc.id}",
+        json={"description": None},
+        headers=admin_headers,
+    )
+    assert clear_desc.status_code == status.HTTP_200_OK
+    assert clear_desc.json()["description"] is None
+    assert clear_desc.json()["target_program_id"] == str(PROGRAM_ID)
+    assert len(fake_db.jobs) == jobs_before
+
+    # 2. Explicit null unlinks target_program_id AND triggers RAG-relevant REINDEX
+    unlink_prog = client.patch(
+        f"/api/v1/knowledge/documents/{doc.id}",
+        json={"target_program_id": None},
+        headers=admin_headers,
+    )
+    assert unlink_prog.status_code == status.HTTP_200_OK
+    assert unlink_prog.json()["target_program_id"] is None
+    assert unlink_prog.json()["index_status"] == IndexStatusEnum.STALE.value
+    assert any(
+        j.version_id == v1.id and j.action_type == "REINDEX" and j.status == "PENDING"
+        for j in fake_db.jobs.values()
+    )
+    assert any(
+        "target_program_id" in (a.event_metadata or {}).get("changed_fields", [])
+        for a in fake_db.audit_logs
+    )
+
+    # 3. Repeating explicit null when already None is a no-op (0 extra audit entries)
+    audits_before = len(fake_db.audit_logs)
+    noop_null = client.patch(
+        f"/api/v1/knowledge/documents/{doc.id}",
+        json={"target_program_id": None},
+        headers=admin_headers,
+    )
+    assert noop_null.status_code == status.HTTP_200_OK
+    assert len(fake_db.audit_logs) == audits_before
+
+
+def test_pr101_minor_polish_3_rfc5987_non_ascii_content_disposition(sync_env):
+    """Minor Polish #3: French/Arabic filenames emit ASCII fallback + RFC 5987 UTF-8 header."""
+    client, fake_db, storage_root = sync_env
+    admin_headers = {"Authorization": f"Bearer {_make_token(ADMIN_ID, 'admin')}"}
+
+    french_name = "Règlement_d\u2019\u0153uvre_2026.pdf"
+    arabic_name = "\u062f\u0644\u064a\u0644_\u0627\u0644\u062a\u0648\u062c\u064a\u0647.pdf"
+
+    fr_doc, fr_ver, _ = _seed_doc_with_v1(
+        fake_db,
+        storage_root,
+        code="IIT_FR_RFC5987",
+        filename=french_name,
+    )
+    ar_doc, ar_ver, _ = _seed_doc_with_v1(
+        fake_db,
+        storage_root,
+        code="IIT_AR_RFC5987",
+        filename=arabic_name,
+    )
+
+    for doc_obj, ver_obj, expected_fallback in (
+        (fr_doc, fr_ver, "Reglement_d_oeuvre_2026.pdf"),
+        (ar_doc, ar_ver, "document.pdf"),
+    ):
+        for url in (
+            f"/api/v1/knowledge/documents/{doc_obj.id}/download",
+            f"/api/v1/knowledge/documents/{doc_obj.id}/versions/1/download",
+        ):
+            res = client.get(url, headers=admin_headers)
+            assert res.status_code == status.HTTP_200_OK
+            assert res.content == PDF_V1
+            cd = res.headers["Content-Disposition"]
+            assert cd.isascii()
+            assert f'filename="{expected_fallback}"' in cd
+            assert f"filename*=UTF-8''{quote(ver_obj.file_name, safe='')}" in cd
+
 
 
