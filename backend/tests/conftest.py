@@ -4,10 +4,25 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.core.redis as redis_mod
+from app.core.config import settings
 from app.core.rate_limit import clear_rate_limit_store_for_tests
 from app.main import app
 from app.services.guest_session_service import clear_guest_session_store_for_tests
 from app.services.vision_supervisor import reset_default_vision_supervisor
+
+
+@pytest.fixture(autouse=True)
+def _isolate_offline_provider_defaults(monkeypatch: pytest.MonkeyPatch):
+    """Prevent offline unit tests from attempting live HTTP calls to host Ollama by default.
+
+    Tests exercising live/mocked Ollama explicitly monkeypatch LLM_PROVIDER / VLM_PROVIDER /
+    EMBEDDING_PROVIDER inside the test body.
+    """
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(settings, "VLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(settings, "VLM_API_KEY", "")
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "mock")
 
 
 @pytest.fixture(autouse=True)

@@ -1,0 +1,24 @@
+FROM ./unsloth.Q4_K_M.gguf
+
+# SmartCampus AI — VISION Qwen QLoRA GGUF Modelfile (Ollama Local)
+# Usage:
+#   1. Place your Colab-exported Q4_K_M .gguf file next to this Modelfile
+#      (rename it to unsloth.Q4_K_M.gguf or update the FROM path above).
+#   2. Run: ollama create smartcampus-vision-8b -f Modelfile.smartcampus-vision-8b
+#   3. Set LLM_PROVIDER=ollama and LLM_MODEL=smartcampus-vision-8b in root .env.
+
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{- range .Messages }}{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ .Content }}<|im_end|>
+{{ end }}{{- end }}<|im_start|>assistant
+"""
+
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER num_ctx 8192
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+

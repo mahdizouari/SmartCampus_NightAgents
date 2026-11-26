@@ -578,12 +578,11 @@ async def _call_vlm_openai_compatible(
     image_data_uri: str | None = None,
     pdf_text: str | None = None,
 ) -> tuple[dict[str, Any], str]:
-    """Call OpenAI-compatible Vision API (Groq qwen/qwen3.8-27b, GPT-4o-mini, or OpenRouter)."""
+    """Call OpenAI-compatible Vision API (Ollama qwen2.5vl:7b, Groq, OpenAI, or OpenRouter)."""
     url = f"{settings.effective_vlm_base_url}/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {settings.effective_vlm_api_key}",
-    }
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if settings.effective_vlm_api_key:
+        headers["Authorization"] = f"Bearer {settings.effective_vlm_api_key}"
 
     user_content: list[dict[str, Any]] = [
         {
@@ -872,9 +871,9 @@ async def extract_bac_transcript(
         declared_content_type=declared_content_type,
     )
 
-    has_live_key = (
-        settings.VLM_PROVIDER.lower().strip() == "openai_compatible"
-        and bool(settings.effective_vlm_api_key)
+    vlm_provider = settings.VLM_PROVIDER.lower().strip()
+    has_live_key = vlm_provider == "ollama" or (
+        vlm_provider == "openai_compatible" and bool(settings.effective_vlm_api_key)
     )
 
     if mime_type == "application/pdf":
@@ -973,7 +972,7 @@ def get_vlm_health() -> VlmHealthResponse:
     """Return current VLM configuration and readiness status."""
     provider = settings.VLM_PROVIDER.lower().strip()
     has_key = bool(settings.effective_vlm_api_key)
-    if provider == "openai_compatible" and has_key:
+    if provider == "ollama" or (provider == "openai_compatible" and has_key):
         vlm_status = "ready"
     elif settings.VLM_FALLBACK_TO_LOCAL_PARSER:
         vlm_status = "local_pdf_fallback"
