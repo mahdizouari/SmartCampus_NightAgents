@@ -257,6 +257,15 @@ def validate_file_content(
 
 
 # ---------------------------------------------------------------------------
+# Cryptographic Checksum Helper
+# ---------------------------------------------------------------------------
+
+def compute_sha256(file_bytes: bytes) -> str:
+    """Compute the lowercase 64-character hexadecimal SHA-256 digest of raw bytes."""
+    return hashlib.sha256(file_bytes).hexdigest()
+
+
+# ---------------------------------------------------------------------------
 # Storage CRUD Operations
 # ---------------------------------------------------------------------------
 
@@ -288,7 +297,7 @@ def save_document_bytes(
     )
 
     # 2. Compute SHA-256 checksum
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    file_hash = compute_sha256(file_bytes)
 
     # 3. Resolve destination storage path
     if sub_path:
@@ -440,7 +449,7 @@ async def persist_corpus_document_metadata(
     4. Automatically creates pending DocumentSyncJob for RAG ingestion.
     """
     safe_filename = sanitize_filename(filename)
-    sub_path = f"{school_code}/{code}/{safe_filename}"
+    sub_path = f"{school_code}/{code}/v1/{safe_filename}"
 
     # 1. Store binary file
     meta = save_document_bytes(
