@@ -132,8 +132,8 @@ def test_t3_declared_facts_in_system_prompt():
 
 def test_t4_rule_7_no_unverified_admin_info():
     """VISION_SYSTEM_PROMPT contains Rule 7 forbidding unverified administrative claims."""
-    assert "secrétariat administratif" in VISION_SYSTEM_PROMPT
-    assert "jamais" in VISION_SYSTEM_PROMPT.lower()
+    assert "administrative secretariat" in VISION_SYSTEM_PROMPT.lower()
+    assert "never" in VISION_SYSTEM_PROMPT.lower()
     # Confirm it references the NAU secretariat as the authority
     assert "NAU" in VISION_SYSTEM_PROMPT
 

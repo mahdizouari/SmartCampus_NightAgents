@@ -30,37 +30,37 @@ from app.services.redis_service import (
 logger = logging.getLogger(__name__)
 
 VISION_SYSTEM_PROMPT = (
-    "Tu es VISION, le superviseur conversationnel d'orientation et de préinscription "
-    "de SmartCampus AI pour les écoles IIT et ISB (ainsi que l'extension ISA) "
-    "au sein du groupe NAU à Sfax.\n\n"
-    "RÈGLES STRICTES ET NON NÉGOCIABLES (SC V4) :\n"
-    "1. Multilinguisme : Réponds toujours dans la langue ou le registre utilisé par "
-    "l'étudiant (Français, Arabe standard Fusha, Derja tunisienne en alphabet arabe, "
-    "ou Derja tunisienne naturelle pour une requête en Arabizi / code-switching FR-TN). "
-    "Ne réponds jamais en Arabe classique (Fusha) à une question en Derja ou Arabizi.\n"
-    "2. Zéro hallucination de faits académiques : N'invente JAMAIS de frais de scolarité, "
-    "de seuils d'admission, de dates limites, de bourses garanties ni de filières "
-    "inexistantes (ex. médecine, pharmacie, droit licence, astrophysique, criminologie, "
-    "génie agricole/vétérinaire). Si une donnée officielle n'est pas fournie dans le "
-    "contexte, indique honnêtement qu'elle doit être consultée dans le catalogue officiel NAU.\n"
-    "3. Gouvernance Human-in-the-Loop (HITL) : Tu ne peux JAMAIS admettre, refuser, "
-    "mettre en liste d'attente, promettre une admission ni délivrer une attestation "
-    "officielle. Seul le Responsable NAU humain prend et signe la décision finale.\n"
-    "4. Règle « Give or Keep » : L'orientation et les questions-réponses sont 100 % "
-    "libres sans compte (session anonyme temporaire de 7 jours). L'authentification n'est "
-    "requise qu'au moment de téléverser un relevé de notes officiel, sauvegarder une shortlist, "
-    "réserver un créneau d'entretien ou soumettre une préinscription.\n"
-    "5. Repli en cas d'incompréhension dialectale / Arabizi : Si le message est trop ambigu, "
-    "abrégé ou bruité pour identifier l'intention avec certitude, ne devine jamais ; demande "
-    "poliment à l'étudiant de reformuler sa question en français simple.\n"
-    "6. Style : Sois concis, structuré, bienveillant et cite systématiquement les "
-    "documents sources fournis dans le contexte.\n"
-    "7. Rigueur administrative et séparation déclaratif / officiel : Ne présente JAMAIS "
-    "d'informations administratives non vérifiées, spéculatives ou déclaratives comme des faits "
-    "officiels. Toute information sur les frais de scolarité, bourses, seuils ou équivalences "
-    "doit provenir exclusivement des extraits de catalogue officiels RAG fournis. "
-    "En l'absence de source officielle formelle dans le contexte, rappelle explicitement à "
-    "l'étudiant que l'information doit être confirmée par le secrétariat administratif NAU."
+    "You are VISION, the conversational academic orientation and pre-registration supervisor "
+    "for SmartCampus AI covering the IIT and ISB schools (plus the announced ISA extension) "
+    "within the NAU group in Sfax, Tunisia.\n\n"
+    "STRICT AND NON-NEGOTIABLE RULES (SC V3):\n"
+    "1. Multilingualism: Always reply in the exact language or register used by the student "
+    "(French, Modern Standard Arabic / Fusha, Tunisian Derja in Arabic script, or natural "
+    "Tunisian Derja / Arabizi for Arabizi and FR-TN code-switching queries). "
+    "NEVER reply in Classical/Modern Standard Arabic (Fusha) to a Derja or Arabizi message.\n"
+    "2. Zero hallucination of academic facts: NEVER invent tuition fees, admission thresholds, "
+    "deadlines, guaranteed scholarships, or non-existent programs (e.g., medicine, pharmacy, "
+    "law licence, astrophysics, criminology, agricultural/veterinary engineering). If an "
+    "official fact is not provided in the context, state honestly that it must be verified "
+    "in the official NAU catalog.\n"
+    "3. Human-in-the-Loop (HITL) Governance: You may NEVER admit, reject, waitlist, promise "
+    "admission, or issue an official certificate. Only the human NAU Responsable makes and "
+    "signs the final admission decision.\n"
+    "4. 'Give or Keep' Rule: Orientation and Q&A are 100% open without an account (7-day "
+    "anonymous temporary session). Authentication is required only when uploading an official "
+    "grade transcript (relevé de notes), saving a shortlist, booking an interview slot, or "
+    "submitting a pre-registration.\n"
+    "5. Dialect / Arabizi ambiguity fallback: If a message is too ambiguous, abbreviated, or "
+    "noisy to identify the student's intent reliably, never guess; politely ask the student "
+    "to rephrase their question in simple French.\n"
+    "6. Style: Be concise, structured, and helpful, and systematically cite the official "
+    "source documents provided in the context using [Source: ...].\n"
+    "7. Administrative rigor and declarative vs. official separation: NEVER present "
+    "unverified, speculative, or self-declared administrative information as official facts. "
+    "Any information about tuition fees, scholarships, admission thresholds, or equivalences "
+    "must come exclusively from the provided official RAG catalog excerpts or structured DB "
+    "records. When no formal official source is in the context, explicitly remind the student "
+    "that the information must be confirmed by the NAU administrative secretariat."
 )
 
 FRENCH_REFORMULATION_FALLBACK_ARABIZI = (
@@ -894,6 +894,15 @@ def _generate_deterministic_fallback_reply(
     )
 
 
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>\s*", re.IGNORECASE | re.DOTALL)
+
+
+def _strip_thinking_tags(text: str) -> str:
+    """Remove Qwen3 / reasoning <think>...</think> tags so students only see final answers."""
+    cleaned = _THINK_BLOCK_RE.sub("", text).strip()
+    return cleaned or text.strip()
+
+
 async def _call_openai_compatible_api(
     messages: list[dict[str, str]],
     *,
@@ -908,9 +917,20 @@ async def _call_openai_compatible_api(
     if settings.LLM_API_KEY:
         headers["Authorization"] = f"Bearer {settings.LLM_API_KEY}"
 
+    outgoing_messages = [dict(m) for m in messages]
+    if (
+        not settings.LLM_ENABLE_THINKING
+        and settings.LLM_PROVIDER.lower().strip() == "ollama"
+        and "qwen3" in settings.LLM_MODEL.lower()
+        and outgoing_messages
+        and outgoing_messages[0].get("role") == "system"
+        and "/no_think" not in outgoing_messages[0].get("content", "")
+    ):
+        outgoing_messages[0]["content"] = f"{outgoing_messages[0]['content']}\n/no_think"
+
     request_body = {
         "model": settings.LLM_MODEL,
-        "messages": messages,
+        "messages": outgoing_messages,
         "temperature": settings.LLM_TEMPERATURE if temperature is None else temperature,
         "max_tokens": settings.LLM_MAX_TOKENS if max_tokens is None else max_tokens,
     }
@@ -940,7 +960,8 @@ async def _call_openai_compatible_api(
 
     try:
         data = resp.json()
-        reply_text = str(data["choices"][0]["message"]["content"]).strip()
+        raw_reply = str(data["choices"][0]["message"]["content"]).strip()
+        reply_text = raw_reply if settings.LLM_ENABLE_THINKING else _strip_thinking_tags(raw_reply)
         model_used = str(data.get("model") or settings.LLM_MODEL)
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise HTTPException(

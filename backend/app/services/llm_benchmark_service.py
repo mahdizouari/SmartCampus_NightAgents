@@ -30,6 +30,7 @@ from app.core.config import settings
 from app.schemas.chat import ChatMessageRequest
 from app.services.llm_service import (
     _build_messages,
+    _strip_thinking_tags,
     classify_intent_and_subagent,
     detect_dialect,
 )
@@ -64,48 +65,63 @@ class CandidateModelProfile:
 
 CANDIDATE_MODELS: list[CandidateModelProfile] = [
     CandidateModelProfile(
-        model_id="openai/gpt-oss-120b",
-        display_name="GPT-OSS 120B",
-        provider="Groq",
-        parameter_size="120B",
-        context_window=131072,
-        input_cost_per_m=0.59,
-        output_cost_per_m=0.79,
-        target_latency_p50_s=1.8,
-        recommended_role="VISION Supervisor (Selected SA-36)",
-        description=(
-            "Primary multilingual reasoning engine on Groq LPU (SC V3 / SA-36). "
-            "High Tunisian Derja & Arabizi retention, low acronym hallucination, target < 2.5s."
-        ),
-    ),
-    CandidateModelProfile(
-        model_id="openai/gpt-oss-20b",
-        display_name="GPT-OSS 20B",
-        provider="Groq",
-        parameter_size="20B",
-        context_window=131072,
-        input_cost_per_m=0.10,
-        output_cost_per_m=0.15,
-        target_latency_p50_s=0.9,
-        recommended_role="JARVIS Scheduler (Selected SA-36)",
-        description=(
-            "Ultra-low latency (~850ms), high-throughput model optimized for asynchronous Celery "
-            "tasks, slot confirmation classification, and candidate follow-ups."
-        ),
-    ),
-    CandidateModelProfile(
-        model_id="qwen/qwen3.8-27b",
-        display_name="Qwen 3.8 27B",
-        provider="Groq",
-        parameter_size="27B",
+        model_id="qwen3:8b",
+        display_name="Qwen3 8B (Apache 2.0)",
+        provider="Ollama",
+        parameter_size="8.2B",
         context_window=32768,
-        input_cost_per_m=0.20,
-        output_cost_per_m=0.20,
-        target_latency_p50_s=1.5,
-        recommended_role="VLM Extraction / Alternative (SA-36)",
+        input_cost_per_m=0.0,
+        output_cost_per_m=0.0,
+        target_latency_p50_s=2.0,
+        recommended_role="VISION Supervisor (Primary <=9B Apache 2.0)",
         description=(
-            "Multimodal Vision & text model on Groq. Handles transcript JSON extraction "
-            "and serves as primary fallback for academic queries."
+            "Primary downloadable open-weight <=9B LLM (Qwen/Qwen3-8B, Apache 2.0) for local "
+            "Ollama & Colab Pro QLoRA. 119 languages/dialects, fast /no_think RAG mode."
+        ),
+    ),
+    CandidateModelProfile(
+        model_id="qwen2.5:7b-instruct",
+        display_name="Qwen2.5 7B Instruct (Apache 2.0)",
+        provider="Ollama",
+        parameter_size="7.6B",
+        context_window=131072,
+        input_cost_per_m=0.0,
+        output_cost_per_m=0.0,
+        target_latency_p50_s=1.8,
+        recommended_role="JARVIS & VISION Co-Finalist (<=9B Apache 2.0)",
+        description=(
+            "Co-finalist downloadable 7.6B open-weight instruct model (Qwen/Qwen2.5-7B-Instruct, "
+            "Apache 2.0, 128K context) with strong JSON/RAG faithfulness and fast 4-bit QLoRA."
+        ),
+    ),
+    CandidateModelProfile(
+        model_id="gemma2:9b",
+        display_name="Gemma 2 9B IT",
+        provider="Ollama",
+        parameter_size="9.2B",
+        context_window=8192,
+        input_cost_per_m=0.0,
+        output_cost_per_m=0.0,
+        target_latency_p50_s=2.2,
+        recommended_role="ALTERNATIVE (Zero-Shot / Few-Shot Benchmark #3)",
+        description=(
+            "Downloadable 9B open-weight benchmark finalist (google/gemma-2-9b-it) evaluated "
+            "head-to-head on French reasoning vs Tunisian Derja/Arabizi."
+        ),
+    ),
+    CandidateModelProfile(
+        model_id="aya-expanse:8b",
+        display_name="Aya Expanse 8B",
+        provider="Ollama",
+        parameter_size="8.0B",
+        context_window=8192,
+        input_cost_per_m=0.0,
+        output_cost_per_m=0.0,
+        target_latency_p50_s=2.0,
+        recommended_role="ALTERNATIVE (Zero-Shot / Few-Shot Benchmark #4)",
+        description=(
+            "Multilingual 8B open-weight reference model (CohereForAI/aya-expanse-8b, CC-BY-NC) "
+            "evaluated as Arabic/French linguistic benchmark."
         ),
     ),
 ]
@@ -369,20 +385,32 @@ async def call_candidate_llm_api(
     """Execute an async /chat/completions call parameterizing model_id and measure latency."""
     effective_base = (base_url or settings.LLM_BASE_URL).rstrip("/")
     effective_key = api_key if api_key is not None else settings.LLM_API_KEY
+    is_ollama = settings.LLM_PROVIDER.lower().strip() == "ollama"
     url = f"{effective_base}/chat/completions"
 
-    if not effective_key.strip():
+    if not is_ollama and not effective_key.strip():
         raise ValueError(
             "LLM_API_KEY is not configured. Cannot perform live LLM benchmark."
         )
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {effective_key}",
-    }
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if effective_key.strip():
+        headers["Authorization"] = f"Bearer {effective_key}"
+
+    outgoing_messages = [dict(m) for m in messages]
+    if (
+        not settings.LLM_ENABLE_THINKING
+        and is_ollama
+        and "qwen3" in model_id.lower()
+        and outgoing_messages
+        and outgoing_messages[0].get("role") == "system"
+        and "/no_think" not in outgoing_messages[0].get("content", "")
+    ):
+        outgoing_messages[0]["content"] = f"{outgoing_messages[0]['content']}\n/no_think"
+
     body = {
         "model": model_id,
-        "messages": messages,
+        "messages": outgoing_messages,
         "temperature": settings.LLM_TEMPERATURE,
         "max_tokens": min(settings.LLM_MAX_TOKENS, 512),
     }
@@ -418,7 +446,8 @@ async def call_candidate_llm_api(
         )
 
     data = resp.json()
-    reply_text = str(data["choices"][0]["message"]["content"]).strip()
+    raw_reply = str(data["choices"][0]["message"]["content"]).strip()
+    reply_text = raw_reply if settings.LLM_ENABLE_THINKING else _strip_thinking_tags(raw_reply)
     model_used = str(data.get("model") or model_id)
     return reply_text, model_used, elapsed_ms
 
@@ -440,7 +469,10 @@ async def evaluate_model_on_sa32(
     )
 
     effective_key = api_key if api_key is not None else settings.LLM_API_KEY
-    if not effective_key.strip():
+    can_run_live = (
+        settings.LLM_PROVIDER.lower().strip() == "ollama" or bool(effective_key.strip())
+    )
+    if not can_run_live:
         return ModelBenchmarkSummary(
             model_id=profile.model_id,
             display_name=profile.display_name,
@@ -685,7 +717,9 @@ async def run_full_benchmark(
         dataset = load_sa32_dataset()
 
     effective_key = api_key if api_key is not None else settings.LLM_API_KEY
-    live_executed = bool(effective_key.strip())
+    live_executed = (
+        settings.LLM_PROVIDER.lower().strip() == "ollama" or bool(effective_key.strip())
+    )
 
     summaries: list[ModelBenchmarkSummary] = []
     for cand in candidates:
@@ -717,7 +751,7 @@ async def run_full_benchmark(
         provider_base_url=base_url or settings.LLM_BASE_URL,
         live_run_executed=live_executed,
         models=ranked_list,
-        recommended_vision_model="openai/gpt-oss-120b",
-        recommended_jarvis_model="openai/gpt-oss-20b",
+        recommended_vision_model="qwen3:8b",
+        recommended_jarvis_model="qwen2.5:7b-instruct",
         markdown_comparison_table=table_md,
     )

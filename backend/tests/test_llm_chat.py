@@ -142,7 +142,7 @@ def test_openai_compatible_llm_provider_success_and_citations(
     called_kwargs = m_post.call_args.kwargs
     sent_messages = called_kwargs["json"]["messages"]
     assert sent_messages[0]["role"] == "system"
-    assert "Zéro hallucination" in sent_messages[0]["content"]
+    assert "Zero hallucination" in sent_messages[0]["content"]
     assert "Brochure_IIT_2026.pdf" in sent_messages[0]["content"]
 
 
@@ -183,4 +183,91 @@ def test_llm_provider_timeout_and_upstream_errors(
         json={"message": "Bonjour"},
     )
     assert r_unconf.status_code == 503
+
+
+def test_qwen3_think_stripping_and_keyless_ollama_vlm_health(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify Ollama keyless VLM readiness and Qwen3 <think> tag removal."""
+    from app.services import llm_service as llm_svc
+    from app.services import vlm_transcript_service as vlm_svc
+
+    cleaned = llm_svc._strip_thinking_tags(
+        "<think>Internal chain of thought about IIT programs.</think>\n\n"
+        "Bonjour, voici les filières IIT."
+    )
+    assert cleaned == "Bonjour, voici les filières IIT."
+
+    monkeypatch.setattr(settings, "VLM_PROVIDER", "ollama")
+    monkeypatch.setattr(settings, "VLM_BASE_URL", "")
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setattr(settings, "VLM_API_KEY", "")
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(settings, "VLM_MODEL", "qwen2.5vl:7b")
+
+    vlm_health = vlm_svc.get_vlm_health()
+    assert vlm_health.status == "ready"
+    assert vlm_health.provider == "ollama"
+    assert vlm_health.model == "qwen2.5vl:7b"
+    assert vlm_health.base_url == "http://host.docker.internal:11434/v1"
+
+
+@pytest.mark.asyncio
+async def test_qwen3_ollama_appends_no_think_and_strips_output(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify LLM_PROVIDER=ollama + qwen3 appends /no_think and strips <think> blocks."""
+    from app.services import llm_service as llm_svc
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "http://host.docker.internal:11434/v1")
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(settings, "LLM_MODEL", "qwen3:8b")
+    monkeypatch.setattr(settings, "LLM_ENABLE_THINKING", False)
+
+    captured: dict = {}
+
+    class DummyClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            return None
+
+        async def post(self, url: str, headers: dict, json: dict):
+            captured["headers"] = headers
+            captured["json"] = json
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "model": "qwen3:8b",
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "<think>checking context</think>"
+                                "3aslema! L'IIT propose Prépa et Licence."
+                            )
+                        }
+                    }
+                ],
+            }
+            return resp
+
+    monkeypatch.setattr(httpx, "AsyncClient", DummyClient)
+    reply, model_used = await llm_svc._call_openai_compatible_api(
+        [
+            {"role": "system", "content": "You are VISION."},
+            {"role": "user", "content": "3aslema!"},
+        ]
+    )
+
+    assert "Authorization" not in captured["headers"]
+    assert captured["json"]["messages"][0]["content"].endswith("/no_think")
+    assert reply == "3aslema! L'IIT propose Prépa et Licence."
+    assert model_used == "qwen3:8b"
 

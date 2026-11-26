@@ -88,15 +88,15 @@ async def test_evaluate_model_pending_when_no_api_key():
 async def test_evaluate_model_with_mocked_live_api():
     """Tests evaluate_model_on_sa32 when live HTTP call is mocked via AsyncMock."""
     profile = CandidateModelProfile(
-        model_id="openai/gpt-oss-120b",
-        display_name="GPT-OSS 120B",
-        provider="Groq",
-        parameter_size="120B",
-        context_window=131072,
-        input_cost_per_m=0.59,
-        output_cost_per_m=0.79,
-        target_latency_p50_s=1.8,
-        recommended_role="VISION Supervisor (Selected SA-36)",
+        model_id="qwen3:8b",
+        display_name="Qwen3 8B (Apache 2.0)",
+        provider="Ollama",
+        parameter_size="8.2B",
+        context_window=32768,
+        input_cost_per_m=0.0,
+        output_cost_per_m=0.0,
+        target_latency_p50_s=2.0,
+        recommended_role="VISION Supervisor (Primary <=9B Apache 2.0)",
         description="Test candidate",
     )
     dataset = [
@@ -113,7 +113,7 @@ async def test_evaluate_model_with_mocked_live_api():
     mock_reply = "Bonjour, l'IIT propose les filières GLID et SDIA à Sfax."
     with patch(
         "app.services.llm_benchmark_service.call_candidate_llm_api",
-        new=AsyncMock(return_value=(mock_reply, "openai/gpt-oss-120b", 1250)),
+        new=AsyncMock(return_value=(mock_reply, "qwen3:8b", 1250)),
     ):
         summary = await evaluate_model_on_sa32(profile, dataset, api_key="fake-test-key")
         assert summary.status == "COMPLETED"
@@ -131,10 +131,10 @@ async def test_run_full_benchmark_harness():
         report = await run_full_benchmark(limit=5)
         assert report.dataset_total_cases == 70
         assert len(report.models) == len(CANDIDATE_MODELS)
-        assert report.recommended_vision_model == "openai/gpt-oss-120b"
-        assert report.recommended_jarvis_model == "openai/gpt-oss-20b"
+        assert report.recommended_vision_model == "qwen3:8b"
+        assert report.recommended_jarvis_model == "qwen2.5:7b-instruct"
         assert "| Modèle Candidat |" in report.markdown_comparison_table
-        assert "openai/gpt-oss-120b" in report.markdown_comparison_table
+        assert "qwen3:8b" in report.markdown_comparison_table
 
 
 def test_select_stratified_items_covers_all_groups():
@@ -155,5 +155,5 @@ def test_exported_benchmark_results_json():
         with open(DATA_PATH, encoding="utf-8") as f:
             data = json.load(f)
         assert data["dataset_total_cases"] == 70
-        assert data["recommended_vision_model"] == "openai/gpt-oss-120b"
+        assert data["recommended_vision_model"] == "qwen3:8b"
         assert len(data["models"]) == len(CANDIDATE_MODELS)

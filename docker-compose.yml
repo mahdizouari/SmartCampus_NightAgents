@@ -70,6 +70,9 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "8000:8000"
+    extra_hosts:
+      # Allow FastAPI inside Docker to reach host-local Ollama on Linux (http://host.docker.internal:11434/v1)
+      - "host.docker.internal:host-gateway"
     volumes:
       # Hot-reload: local backend/ code changes are reflected instantly in the container
       - ./backend:/app
