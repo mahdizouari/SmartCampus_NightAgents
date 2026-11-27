@@ -1,9 +1,10 @@
 """Unit and integration tests for post-review alignment (Pillars 1, 2 & 4).
 
 Covers:
-1. Canonical ActorStage (VISITEUR -> CANDIDAT + RESPONSABLE) and transparent role aliases
-   (`candidat` <-> `student`, `visiteur` <-> `guest`) across deps, auth, chat, and VISION guard.
-2. Seamless Visiteur -> Candidat automatic guest session merge on `/auth/otp/verify` and
+1. Canonical ActorStage (VISITOR -> CANDIDATE + RESPONSABLE) and transparent role aliases
+   (`candidate`/`candidat` <-> `student`, `visitor`/`visiteur` <-> `guest`) across deps, auth,
+   chat, and VISION guard.
+2. Seamless Visitor -> Candidate automatic guest session merge on `/auth/otp/verify` and
    `/auth/oauth/google` (signed cookie, X-Session-ID, cookie clearing, warning on failure).
 3. School-scoped Responsable CRUD on catalog programs, prerequisites, fees, and campaigns
    with `AuditLog.actor_type == "RESPONSABLE"` while keeping `/catalog/schools` admin-only.
@@ -17,6 +18,7 @@ Covers:
 from __future__ import annotations
 
 import io
+import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -248,33 +250,42 @@ def client(fake_db: FakeAlignmentDB):
 
 
 def test_actor_stage_and_role_alias_helpers():
-    assert resolve_actor_stage("guest", is_authenticated=False) == "VISITEUR"
-    assert resolve_actor_stage("visiteur", is_authenticated=False) == "VISITEUR"
-    assert resolve_actor_stage("student", is_authenticated=False) == "VISITEUR"
-    assert resolve_actor_stage("student", is_authenticated=True) == "CANDIDAT"
-    assert resolve_actor_stage("candidat", is_authenticated=True) == "CANDIDAT"
+    assert resolve_actor_stage("guest", is_authenticated=False) == "VISITOR"
+    assert resolve_actor_stage("visitor", is_authenticated=False) == "VISITOR"
+    assert resolve_actor_stage("visiteur", is_authenticated=False) == "VISITOR"
+    assert resolve_actor_stage("student", is_authenticated=False) == "VISITOR"
+    assert resolve_actor_stage("student", is_authenticated=True) == "CANDIDATE"
+    assert resolve_actor_stage("candidate", is_authenticated=True) == "CANDIDATE"
+    assert resolve_actor_stage("candidat", is_authenticated=True) == "CANDIDATE"
     assert resolve_actor_stage("responsable", is_authenticated=True) == "RESPONSABLE"
     assert resolve_actor_stage("admin", is_authenticated=True) == "RESPONSABLE"
 
+    assert normalize_role_alias("candidate") == "student"
     assert normalize_role_alias("candidat") == "student"
     assert normalize_role_alias("student") == "student"
+    assert normalize_role_alias("visitor") == "guest"
     assert normalize_role_alias("visiteur") == "guest"
     assert normalize_role_alias("guest") == "guest"
     assert normalize_role_alias("responsable") == "responsable"
 
+    assert is_candidate_role("candidate") is True
     assert is_candidate_role("candidat") is True
     assert is_candidate_role("student") is True
     assert is_candidate_role("responsable") is False
+    assert is_candidate_role("visitor") is False
     assert is_candidate_role("visiteur") is False
 
-    cand_actor = CurrentActor(account_id=str(uuid4()), role="candidat", candidate_id=str(uuid4()))
+    cand_en = CurrentActor(account_id=str(uuid4()), role="candidate", candidate_id=str(uuid4()))
+    cand_fr = CurrentActor(account_id=str(uuid4()), role="candidat", candidate_id=str(uuid4()))
     resp_actor = CurrentActor(account_id=str(uuid4()), role="responsable", school_scope="iit")
-    assert cand_actor.actor_stage == "CANDIDAT"
+    assert cand_en.actor_stage == "CANDIDATE"
+    assert cand_fr.actor_stage == "CANDIDATE"
     assert resp_actor.actor_stage == "RESPONSABLE"
 
 
 @pytest.mark.asyncio
-async def test_vision_action_guard_anti_idor_for_candidat_alias():
+@pytest.mark.parametrize("role_alias", ["candidate", "candidat", "student"])
+async def test_vision_action_guard_anti_idor_for_candidate_aliases(role_alias: str):
     guard = DefaultActionGuard()
     tool = AgentToolSpec(
         name="submit_preinscription_tool",
@@ -288,7 +299,7 @@ async def test_vision_action_guard_anti_idor_for_candidat_alias():
         session_id=own_id,
         candidate_id=own_id,
         is_authenticated=True,
-        actor_role="candidat",
+        actor_role=role_alias,  # type: ignore[arg-type]
         candidate_status="AUTHENTICATED",
     )
 
@@ -301,10 +312,13 @@ async def test_vision_action_guard_anti_idor_for_candidat_alias():
     assert allowed.allowed is True
 
 
-def test_vision_system_prompt_welcomes_visiteur_candidat_and_parents():
+def test_vision_system_prompt_welcomes_visitor_candidate_and_parents():
     prompt = llm_service.VISION_SYSTEM_PROMPT
-    assert "Visiteur" in prompt
-    assert "Candidat" in prompt
+    assert "Visitor" in prompt
+    assert "Candidate" in prompt
+    assert "Visiteur" not in prompt
+    assert re.search(r"\bCandidat\b", prompt) is None
+    assert "lycéen" not in prompt
     assert "parent" in prompt.lower()
     assert "Responsable" in prompt
 
@@ -531,7 +545,7 @@ def test_direction_retired_from_knowledge_write_and_responsable_can_evaluate_dia
 
 
 # ---------------------------------------------------------------------------
-# Pillar 2: Seamless Visiteur -> Candidat Auth Merge & Chat ActorStage
+# Pillar 2: Seamless Visitor -> Candidate Auth Merge & Chat ActorStage
 # ---------------------------------------------------------------------------
 
 
@@ -540,7 +554,7 @@ def test_otp_verify_auto_merges_signed_guest_cookie_and_clears_cookie(
 ):
     send_res = client.post(
         "/api/v1/auth/otp/send",
-        json={"channel": "email", "email": "visiteur.merge@nau.tn"},
+        json={"channel": "email", "email": "visitor.merge@nau.tn"},
     )
     assert send_res.status_code == 200
     otp_code = send_res.json()["dev_otp_code"]
@@ -557,7 +571,7 @@ def test_otp_verify_auto_merges_signed_guest_cookie_and_clears_cookie(
             candidate_id=UUID(actor.candidate_id),
             account_id=UUID(actor.account_id),
             anonymous_session_id=guest_sid,
-            actor_stage="CANDIDAT",
+            actor_stage="CANDIDATE",
             turns_merged=4,
             declared_profile_synced=True,
             current_status="AUTHENTICATED",
@@ -572,7 +586,7 @@ def test_otp_verify_auto_merges_signed_guest_cookie_and_clears_cookie(
             "/api/v1/auth/otp/verify",
             json={
                 "channel": "email",
-                "email": "visiteur.merge@nau.tn",
+                "email": "visitor.merge@nau.tn",
                 "code": otp_code,
             },
             cookies={settings.GUEST_SESSION_COOKIE_NAME: signed_cookie},
@@ -581,8 +595,8 @@ def test_otp_verify_auto_merges_signed_guest_cookie_and_clears_cookie(
     assert verify_res.status_code == 200
     body = verify_res.json()
     assert mock_merge.await_count == 1
-    assert body["actor_stage"] == "CANDIDAT"
-    assert body["user"]["actor_stage"] == "CANDIDAT"
+    assert body["actor_stage"] == "CANDIDATE"
+    assert body["user"]["actor_stage"] == "CANDIDATE"
     assert body["session_merged"] is True
     assert body["turns_merged"] == 4
     set_cookie_hdr = verify_res.headers.get("set-cookie", "")
@@ -595,17 +609,17 @@ def test_otp_verify_without_guest_session_succeeds_without_merge(
 ):
     send_res = client.post(
         "/api/v1/auth/otp/send",
-        json={"channel": "email", "email": "direct.candidat@nau.tn"},
+        json={"channel": "email", "email": "direct.candidate@nau.tn"},
     )
     otp_code = send_res.json()["dev_otp_code"]
 
     verify_res = client.post(
         "/api/v1/auth/otp/verify",
-        json={"channel": "email", "email": "direct.candidat@nau.tn", "code": otp_code},
+        json={"channel": "email", "email": "direct.candidate@nau.tn", "code": otp_code},
     )
     assert verify_res.status_code == 200
     body = verify_res.json()
-    assert body["actor_stage"] == "CANDIDAT"
+    assert body["actor_stage"] == "CANDIDATE"
     assert body["session_merged"] is False
     assert body["turns_merged"] == 0
 
@@ -616,30 +630,31 @@ def test_chat_message_exposes_actor_stage_and_candidate_status(
     monkeypatch.setattr(settings, "LLM_PROVIDER", "mock")
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
 
-    # 1. Unauthenticated Visiteur
+    # 1. Unauthenticated Visitor
     guest_res = client.post(
         "/api/v1/chat/message",
         json={"message": "Bonjour, quelles sont les filières à l'IIT ?"},
     )
     assert guest_res.status_code == 200
-    assert guest_res.json()["actor_stage"] == "VISITEUR"
+    assert guest_res.json()["actor_stage"] == "VISITOR"
     assert guest_res.json()["candidate_status"] in {"ANONYMOUS", "PROFILING"}
 
-    # 2. Authenticated Candidat (using 'candidat' role alias)
-    cand_token = create_access_token(
-        account_id=str(uuid4()),
-        role="candidat",
-        candidate_id=str(uuid4()),
-        email="cand@nau.tn",
-    )
-    cand_res = client.post(
-        "/api/v1/chat/message",
-        json={"message": "Bonjour, je veux suivre mon dossier IIT."},
-        headers={"Authorization": f"Bearer {cand_token}"},
-    )
-    assert cand_res.status_code == 200
-    assert cand_res.json()["actor_stage"] == "CANDIDAT"
-    assert cand_res.json()["candidate_status"] == "AUTHENTICATED"
+    # 2. Authenticated Candidate (testing both 'candidate' and legacy 'candidat' role aliases)
+    for role_alias in ("candidate", "candidat"):
+        cand_token = create_access_token(
+            account_id=str(uuid4()),
+            role=role_alias,
+            candidate_id=str(uuid4()),
+            email=f"{role_alias}@nau.tn",
+        )
+        cand_res = client.post(
+            "/api/v1/chat/message",
+            json={"message": "Bonjour, je veux suivre mon dossier IIT."},
+            headers={"Authorization": f"Bearer {cand_token}"},
+        )
+        assert cand_res.status_code == 200
+        assert cand_res.json()["actor_stage"] == "CANDIDATE"
+        assert cand_res.json()["candidate_status"] == "AUTHENTICATED"
 
     # 3. Authenticated Responsable
     resp_token = create_access_token(
@@ -779,7 +794,9 @@ def test_bge_m3_1024d_and_actor_constraints_aligned():
         for c in Role.__table__.constraints
         if "roles_code_valid" in str(getattr(c, "name", ""))
     ]
-    assert role_checks and "'candidat'" in role_checks[0]
+    assert role_checks
+    assert "'candidate'" in role_checks[0]
+    assert "'candidat'" in role_checks[0]
 
     audit_checks = [
         str(c.sqltext)
@@ -787,5 +804,7 @@ def test_bge_m3_1024d_and_actor_constraints_aligned():
         if "audit_actor_type_valid" in str(getattr(c, "name", ""))
     ]
     assert audit_checks
+    assert "'VISITOR'" in audit_checks[0]
+    assert "'CANDIDATE'" in audit_checks[0]
     assert "'VISITEUR'" in audit_checks[0]
     assert "'CANDIDAT'" in audit_checks[0]

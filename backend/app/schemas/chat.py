@@ -120,8 +120,8 @@ class ChatMessageResponse(BaseModel):
         description="Action code performed by the guardrail node if triggered (SA-46 / Bonus-5).",
     )
     actor_stage: ActorStage = Field(
-        default="VISITEUR",
-        description="Canonical actor stage: VISITEUR (guest), CANDIDAT (auth), or RESPONSABLE.",
+        default="VISITOR",
+        description="Canonical actor stage: VISITOR (guest), CANDIDATE (auth), or RESPONSABLE.",
     )
     candidate_status: str = Field(
         default="ANONYMOUS",

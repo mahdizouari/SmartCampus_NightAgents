@@ -88,7 +88,7 @@ class ResponsableService {
   }
 
   /**
-   * Live catalog lookup (`GET /api/v1/catalog/programs`) for Responsable BD supervision.
+   * Live catalog lookup (`GET /api/v1/catalog/programs`) for Responsable DB supervision.
    */
   public async getCatalogPrograms(school?: SchoolCode | 'ALL'): Promise<CatalogProgramItem[]> {
     try {
@@ -142,7 +142,7 @@ class ResponsableService {
   }
 
   /**
-   * Live RAG corpus list (`GET /api/v1/knowledge/documents`) for Responsable BD supervision.
+   * Live RAG corpus list (`GET /api/v1/knowledge/documents`) for Responsable DB supervision.
    */
   public async getKnowledgeDocuments(
     school?: SchoolCode | 'ALL',

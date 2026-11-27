@@ -1,6 +1,6 @@
 /**
  * SmartCampus AI — Core API Client Wrapper
- * Handles JWT injection, signed Visiteur cookie credentials, X-Session-ID propagation,
+ * Handles JWT injection, signed Visitor cookie credentials, X-Session-ID propagation,
  * timeout, JSON/FormData formatting, and unified ApiError handling.
  */
 
@@ -55,7 +55,7 @@ class ApiClient {
   }
 
   /**
-   * Retrieves active Visiteur guest session UUID if running client-side.
+   * Retrieves active Visitor guest session UUID if running client-side.
    */
   public getStoredGuestSessionId(): string | null {
     if (typeof window === 'undefined') return null;
@@ -68,7 +68,7 @@ class ApiClient {
   }
 
   /**
-   * Persists or clears the active Visiteur guest session UUID.
+   * Persists or clears the active Visitor guest session UUID.
    */
   public setStoredGuestSessionId(sessionId: string | null): void {
     if (typeof window === 'undefined') return;
@@ -115,7 +115,7 @@ class ApiClient {
       mergedHeaders['Authorization'] = `Bearer ${activeToken}`;
     }
 
-    // Attach X-Session-ID for Visiteur requests and session-merge endpoints
+    // Attach X-Session-ID for Visitor requests and session-merge endpoints
     if (
       activeGuestSid &&
       isValidUuid(activeGuestSid) &&
@@ -206,7 +206,7 @@ class ApiClient {
   }
 
   /**
-   * Uploads file payload (e.g. relevé de notes or RAG corpus brochure) using multipart/form-data.
+   * Uploads file payload (e.g. official transcript or RAG corpus brochure) using multipart/form-data.
    */
   public async upload<T>(
     endpoint: string,

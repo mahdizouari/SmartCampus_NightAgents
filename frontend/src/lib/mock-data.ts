@@ -50,7 +50,7 @@ export const MOCK_PROGRAMS: AcademicProgram[] = [
 ];
 
 /**
- * Offline fallback catalog entries for the Responsable "Catalogue & Corpus BD" workspace
+ * Offline fallback catalog entries for the Responsable catalog and RAG corpus workspace
  */
 export const MOCK_CATALOG_PROGRAMS: CatalogProgramItem[] = [
   {
@@ -170,14 +170,14 @@ export const MOCK_KNOWLEDGE_DOCUMENTS: KnowledgeDocumentItem[] = [
 
 /**
  * Initial starter chat messages for the VISION front-office interface
- * Welcomes prospective students, graduates, AND parents/relatives in Visiteur mode.
+ * Welcomes prospective students, graduates, AND parents/relatives in Visitor mode.
  */
 export const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: 'msg-1',
     sender: 'vision',
     subAgent: '1.1_Listener',
-    actorStage: 'VISITEUR',
+    actorStage: 'VISITOR',
     candidateStatus: 'ANONYMOUS',
     content:
       'Bonjour et bienvenue sur SmartCampus AI ! Je suis VISION, votre superviseur d’orientation pour l’IIT et l’ISB (ainsi que l’extension ISA au sein du groupe NAU à Sfax).\n\nQue vous soyez futur bachelier, diplômé en recherche de passerelle ou parent d’élève, vous naviguez librement en mode Visiteur (sans compte). Posez vos questions en Français, en Derja tunisienne (تونسي) ou en Arabizi — l’authentification Candidat ne sera demandée qu’au moment de déposer un relevé officiel ou de préinscrire un dossier.',

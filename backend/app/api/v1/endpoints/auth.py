@@ -115,7 +115,7 @@ async def delete_guest_session(
     "/merge-session",
     response_model=SessionMergeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Associer une session anonyme (historique Redis + profil) au compte candidat (SA-29)",
+    summary="Merge an anonymous visitor session (Redis history + profile) into candidate account",
 )
 async def merge_session(
     payload: SessionMergeRequest,
@@ -154,7 +154,7 @@ async def send_otp(payload: OtpSendRequest) -> OtpSendResponse:
     "/otp/verify",
     response_model=AuthTokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Verify a 6-digit OTP code, auto-merge Visiteur session, and issue Bearer JWT tokens",
+    summary="Verify a 6-digit OTP code, auto-merge Visitor session, and issue Bearer JWT tokens",
 )
 async def verify_otp(
     payload: OtpVerifyRequest,
@@ -169,7 +169,7 @@ async def verify_otp(
     "/oauth/google",
     response_model=AuthTokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Authenticate via Google OAuth 2.0 ID token and auto-merge Visiteur session",
+    summary="Authenticate via Google OAuth 2.0 ID token and auto-merge Visitor session",
 )
 async def google_oauth_login(
     payload: GoogleOAuthRequest,

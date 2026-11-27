@@ -3,7 +3,7 @@ import { TranscriptSyncSummary } from '@/types';
 
 class DocumentService {
   /**
-   * Uploads an authenticated Candidat's official transcript (PNG, JPEG, WEBP, or PDF)
+   * Uploads an authenticated Candidate's official transcript (PNG, JPEG, WEBP, or PDF)
    * to VISION 1.4_Reader (`POST /api/v1/documents/extract-and-sync-transcript`),
    * returning extracted Tunisian Bac/Licence grades, confidence scores, and HITL flags.
    */

@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({ session, onOpenAuth, onLogout })
           </div>
         </Link>
 
-        {/* Navigation — strictly Visiteur/Candidat space + Responsable portal */}
+        {/* Navigation — strictly Visitor/Candidate space + Responsable portal */}
         <nav className="hidden md:flex items-center gap-1">
           <Link
             href="/"

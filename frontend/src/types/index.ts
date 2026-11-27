@@ -1,6 +1,6 @@
 /**
  * SmartCampus AI — Core Type Definitions
- * Aligned with Visiteur -> Candidat + Responsable actor model and Architecture v3.
+ * Aligned with Visitor -> Candidate + Responsable actor model and Architecture v3.
  */
 
 export type SchoolCode = 'IIT' | 'ISB' | 'ISA';
@@ -50,11 +50,11 @@ export type HumanDecision = 'ADMITTED' | 'WAITLIST' | 'REJECTED';
 
 /**
  * Simplified Post-Review Actor Model:
- * - VISITEUR: Unauthenticated prospective student, graduate, or parent/relative (7-day session)
- * - CANDIDAT: Authenticated applicant after OTP/OAuth + automatic session merge
- * - RESPONSABLE: School academic supervisor, interviewer, HITL decision-maker & BD/corpus manager
+ * - VISITOR: Unauthenticated prospective student, graduate, or parent/relative (7-day session)
+ * - CANDIDATE: Authenticated applicant after OTP/OAuth + automatic session merge
+ * - RESPONSABLE: School academic supervisor, interviewer, HITL decision-maker & DB/corpus manager
  */
-export type ActorStage = 'VISITEUR' | 'CANDIDAT' | 'RESPONSABLE';
+export type ActorStage = 'VISITOR' | 'CANDIDATE' | 'RESPONSABLE';
 export type UserRole = ActorStage;
 
 export interface UserSession {
@@ -267,6 +267,6 @@ export interface VoiceNoteProcessResponse {
   recommendations?: TrackRecommendation[];
   actionPrompt?: ChatActionPrompt;
   citations?: SourceCitation[];
-  actor_stage?: ActorStage;
+  actor_stage?: ActorStage | string;
   candidate_status?: CandidateStatus;
 }

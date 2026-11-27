@@ -98,12 +98,16 @@ _ACTOR_TYPE_BY_ROLE: dict[str, str] = {
     "direction": "DIRECTION",
     "rh": "RH",
     "student": "STUDENT",
-    "candidat": "CANDIDAT",
-    "visiteur": "VISITEUR",
-    "guest": "VISITEUR",
+    "candidate": "CANDIDATE",
+    "candidat": "CANDIDATE",
+    "visitor": "VISITOR",
+    "visiteur": "VISITOR",
+    "guest": "VISITOR",
 }
 _VALID_AUDIT_ACTOR_TYPES: frozenset[str] = frozenset(
     {
+        "VISITOR",
+        "CANDIDATE",
         "VISITEUR",
         "CANDIDAT",
         "STUDENT",

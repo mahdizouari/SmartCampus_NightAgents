@@ -53,7 +53,7 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
   const [decisionNotes, setDecisionNotes] = useState('');
   const [submittingDecision, setSubmittingDecision] = useState(false);
 
-  // Tab 2: Catalogue & Corpus BD ("Update / Suivi BD")
+  // Tab 2: Academic Catalog & RAG Corpus DB management
   const [programs, setPrograms] = useState<CatalogProgramItem[]>([]);
   const [documents, setDocuments] = useState<KnowledgeDocumentItem[]>([]);
   const [loadingBd, setLoadingBd] = useState(false);
@@ -322,7 +322,7 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
         </div>
       </div>
 
-      {/* Staff Authentication Banner if currently in Visiteur / Candidat mode */}
+      {/* Staff Authentication Banner if currently in Visitor / Candidate mode */}
       {(!session || session.role !== 'RESPONSABLE') && onOpenAuth && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-blue-900">
           <span>
@@ -339,7 +339,7 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
         </div>
       )}
 
-      {/* Workspace Tabs: Candidatures HITL vs Catalogue & Corpus BD */}
+      {/* Workspace Tabs: Candidate Dossiers (HITL) vs Academic Catalog & RAG Corpus */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
           <button
@@ -447,7 +447,7 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 1: Dossiers Candidats & Décisions HITL */}
+      {/* TAB 1: Candidate Dossiers & HITL Decisions */}
       {activeTab === 'dossiers' ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
@@ -542,7 +542,7 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
           </div>
         </div>
       ) : (
-        /* TAB 2: Catalogue & Corpus BD (Update / Suivi BD) */
+        /* TAB 2: Academic Catalog & RAG Corpus DB Management */
         <div className="space-y-6">
           {/* Section A: Official RAG Corpus Documents */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">

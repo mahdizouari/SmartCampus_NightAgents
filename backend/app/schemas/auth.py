@@ -95,7 +95,7 @@ class AuthUserSummary(BaseModel):
     full_name: str
     fullName: str
     role: str
-    actor_stage: ActorStage = "CANDIDAT"
+    actor_stage: ActorStage = "CANDIDATE"
     school_scope: str | None = None
     school: str | None = None
     candidate_id: UUID | None = None
@@ -111,7 +111,7 @@ class AuthTokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "Bearer"
     expires_in: int
-    actor_stage: ActorStage = "CANDIDAT"
+    actor_stage: ActorStage = "CANDIDATE"
     session_merged: bool = False
     turns_merged: int = 0
     user: AuthUserSummary

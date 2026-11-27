@@ -65,10 +65,12 @@ class _OtpChallenge:
 _OTP_STORE: dict[str, _OtpChallenge] = {}
 
 _ACTOR_TYPE_BY_ROLE: dict[str, str] = {
-    "guest": "VISITEUR",
-    "visiteur": "VISITEUR",
+    "guest": "VISITOR",
+    "visitor": "VISITOR",
+    "visiteur": "VISITOR",
     "student": "STUDENT",
-    "candidat": "CANDIDAT",
+    "candidate": "CANDIDATE",
+    "candidat": "CANDIDATE",
     "rh": "RH",
     "responsable": "RESPONSABLE",
     "direction": "DIRECTION",
@@ -266,7 +268,7 @@ async def _attempt_auto_guest_session_merge(
     request: Request | None = None,
     response: Response | None = None,
 ) -> tuple[bool, int]:
-    """Automatically merge an active Visiteur session (payload, signed cookie, or X-Session-ID).
+    """Automatically merge an active Visitor session (payload, signed cookie, or X-Session-ID).
 
     Never fails authentication when no active guest session exists or when a stale cookie
     cannot be merged; logs a warning for observability instead of failing silently.
@@ -308,7 +310,7 @@ async def _attempt_auto_guest_session_merge(
         return True, merge_result.turns_merged
     except Exception as exc:
         logger.warning(
-            "Visiteur -> Candidat automatic guest session merge skipped for account %s: %s",
+            "Visitor -> Candidate automatic guest session merge skipped for account %s: %s",
             account.id,
             exc,
         )

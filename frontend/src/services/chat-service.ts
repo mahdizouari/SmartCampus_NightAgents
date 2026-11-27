@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { normalizeRoleToActorStage } from '@/services/auth-service';
 import {
   ActorStage,
   CampusScope,
@@ -29,7 +30,7 @@ export interface ChatResponse {
   detectedDialect?: 'French' | 'Tunisian_Derja' | 'Arabizi';
   recommendations?: TrackRecommendation[];
   actionPrompt?: ChatActionPrompt;
-  actor_stage?: ActorStage;
+  actor_stage?: ActorStage | string;
   candidate_status?: CandidateStatus;
   citations?: {
     id: string;
@@ -85,7 +86,9 @@ class ChatService {
           snippet: c.snippet,
         })),
         actionPrompt: res.actionPrompt,
-        actorStage: res.actor_stage,
+        actorStage: res.actor_stage
+          ? normalizeRoleToActorStage(res.actor_stage, false)
+          : undefined,
         candidateStatus: res.candidate_status,
       };
       this.memoryHistory.push(botMsg);

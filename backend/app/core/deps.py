@@ -20,13 +20,13 @@ from app.schemas.session import ActorStage, GuestSessionIssuedResponse
 _bearer_scheme = HTTPBearer(auto_error=False)
 _DEFAULT_INSECURE_SECRET = "change_me_in_production_use_a_long_random_string"
 
-CANDIDATE_ROLE_ALIASES: frozenset[str] = frozenset({"student", "candidat"})
-VISITOR_ROLE_ALIASES: frozenset[str] = frozenset({"guest", "visiteur"})
+CANDIDATE_ROLE_ALIASES: frozenset[str] = frozenset({"student", "candidate", "candidat"})
+VISITOR_ROLE_ALIASES: frozenset[str] = frozenset({"guest", "visitor", "visiteur"})
 STAFF_ROLE_ALIASES: frozenset[str] = frozenset({"responsable", "admin", "rh", "direction"})
 
 
 def normalize_role_alias(role: str | None) -> str:
-    """Normalize equivalent role aliases (candidat <-> student, visiteur <-> guest)."""
+    """Normalize role aliases (candidate/candidat <-> student, visitor/visiteur <-> guest)."""
     cleaned = (role or "").strip().lower()
     if cleaned in CANDIDATE_ROLE_ALIASES:
         return "student"
@@ -41,14 +41,14 @@ def is_candidate_role(role: str | None) -> bool:
 
 
 def resolve_actor_stage(role: str | None, *, is_authenticated: bool = True) -> ActorStage:
-    """Resolve the simplified actor stage: VISITEUR -> CANDIDAT or RESPONSABLE."""
+    """Resolve the simplified actor stage: VISITOR -> CANDIDATE or RESPONSABLE."""
     if not is_authenticated:
-        return "VISITEUR"
+        return "VISITOR"
     cleaned = (role or "").strip().lower()
     if not cleaned or cleaned in VISITOR_ROLE_ALIASES:
-        return "VISITEUR"
+        return "VISITOR"
     if cleaned in CANDIDATE_ROLE_ALIASES:
-        return "CANDIDAT"
+        return "CANDIDATE"
     return "RESPONSABLE"
 
 
@@ -73,7 +73,7 @@ class CurrentActor:
 
     @property
     def actor_stage(self) -> ActorStage:
-        """Canonical actor stage (CANDIDAT or RESPONSABLE for authenticated actors)."""
+        """Canonical actor stage (CANDIDATE or RESPONSABLE for authenticated actors)."""
         return resolve_actor_stage(self.role, is_authenticated=True)
 
 
@@ -245,7 +245,7 @@ async def get_current_actor(
 def require_roles(*allowed_roles: str) -> Callable[..., Any]:
     """Build a FastAPI dependency requiring the actor to hold one of allowed_roles.
 
-    Transparently accepts equivalent aliases (`student` <-> `candidat`, `guest` <-> `visiteur`).
+    Transparently accepts aliases (student/candidate/candidat, guest/visitor/visiteur).
     """
     normalized = _expand_role_aliases(allowed_roles)
 

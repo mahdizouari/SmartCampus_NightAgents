@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { normalizeRoleToActorStage } from '@/services/auth-service';
 import {
   CampusScope,
   ChatMessage,
@@ -12,7 +13,7 @@ import { chatService } from '@/services/chat-service';
 class VoiceNoteService {
   /**
    * Step 1: Transcribe recorded audio with Whisper STT.
-   * Does NOT invoke LLM; returns editable transcript for Visiteur/Candidat review.
+   * Does NOT invoke LLM; returns editable transcript for Visitor/Candidate review.
    */
   public async transcribe(
     audioBlob: Blob,
@@ -83,7 +84,9 @@ class VoiceNoteService {
         recommendations: res.recommendations,
         citations: res.citations,
         actionPrompt: res.actionPrompt,
-        actorStage: res.actor_stage,
+        actorStage: res.actor_stage
+          ? normalizeRoleToActorStage(res.actor_stage, false)
+          : undefined,
         candidateStatus: res.candidate_status,
       };
       chatService.appendMessage(botMsg);

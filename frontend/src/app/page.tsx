@@ -17,7 +17,7 @@ export default function CandidatePage() {
   });
   const [selectedTrack, setSelectedTrack] = useState<TrackRecommendation | null>(null);
 
-  // Initialize / refresh the 7-day signed Visiteur guest session asynchronously on mount
+  // Initialize / refresh the 7-day signed Visitor guest session asynchronously on mount
   useEffect(() => {
     let cancelled = false;
     authService.ensureGuestSession().then((ensured) => {

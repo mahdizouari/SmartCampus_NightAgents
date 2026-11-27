@@ -98,5 +98,5 @@ class VoiceNoteProcessResponse(BaseModel):
     comprehension_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     needs_reformulation: bool = False
     reformulation_prompt: str | None = None
-    actor_stage: ActorStage = "VISITEUR"
+    actor_stage: ActorStage = "VISITOR"
     candidate_status: str = "ANONYMOUS"

@@ -38,7 +38,17 @@ def upgrade() -> None:
         """
         ALTER TABLE core.roles
             ADD CONSTRAINT roles_code_valid
-            CHECK (code IN ('student', 'candidat', 'rh', 'responsable', 'direction', 'admin'))
+            CHECK (
+                code IN (
+                    'student',
+                    'candidate',
+                    'candidat',
+                    'rh',
+                    'responsable',
+                    'direction',
+                    'admin'
+                )
+            )
         """,
         "ALTER TABLE core.audit_log DROP CONSTRAINT IF EXISTS audit_actor_type_valid",
         """
@@ -46,6 +56,8 @@ def upgrade() -> None:
             ADD CONSTRAINT audit_actor_type_valid
             CHECK (
                 actor_type IN (
+                    'VISITOR',
+                    'CANDIDATE',
                     'VISITEUR',
                     'CANDIDAT',
                     'STUDENT',
@@ -69,7 +81,7 @@ def downgrade() -> None:
         """
         UPDATE core.audit_log
             SET actor_type = 'STUDENT'
-            WHERE actor_type IN ('CANDIDAT', 'VISITEUR')
+            WHERE actor_type IN ('CANDIDATE', 'VISITOR', 'CANDIDAT', 'VISITEUR')
         """,
         """
         ALTER TABLE core.audit_log
@@ -88,7 +100,7 @@ def downgrade() -> None:
             )
         """,
         "ALTER TABLE core.roles DROP CONSTRAINT IF EXISTS roles_code_valid",
-        "DELETE FROM core.roles WHERE code = 'candidat'",
+        "DELETE FROM core.roles WHERE code IN ('candidate', 'candidat')",
         """
         ALTER TABLE core.roles
             ADD CONSTRAINT roles_code_valid

@@ -60,8 +60,10 @@ CandidateStatus = Literal[
 
 ActorRole = Literal[
     "guest",
+    "visitor",
     "visiteur",
     "student",
+    "candidate",
     "candidat",
     "rh",
     "responsable",

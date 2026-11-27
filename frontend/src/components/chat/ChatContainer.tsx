@@ -118,8 +118,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   };
 
   /**
-   * Opens the native transcript file picker for an authenticated Candidat,
-   * or prompts Give-or-Keep login if the user is still a Visiteur.
+   * Opens the native transcript file picker for an authenticated Candidate,
+   * or prompts Give-or-Keep login if the user is still a Visitor.
    */
   const triggerTranscriptUploadPicker = () => {
     if (session.isAnonymous) {
@@ -161,7 +161,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         id: `vis-vlm-${Date.now()}`,
         sender: 'vision',
         subAgent: '1.4_Reader',
-        actorStage: 'CANDIDAT',
+        actorStage: 'CANDIDATE',
         candidateStatus: 'AUTHENTICATED',
         content: syncResult.needs_manual_review
           ? `J’ai analysé votre relevé (${file.name}) et pré-rempli votre profil Candidat (${syncResult.grades_persisted_count} matières détectées). Certains champs requièrent votre confirmation avant validation finale.`
@@ -387,7 +387,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         className="hidden"
       />
 
-      {/* Top Banner — Dynamic Visiteur -> Candidat Lifecycle Indicator */}
+      {/* Top Banner — Dynamic Visitor -> Candidate Lifecycle Indicator */}
       <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700 font-medium">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

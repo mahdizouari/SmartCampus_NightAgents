@@ -9,7 +9,7 @@ interface GuestSessionBackendResponse {
   step?: string;
   school_target?: string | null;
   turn_count?: number;
-  actor_stage?: ActorStage;
+  actor_stage?: ActorStage | string;
 }
 
 interface OtpSendBackendResponse {
@@ -25,7 +25,7 @@ interface AuthVerifyBackendResponse {
   token: string;
   refresh_token: string;
   expires_in: number;
-  actor_stage?: ActorStage;
+  actor_stage?: ActorStage | string;
   session_merged?: boolean;
   turns_merged?: number;
   user: {
@@ -34,7 +34,7 @@ interface AuthVerifyBackendResponse {
     full_name?: string;
     fullName?: string;
     role: string;
-    actor_stage?: ActorStage;
+    actor_stage?: ActorStage | string;
     school_scope?: string | null;
     school?: string | null;
     candidate_id?: string | null;
@@ -58,12 +58,18 @@ export function normalizeRoleToActorStage(
   rawRole?: string | null,
   isAnonymous = false,
 ): UserRole {
-  if (isAnonymous) return 'VISITEUR';
-  const normalized = (rawRole || '').trim().toLowerCase();
-  if (normalized === 'responsable' || normalized === 'admin') {
+  if (isAnonymous) return 'VISITOR';
+  const normalized = (rawRole || '').trim().toUpperCase();
+  if (normalized === 'VISITOR' || normalized === 'VISITEUR' || normalized === 'GUEST') {
+    return 'VISITOR';
+  }
+  if (normalized === 'RESPONSABLE' || normalized === 'ADMIN') {
     return 'RESPONSABLE';
   }
-  return 'CANDIDAT';
+  if (normalized === 'CANDIDATE' || normalized === 'CANDIDAT' || normalized === 'STUDENT') {
+    return 'CANDIDATE';
+  }
+  return 'CANDIDATE';
 }
 
 function normalizeSchoolCode(raw?: string | null): SchoolCode | undefined {
@@ -84,8 +90,8 @@ class AuthService {
     this.currentSession = {
       id: fallbackSid,
       sessionId: fallbackSid,
-      role: 'VISITEUR',
-      actorStage: 'VISITEUR',
+      role: 'VISITOR',
+      actorStage: 'VISITOR',
       status: 'ANONYMOUS',
       isAnonymous: true,
     };
@@ -136,7 +142,7 @@ class AuthService {
   }
 
   /**
-   * Initializes or refreshes a signed 7-day Visiteur session on the backend
+   * Initializes or refreshes a signed 7-day Visitor session on the backend
    * (`POST /api/v1/auth/guest-session`), storing the issued UUIDv4 for X-Session-ID & cookie merge.
    */
   public async ensureGuestSession(): Promise<UserSession> {
@@ -156,11 +162,12 @@ class AuthService {
         );
         if (res && isValidUuid(res.session_id)) {
           apiClient.setStoredGuestSessionId(res.session_id);
+          const stage = normalizeRoleToActorStage(res.actor_stage || 'VISITOR', true);
           const nextSession: UserSession = {
             id: res.session_id,
             sessionId: res.session_id,
-            role: 'VISITEUR',
-            actorStage: 'VISITEUR',
+            role: stage,
+            actorStage: stage,
             status: (res.step as CandidateStatus) || 'ANONYMOUS',
             school: normalizeSchoolCode(res.school_target),
             isAnonymous: true,
@@ -177,8 +184,8 @@ class AuthService {
             ...this.currentSession,
             id: freshSid,
             sessionId: freshSid,
-            role: 'VISITEUR',
-            actorStage: 'VISITEUR',
+            role: 'VISITOR',
+            actorStage: 'VISITOR',
             isAnonymous: true,
           };
         }
@@ -217,7 +224,7 @@ class AuthService {
 
   /**
    * Verifies OTP (`POST /api/v1/auth/otp/verify`), automatically associates the active
-   * Visiteur session (`anonymous_session_id` + cookie) into the Candidat dossier,
+   * Visitor session (`anonymous_session_id` + cookie) into the Candidate dossier,
    * and records explicit INPDP Law 2004-63 consent (`POST /api/v1/auth/consent`).
    */
   public async verifyEmailOtp(
@@ -248,12 +255,15 @@ class AuthService {
       );
 
       const accessToken = response.access_token || response.token;
-      const mappedRole = normalizeRoleToActorStage(response.user.role, false);
+      const mappedRole = normalizeRoleToActorStage(
+        response.actor_stage || response.user.actor_stage || response.user.role,
+        false,
+      );
       let sessionMerged = Boolean(response.session_merged);
       let turnsMerged = response.turns_merged ?? 0;
 
       // Fallback explicit merge call if backend hasn't auto-merged during verify_otp yet
-      if (!sessionMerged && mappedRole === 'CANDIDAT' && anonymousSid) {
+      if (!sessionMerged && mappedRole === 'CANDIDATE' && anonymousSid) {
         try {
           const mergeRes = await apiClient.post<{
             turns_merged: number;
@@ -272,7 +282,7 @@ class AuthService {
 
       // Record explicit INPDP (Law 2004-63) consent when ticked in AuthModal
       let consentRecorded = false;
-      if (acceptConsent && mappedRole === 'CANDIDAT') {
+      if (acceptConsent && mappedRole === 'CANDIDATE') {
         try {
           await apiClient.post(
             '/auth/consent',
@@ -317,7 +327,7 @@ class AuthService {
       apiClient.setStoredGuestSessionId(null);
       const fallbackRole: UserRole = email.toLowerCase().startsWith('responsable')
         ? 'RESPONSABLE'
-        : 'CANDIDAT';
+        : 'CANDIDATE';
       const session: UserSession = {
         id: generateUuidV4(),
         email,
@@ -363,8 +373,8 @@ class AuthService {
     this.currentSession = {
       id: freshGuestSid,
       sessionId: freshGuestSid,
-      role: 'VISITEUR',
-      actorStage: 'VISITEUR',
+      role: 'VISITOR',
+      actorStage: 'VISITOR',
       status: 'ANONYMOUS',
       isAnonymous: true,
     };
