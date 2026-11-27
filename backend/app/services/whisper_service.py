@@ -169,10 +169,14 @@ async def transcribe_audio(
     transcript_id = f"vn-{uuid4()}"
     prompt, language = build_whisper_prompt(mode, campus_scope)
 
+    provider = settings.WHISPER_PROVIDER.lower().strip()
     api_key = settings.effective_whisper_api_key
-    if not api_key:
+    use_mock = provider == "mock" or (provider != "local" and not api_key)
+    if use_mock:
         logger.warning(
-            "No STT/Whisper/LLM key set. Using mock transcript for mode='%s'.",
+            "Whisper STT running in mock mode (provider='%s', key_set=%s) for mode='%s'.",
+            provider,
+            bool(api_key),
             mode,
         )
         mock_text = MOCK_VOICE_TRANSCRIPTS.get(mode, MOCK_VOICE_TRANSCRIPTS["auto"])
@@ -187,7 +191,7 @@ async def transcribe_audio(
             audio_filename=file.filename,
         )
 
-    # Prepare multipart request to Whisper STT API
+    # Prepare multipart request to Whisper STT API (keyless when WHISPER_PROVIDER=local)
     mime_type = file.content_type or "audio/webm"
     filename = file.filename or "audio.webm"
     form_data: dict[str, str] = {
@@ -199,7 +203,9 @@ async def transcribe_audio(
         form_data["language"] = language
 
     whisper_url = f"{settings.effective_whisper_base_url}/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     try:
         async with httpx.AsyncClient(timeout=settings.WHISPER_TIMEOUT_SECONDS) as client:

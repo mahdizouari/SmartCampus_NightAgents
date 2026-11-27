@@ -47,6 +47,36 @@ async def _get_or_404[ModelT](
     return obj
 
 
+_CATALOG_ACTOR_TYPE_BY_ROLE: dict[str, str] = {
+    "admin": "ADMIN",
+    "responsable": "RESPONSABLE",
+}
+
+
+def _enforce_catalog_school_scope(actor: CurrentActor, school_code: str) -> None:
+    """Enforce strict school-scope isolation when a Responsable mutates catalog entries."""
+    if actor.role.lower() == "responsable" and actor.school_scope:
+        if actor.school_scope.lower() != school_code.lower():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"School scope violation: Responsable scoped to '{actor.school_scope}' "
+                    f"cannot modify catalog resources for '{school_code}'."
+                ),
+            )
+
+
+async def _enforce_program_school_scope(
+    db: AsyncSession,
+    actor: CurrentActor,
+    program_id: UUID,
+) -> None:
+    """Resolve parent program and enforce school_scope when actor is a scoped Responsable."""
+    if actor.role.lower() == "responsable" and actor.school_scope:
+        program = await _get_or_404(db, Program, program_id, "Program")
+        _enforce_catalog_school_scope(actor, program.school_code)
+
+
 def _record_audit(
     db: AsyncSession,
     actor: CurrentActor,
@@ -55,9 +85,10 @@ def _record_audit(
     entity_id: UUID | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
+    actor_type = _CATALOG_ACTOR_TYPE_BY_ROLE.get(actor.role.lower(), "RESPONSABLE")
     db.add(
         AuditLog(
-            actor_type="ADMIN",
+            actor_type=actor_type,
             actor_id=actor.account_id,
             action=action,
             entity_type=entity_type,
@@ -160,6 +191,7 @@ async def create_program(
     payload: ProgramCreate,
     actor: CurrentActor,
 ) -> Program:
+    _enforce_catalog_school_scope(actor, payload.school_code)
     await _get_or_404(db, School, payload.school_code, "School")
     dup = await db.execute(select(Program.id).where(Program.code == payload.code))
     if dup.scalar_one_or_none() is not None:
@@ -192,8 +224,10 @@ async def update_program(
     actor: CurrentActor,
 ) -> Program:
     program = await _get_or_404(db, Program, program_id, "Program")
+    _enforce_catalog_school_scope(actor, program.school_code)
     updates = payload.model_dump(exclude_unset=True)
     if "school_code" in updates:
+        _enforce_catalog_school_scope(actor, updates["school_code"])
         await _get_or_404(db, School, updates["school_code"], "School")
     for field, value in updates.items():
         setattr(program, field, value)
@@ -220,6 +254,7 @@ async def delete_program(
     hard: bool = False,
 ) -> None:
     program = await _get_or_404(db, Program, program_id, "Program")
+    _enforce_catalog_school_scope(actor, program.school_code)
     if not hard:
         program.is_active = False
         program.updated_at = datetime.now(UTC)
@@ -254,7 +289,8 @@ async def create_prerequisite(
     payload: PrerequisiteCreate,
     actor: CurrentActor,
 ) -> ProgramPrerequisite:
-    await _get_or_404(db, Program, program_id, "Program")
+    program = await _get_or_404(db, Program, program_id, "Program")
+    _enforce_catalog_school_scope(actor, program.school_code)
     prereq = ProgramPrerequisite(program_id=program_id, **payload.model_dump())
     db.add(prereq)
     await db.flush()
@@ -276,6 +312,7 @@ async def update_prerequisite(
     actor: CurrentActor,
 ) -> ProgramPrerequisite:
     prereq = await _get_or_404(db, ProgramPrerequisite, prerequisite_id, "Prerequisite")
+    await _enforce_program_school_scope(db, actor, prereq.program_id)
     updates = payload.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(prereq, field, value)
@@ -296,6 +333,7 @@ async def delete_prerequisite(
     actor: CurrentActor,
 ) -> None:
     prereq = await _get_or_404(db, ProgramPrerequisite, prerequisite_id, "Prerequisite")
+    await _enforce_program_school_scope(db, actor, prereq.program_id)
     await _delete_and_commit(
         db,
         prereq,
@@ -316,7 +354,8 @@ async def create_fee(
     payload: FeeCreate,
     actor: CurrentActor,
 ) -> ProgramFee:
-    await _get_or_404(db, Program, program_id, "Program")
+    program = await _get_or_404(db, Program, program_id, "Program")
+    _enforce_catalog_school_scope(actor, program.school_code)
     fee = ProgramFee(program_id=program_id, **payload.model_dump())
     db.add(fee)
     await db.flush()
@@ -342,6 +381,7 @@ async def update_fee(
     actor: CurrentActor,
 ) -> ProgramFee:
     fee = await _get_or_404(db, ProgramFee, fee_id, "ProgramFee")
+    await _enforce_program_school_scope(db, actor, fee.program_id)
     updates = payload.model_dump(exclude_unset=True)
     new_from = updates.get("effective_from", fee.effective_from)
     new_to = updates.get("effective_to", fee.effective_to)
@@ -373,6 +413,7 @@ async def delete_fee(
     actor: CurrentActor,
 ) -> None:
     fee = await _get_or_404(db, ProgramFee, fee_id, "ProgramFee")
+    await _enforce_program_school_scope(db, actor, fee.program_id)
     await _delete_and_commit(
         db,
         fee,
@@ -410,6 +451,7 @@ async def create_campaign(
     payload: CampaignCreate,
     actor: CurrentActor,
 ) -> AdmissionCampaign:
+    _enforce_catalog_school_scope(actor, payload.school_code)
     await _validate_campaign_relations(db, payload.school_code, payload.program_id)
     campaign = AdmissionCampaign(**payload.model_dump())
     db.add(campaign)
@@ -432,8 +474,10 @@ async def update_campaign(
     actor: CurrentActor,
 ) -> AdmissionCampaign:
     campaign = await _get_or_404(db, AdmissionCampaign, campaign_id, "AdmissionCampaign")
+    _enforce_catalog_school_scope(actor, campaign.school_code)
     updates = payload.model_dump(exclude_unset=True)
     new_school = updates.get("school_code", campaign.school_code)
+    _enforce_catalog_school_scope(actor, new_school)
     new_program = updates.get("program_id", campaign.program_id)
     new_opens = updates.get("opens_at", campaign.opens_at)
     new_closes = updates.get("closes_at", campaign.closes_at)
@@ -465,6 +509,7 @@ async def delete_campaign(
     actor: CurrentActor,
 ) -> None:
     campaign = await _get_or_404(db, AdmissionCampaign, campaign_id, "AdmissionCampaign")
+    _enforce_catalog_school_scope(actor, campaign.school_code)
     await _delete_and_commit(
         db,
         campaign,

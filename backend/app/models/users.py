@@ -77,7 +77,7 @@ class Role(Base):
     __tablename__ = "roles"
     __table_args__ = (
         CheckConstraint(
-            "code IN ('student', 'rh', 'responsable', 'direction', 'admin')",
+            "code IN ('student', 'candidat', 'rh', 'responsable', 'direction', 'admin')",
             name="roles_code_valid",
         ),
         {"schema": "core"},
@@ -601,7 +601,8 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "actor_type IN ("
-            "'STUDENT', 'RH', 'RESPONSABLE', 'DIRECTION', 'ADMIN', 'VISION', 'JARVIS', 'SYSTEM'"
+            "'VISITEUR', 'CANDIDAT', 'STUDENT', 'RH', 'RESPONSABLE', "
+            "'DIRECTION', 'ADMIN', 'VISION', 'JARVIS', 'SYSTEM'"
             ")",
             name="audit_actor_type_valid",
         ),

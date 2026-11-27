@@ -16,8 +16,8 @@ export default function ResponsablePage() {
   };
 
   const handleLogout = () => {
-    authService.logout();
-    setSession(authService.getSession());
+    const visitorSession = authService.logout();
+    setSession(visitorSession);
   };
 
   return (
@@ -29,7 +29,10 @@ export default function ResponsablePage() {
       />
 
       <main className="flex-1">
-        <ResponsableDashboard />
+        <ResponsableDashboard
+          session={session}
+          onOpenAuth={() => setIsAuthOpen(true)}
+        />
       </main>
 
       <AuthModal
@@ -40,4 +43,3 @@ export default function ResponsablePage() {
     </div>
   );
 }
-

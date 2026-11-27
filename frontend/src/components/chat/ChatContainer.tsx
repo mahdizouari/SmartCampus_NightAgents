@@ -12,15 +12,19 @@ import {
   AlertCircle,
   Globe,
   School,
+  UserCheck,
+  Compass,
 } from 'lucide-react';
 import {
   CampusScope,
+  CandidateStatus,
   ChatMessage,
   TrackRecommendation,
   UserSession,
   VoiceNoteMode,
 } from '@/types';
 import { chatService } from '@/services/chat-service';
+import { documentService } from '@/services/document-service';
 import { voiceNoteService } from '@/services/voice-note-service';
 import { ChatMessageItem } from './ChatMessageItem';
 import { VoiceNoteReviewCard } from './VoiceNoteReviewCard';
@@ -29,6 +33,7 @@ interface ChatContainerProps {
   session: UserSession;
   onOpenAuth: () => void;
   onTrackSelected?: (track: TrackRecommendation) => void;
+  onStatusChange?: (status: CandidateStatus) => void;
 }
 
 interface ReviewState {
@@ -43,10 +48,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   session,
   onOpenAuth,
   onTrackSelected,
+  onStatusChange,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => chatService.getLocalHistory());
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [uploadingTranscript, setUploadingTranscript] = useState(false);
 
   // Voice note recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -62,6 +69,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
 
   const endOfChatRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -69,9 +77,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   useEffect(() => {
     endOfChatRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, sending, reviewState, isRecording]);
+  }, [messages, sending, uploadingTranscript, reviewState, isRecording]);
 
-  // Clean up media recorder and stream on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -82,10 +89,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, []);
 
   const quickPrompts = [
-    'Quelles sont les filières en informatique à l’IIT ?',
-    '3aslema! Nheb na3ref kifech nsajel fi l’ISB',
-    'شنوة الشروط باش نقبل في مرحلة تكوين المهندسين؟',
-    'Quels sont les débouchés en Génie Logiciel ?',
+    'Quelles sont les filières d’ingénieur et licences à l’IIT ?',
+    'Je suis parent d’élève : quelles formations pour un Bac Mathématiques ?',
+    '3aslema! Nheb na3ref kifech nsajel fi l’IIT wala l’ISB',
+    'شنوة الشروط باش نتقبل في مرحلة تكوين المهندسين؟',
   ];
 
   const handleSend = async (customText?: string, isVoiceNote = false) => {
@@ -96,13 +103,83 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     setSending(true);
 
     try {
-      await chatService.sendMessage({
+      const botReply = await chatService.sendMessage({
         message: textToSend,
         isVoice: isVoiceNote,
+        campus_scope: campusScope,
       });
       setMessages([...chatService.getLocalHistory()]);
+      if (botReply.candidateStatus) {
+        onStatusChange?.(botReply.candidateStatus);
+      }
     } finally {
       setSending(false);
+    }
+  };
+
+  /**
+   * Opens the native transcript file picker for an authenticated Candidat,
+   * or prompts Give-or-Keep login if the user is still a Visiteur.
+   */
+  const triggerTranscriptUploadPicker = () => {
+    if (session.isAnonymous) {
+      onOpenAuth();
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  /**
+   * Uploads selected transcript file to `/api/v1/documents/extract-and-sync-transcript`
+   * and appends VISION 1.4_Reader's structured extraction card in chat.
+   */
+  const handleTranscriptFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (session.isAnonymous) {
+      onOpenAuth();
+      return;
+    }
+
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const uploadTurn: ChatMessage = {
+      id: `usr-doc-${Date.now()}`,
+      sender: 'user',
+      content: `Dépôt du relevé officiel pour extraction VLM : ${file.name}`,
+      timestamp: timeStr,
+    };
+    chatService.appendMessage(uploadTurn);
+    setMessages([...chatService.getLocalHistory()]);
+    setUploadingTranscript(true);
+    setMicError(null);
+
+    try {
+      const syncResult = await documentService.extractAndSyncTranscript(file);
+      const readerMsg: ChatMessage = {
+        id: `vis-vlm-${Date.now()}`,
+        sender: 'vision',
+        subAgent: '1.4_Reader',
+        actorStage: 'CANDIDAT',
+        candidateStatus: 'AUTHENTICATED',
+        content: syncResult.needs_manual_review
+          ? `J’ai analysé votre relevé (${file.name}) et pré-rempli votre profil Candidat (${syncResult.grades_persisted_count} matières détectées). Certains champs requièrent votre confirmation avant validation finale.`
+          : `Votre relevé officiel (${file.name}) a été extrait et synchronisé avec succès dans votre dossier Candidat (${syncResult.grades_persisted_count} matières enregistrées).`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        transcriptSummary: syncResult,
+      };
+      chatService.appendMessage(readerMsg);
+      setMessages([...chatService.getLocalHistory()]);
+      onStatusChange?.('AUTHENTICATED');
+    } catch (err: unknown) {
+      const errText =
+        err instanceof Error
+          ? err.message
+          : 'Impossible d’extraire le relevé officiel (vérifiez votre connexion Candidat ou le format PDF/PNG/JPG).';
+      setMicError(errText);
+    } finally {
+      setUploadingTranscript(false);
     }
   };
 
@@ -113,7 +190,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     setMicError(null);
 
     if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setMicError("L'enregistrement audio n'est pas supporté sur ce navigateur.");
+      setMicError('L’enregistrement audio n’est pas supporté sur ce navigateur.');
       return;
     }
 
@@ -121,7 +198,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
-      // Determine best audio mime type supported
       let mimeType = '';
       if (typeof MediaRecorder !== 'undefined') {
         if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
@@ -153,8 +229,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           type: recorder.mimeType || 'audio/webm',
         });
         setRecordedAudioBlob(audioBlob);
-
-        // Auto-transcribe using Whisper
         await executeTranscription(audioBlob, voiceMode, campusScope, recordingSeconds);
       };
 
@@ -168,7 +242,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     } catch (err: unknown) {
       if (err instanceof Error) {
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setMicError("Accès au microphone refusé. Veuillez autoriser l'accès au micro dans votre navigateur.");
+          setMicError(
+            'Accès au microphone refusé. Veuillez autoriser l’accès au micro dans votre navigateur.',
+          );
         } else if (err.name === 'NotFoundError') {
           setMicError('Aucun microphone détecté sur cet appareil.');
         } else {
@@ -180,9 +256,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }
   };
 
-  /**
-   * Stops voice recording and stops audio track.
-   */
   const stopVoiceRecording = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     setIsRecording(false);
@@ -195,9 +268,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }
   };
 
-  /**
-   * Cancels active recording without transcribing.
-   */
   const cancelVoiceRecording = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     setIsRecording(false);
@@ -212,9 +282,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }
   };
 
-  /**
-   * Sends audio to backend /api/voice-notes/transcribe (Whisper STT).
-   */
   const executeTranscription = async (
     blob: Blob,
     mode: VoiceNoteMode,
@@ -240,9 +307,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }
   };
 
-  /**
-   * Re-transcribes the same recorded audio Blob with modified language mode or campus scope.
-   */
   const handleRetranscribe = async () => {
     if (!recordedAudioBlob || !reviewState) return;
     await executeTranscription(
@@ -253,22 +317,21 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     );
   };
 
-  /**
-   * Confirms final transcript and routes it to /api/voice-notes/process (LLM pipeline).
-   */
   const handleConfirmAndProcess = async (finalTranscript: string) => {
     if (!reviewState || !finalTranscript.trim()) return;
 
     setIsProcessingVoice(true);
     try {
-      await voiceNoteService.process({
+      const botMsg = await voiceNoteService.process({
         transcript_id: reviewState.transcriptId,
         final_transcript: finalTranscript,
         campus_scope: reviewState.campusScope,
         mode: reviewState.mode,
       });
       setMessages([...chatService.getLocalHistory()]);
-      // Clear review state and audio blob once confirmed and processed
+      if (botMsg.candidateStatus) {
+        onStatusChange?.(botMsg.candidateStatus);
+      }
       setReviewState(null);
       setRecordedAudioBlob(null);
     } catch (err: unknown) {
@@ -285,11 +348,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   };
 
   const handleActionTrigger = (action: string) => {
-    if (action === 'AUTH_REQUIRED' || action === 'CONFIRM_SHORTLIST') {
+    if (action === 'UPLOAD_RELEVE') {
+      triggerTranscriptUploadPicker();
+      return;
+    }
+    if (action === 'AUTH_REQUIRED' || action === 'CONFIRM_SHORTLIST' || action === 'BOOK_SLOT') {
       if (session.isAnonymous) {
         onOpenAuth();
+      } else if (action === 'BOOK_SLOT') {
+        void handleSend('Je souhaite consulter les créneaux d’entretien disponibles.');
       } else {
-        alert('Votre profil est déjà authentifié. Vos préférences ont été enregistrées.');
+        void handleSend('Je confirme ma sélection de filières pour mon dossier Candidat.');
       }
     }
   };
@@ -301,21 +370,49 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     fr: 'Français',
   };
 
+  const senderLabel = session.isAnonymous
+    ? 'Visiteur'
+    : session.role === 'RESPONSABLE'
+    ? `Resp. ${session.school || 'NAU'}`
+    : 'Candidat';
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] max-w-5xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Top Banner */}
-      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between text-xs text-slate-700 font-medium">
+      {/* Hidden file picker for VLM Transcript Extraction */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,application/pdf,image/png,image/jpeg,image/webp"
+        onChange={handleTranscriptFileSelected}
+        className="hidden"
+      />
+
+      {/* Top Banner — Dynamic Visiteur -> Candidat Lifecycle Indicator */}
+      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700 font-medium">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="font-semibold text-slate-800">Superviseur VISION en ligne</span>
-          <span className="text-slate-400">|</span>
-          <span className="text-slate-700">Trilingue (Français · Derja تونسي · Arabizi)</span>
-          <span className="text-slate-400">|</span>
-          <span className="text-slate-600 font-medium">IIT · ISB · ISA</span>
+          <span className="text-slate-400 hidden sm:inline">|</span>
+          <span className="text-slate-700 hidden sm:inline">
+            Français · Derja تونسي · Arabizi
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="hidden sm:inline text-slate-600">Mode : Découverte Anonyme</span>
+          {session.isAnonymous ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-semibold text-[11px]">
+              <Compass className="w-3 h-3 text-amber-600" />
+              Mode : Visiteur (Sans compte · Élève ou Parent)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold text-[11px]">
+              <UserCheck className="w-3 h-3 text-emerald-600" />
+              {session.role === 'RESPONSABLE'
+                ? `Mode : Responsable (${session.school || 'NAU'})`
+                : `Mode : Candidat (Vérifié${session.sessionMerged ? ' · Session fusionnée' : ''})`}
+            </span>
+          )}
           <button
+            type="button"
             onClick={() => {
               setMessages([...chatService.getLocalHistory()]);
             }}
@@ -333,6 +430,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           <ChatMessageItem
             key={m.id}
             message={m}
+            senderLabel={senderLabel}
             onActionTrigger={handleActionTrigger}
             onSelectTrack={onTrackSelected}
           />
@@ -345,10 +443,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           </div>
         )}
 
+        {uploadingTranscript && (
+          <div className="flex items-center gap-2 text-xs text-emerald-700 font-medium bg-emerald-50 p-3 rounded-xl border border-emerald-200 w-fit">
+            <Sparkles className="w-4 h-4 animate-spin text-emerald-600" />
+            <span>
+              Agent 1.4_Reader (VLM) extrait les matières, coefficients et scores de confiance du relevé...
+            </span>
+          </div>
+        )}
+
         <div ref={endOfChatRef} />
       </div>
 
-      {/* Microphone Error Notification */}
+      {/* Error Notification */}
       {micError && (
         <div className="mx-4 mb-2 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs text-red-700">
           <div className="flex items-center gap-2">
@@ -356,6 +463,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             <span>{micError}</span>
           </div>
           <button
+            type="button"
             onClick={() => setMicError(null)}
             className="p-1 hover:bg-red-100 rounded text-red-600"
           >
@@ -372,8 +480,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           mode={reviewState.mode}
           campusScope={reviewState.campusScope}
           recordingSeconds={reviewState.recordingSeconds}
-          onModeChange={(newMode) => setReviewState((prev) => (prev ? { ...prev, mode: newMode } : null))}
-          onCampusScopeChange={(newScope) => setReviewState((prev) => (prev ? { ...prev, campusScope: newScope } : null))}
+          onModeChange={(newMode) =>
+            setReviewState((prev) => (prev ? { ...prev, mode: newMode } : null))
+          }
+          onCampusScopeChange={(newScope) =>
+            setReviewState((prev) => (prev ? { ...prev, campusScope: newScope } : null))
+          }
           onConfirm={handleConfirmAndProcess}
           onRetranscribe={handleRetranscribe}
           onCancel={handleCancelReview}
@@ -385,11 +497,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       {/* Quick Prompts */}
       {!reviewState && (
         <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 flex items-center gap-2 overflow-x-auto scrollbar-none">
-          <span className="text-[11px] font-semibold text-slate-700 uppercase flex-shrink-0">Suggestions :</span>
+          <span className="text-[11px] font-semibold text-slate-700 uppercase flex-shrink-0">
+            Suggestions :
+          </span>
           {quickPrompts.map((prompt, idx) => (
             <button
               key={idx}
-              onClick={() => handleSend(prompt)}
+              type="button"
+              onClick={() => void handleSend(prompt)}
               className="text-xs bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 text-slate-700 px-3 py-1 rounded-full border border-slate-200 transition-colors whitespace-nowrap shadow-2xs"
             >
               {prompt}
@@ -401,7 +516,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       {/* Input Bar */}
       <div className="p-3 sm:p-4 bg-white border-t border-slate-200">
         {isRecording ? (
-          /* Active Recording State with Wave Animation and Language/Campus Controls */
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-red-50 border-2 border-red-200 rounded-xl px-4 py-3 text-red-700 shadow-sm animate-pulse">
             <div className="flex items-center gap-3">
               <span className="w-3.5 h-3.5 rounded-full bg-red-600 animate-ping" />
@@ -415,7 +529,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               </div>
             </div>
 
-            {/* Language & Campus Badges during recording */}
             <div className="flex items-center gap-2 text-xs">
               <span className="px-2 py-0.5 bg-white border border-red-200 text-red-800 rounded-md font-semibold text-[11px]">
                 {modeLabels[voiceMode]}
@@ -444,9 +557,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             </div>
           </div>
         ) : (
-          /* Standard Input Bar with Mic and Language/Campus Selectors */
           <div className="space-y-2">
-            {/* Context Filters Row (Campus Scope + Whisper Language Mode) */}
+            {/* Context Filters Row */}
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 pb-1">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-medium text-slate-600 flex items-center gap-1">
@@ -498,15 +610,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  if (session.isAnonymous) {
-                    onOpenAuth();
-                  } else {
-                    alert('Formulaire de téléversement du relevé officiel activé.');
-                  }
-                }}
-                title="Téléverser relevé officiel"
-                className="p-2.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-slate-200"
+                disabled={uploadingTranscript}
+                onClick={triggerTranscriptUploadPicker}
+                title={
+                  session.isAnonymous
+                    ? 'Devenir Candidat pour téléverser votre relevé officiel (VLM)'
+                    : 'Téléverser votre relevé de notes officiel (PDF, PNG, JPG)'
+                }
+                className="p-2.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors border border-slate-200 disabled:opacity-40"
               >
                 <Paperclip className="w-4 h-4" />
               </button>
@@ -532,17 +643,21 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleSend();
+                    void handleSend();
                   }
                 }}
-                placeholder="Posez votre question (Français, Derja tunisienne, Arabizi)..."
+                placeholder={
+                  session.isAnonymous
+                    ? 'Posez votre question en Visiteur (élève, diplômé ou parent — FR, Derja, Arabizi)...'
+                    : 'Posez votre question ou poursuivez votre préinscription Candidat...'
+                }
                 className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white transition-all placeholder:text-slate-500"
               />
 
               <button
                 type="button"
                 disabled={!input.trim() || sending}
-                onClick={() => handleSend()}
+                onClick={() => void handleSend()}
                 className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl shadow-xs transition-all flex-shrink-0"
               >
                 <Send className="w-4 h-4" />

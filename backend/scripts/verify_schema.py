@@ -80,6 +80,24 @@ async def _verify_catalog_objects() -> None:
         ).fetchone()
         assert hnsw_exists is not None, "HNSW pgvector index missing"
 
+        embedding_col_type = (
+            await conn.execute(
+                text(
+                    "SELECT format_type(a.atttypid, a.atttypmod) "
+                    "FROM pg_attribute a "
+                    "JOIN pg_class c ON c.oid = a.attrelid "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'knowledge' "
+                    "AND c.relname = 'chunks' "
+                    "AND a.attname = 'embedding' "
+                    "AND NOT a.attisdropped"
+                )
+            )
+        ).scalar_one_or_none()
+        assert embedding_col_type == "vector(1024)", (
+            f"Expected knowledge.chunks.embedding to be vector(1024), found {embedding_col_type!r}"
+        )
+
         rls_tables = {
             f"{row[0]}.{row[1]}"
             for row in (
@@ -107,7 +125,7 @@ async def _verify_catalog_objects() -> None:
 
     print(
         f"[OK] Verified 5 schemas, pgvector, {len(actual_tables)} tables, "
-        f"{fk_count} FKs, HNSW, RLS"
+        f"{fk_count} FKs, vector(1024) HNSW, RLS"
     )
 
 

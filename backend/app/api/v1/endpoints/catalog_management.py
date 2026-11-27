@@ -1,4 +1,4 @@
-"""Admin-only catalog management REST endpoints (SA-20)."""
+"""Catalog management REST endpoints for Responsable (school-scoped) & Admin (SA-20)."""
 
 from uuid import UUID
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import CurrentActor, require_catalog_admin
+from app.core.deps import CurrentActor, require_catalog_admin, require_catalog_manager
 from app.schemas.catalog_management import (
     CampaignCreate,
     CampaignResponse,
@@ -73,7 +73,7 @@ async def update_school(
 async def create_program(
     payload: ProgramCreate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> ProgramResponse:
     return await svc.create_program(db, payload, actor)
 
@@ -87,7 +87,7 @@ async def update_program(
     program_id: UUID,
     payload: ProgramUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> ProgramResponse:
     return await svc.update_program(db, program_id, payload, actor)
 
@@ -104,7 +104,7 @@ async def delete_program(
         description="Set true to permanently delete instead of soft-deactivating.",
     ),
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> None:
     await svc.delete_program(db, program_id, actor, hard=hard)
 
@@ -122,7 +122,7 @@ async def create_prerequisite(
     program_id: UUID,
     payload: PrerequisiteCreate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> PrerequisiteResponse:
     return await svc.create_prerequisite(db, program_id, payload, actor)
 
@@ -136,7 +136,7 @@ async def update_prerequisite(
     prerequisite_id: UUID,
     payload: PrerequisiteUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> PrerequisiteResponse:
     return await svc.update_prerequisite(db, prerequisite_id, payload, actor)
 
@@ -149,7 +149,7 @@ async def update_prerequisite(
 async def delete_prerequisite(
     prerequisite_id: UUID,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> None:
     await svc.delete_prerequisite(db, prerequisite_id, actor)
 
@@ -167,7 +167,7 @@ async def create_fee(
     program_id: UUID,
     payload: FeeCreate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> FeeResponse:
     return await svc.create_fee(db, program_id, payload, actor)
 
@@ -181,7 +181,7 @@ async def update_fee(
     fee_id: UUID,
     payload: FeeUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> FeeResponse:
     return await svc.update_fee(db, fee_id, payload, actor)
 
@@ -194,7 +194,7 @@ async def update_fee(
 async def delete_fee(
     fee_id: UUID,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> None:
     await svc.delete_fee(db, fee_id, actor)
 
@@ -211,7 +211,7 @@ async def delete_fee(
 async def create_campaign(
     payload: CampaignCreate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> CampaignResponse:
     return await svc.create_campaign(db, payload, actor)
 
@@ -225,7 +225,7 @@ async def update_campaign(
     campaign_id: UUID,
     payload: CampaignUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> CampaignResponse:
     return await svc.update_campaign(db, campaign_id, payload, actor)
 
@@ -238,7 +238,7 @@ async def update_campaign(
 async def delete_campaign(
     campaign_id: UUID,
     db: AsyncSession = Depends(get_db),
-    actor: CurrentActor = Depends(require_catalog_admin),
+    actor: CurrentActor = Depends(require_catalog_manager),
 ) -> None:
     await svc.delete_campaign(db, campaign_id, actor)
 

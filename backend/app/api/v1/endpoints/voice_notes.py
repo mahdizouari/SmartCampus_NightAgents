@@ -155,4 +155,6 @@ async def post_process_voice_note(
         comprehension_confidence=chat_reply.comprehension_confidence,
         needs_reformulation=chat_reply.needs_reformulation,
         reformulation_prompt=chat_reply.reformulation_prompt,
+        actor_stage=chat_reply.actor_stage,
+        candidate_status=chat_reply.candidate_status,
     )

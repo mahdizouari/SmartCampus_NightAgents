@@ -154,26 +154,30 @@ async def send_otp(payload: OtpSendRequest) -> OtpSendResponse:
     "/otp/verify",
     response_model=AuthTokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Verify a 6-digit OTP code and issue Bearer JWT tokens",
+    summary="Verify a 6-digit OTP code, auto-merge Visiteur session, and issue Bearer JWT tokens",
 )
 async def verify_otp(
     payload: OtpVerifyRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AuthTokenResponse:
-    return await svc.verify_otp(db, payload)
+    return await svc.verify_otp(db, payload, request=request, response=response)
 
 
 @router.post(
     "/oauth/google",
     response_model=AuthTokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Authenticate or register via Google OAuth 2.0 ID token",
+    summary="Authenticate via Google OAuth 2.0 ID token and auto-merge Visiteur session",
 )
 async def google_oauth_login(
     payload: GoogleOAuthRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AuthTokenResponse:
-    return await svc.authenticate_google_oauth(db, payload)
+    return await svc.authenticate_google_oauth(db, payload, request=request, response=response)
 
 
 @router.post(

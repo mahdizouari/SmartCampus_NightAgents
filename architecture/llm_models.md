@@ -1,78 +1,81 @@
-# SmartCampus AI — LLM, VLM & Speech Model Allocation
+# SmartCampus AI — Local Open-Source LLM, VLM, Embedding & Speech Allocation
 
-This document separates the AI model assignments across **VISION**, **JARVIS**, and **VLM** workloads in SmartCampus AI (SC V3 / V4), using verified provider model IDs.
+This document defines the local-first, open-source (`<= 9B` parameter) AI model allocation across **VISION**, **JARVIS**, **VLM (`1.4_Reader`)**, **RAG Embeddings / Reranking (`1.2_Librarian`)**, and **Speech-to-Text (`1.1_Listener`)** in SmartCampus AI.
 
 > **Governance Reminder (Non-Negotiable):**
-> - **HITL Admissions:** No LLM or VLM may admit, waitlist, or reject a candidate (`ADMITTED | WAITLIST | REJECTED`). Final decisions belong exclusively to the human **NAU Responsable**.
-> - **No Hallucinations:** Every academic fact (fees, deadlines, admission thresholds, prerequisites, program titles) must come from retrieved official corpus passages or PostgreSQL catalog data.
-> - **Empirical Selection:** Model choices below are the active Sprint 1 runtime defaults; final comparative metrics across French, Fusha, Tunisian Derja, Arabizi, and out-of-corpus traps are measured via `architecture/evaluation_benchmark.md` (`SA-32` / `SA-33` / `SA-34`).
+> - **HITL Admissions:** No LLM or VLM may admit, waitlist, or reject a candidate (`ADMITTED | WAITLIST | REJECTED`). Final decisions belong exclusively to the human **Responsable** (`NAU Responsable`).
+> - **No Hallucinations:** Every academic fact (fees, deadlines, admission thresholds, prerequisites, program titles) must come from retrieved official corpus passages (`knowledge.chunks`) or PostgreSQL catalog tables maintained by the Responsable.
+> - **Empirical Progression (Colab Pro):** Model promotion follows a strict **`0-Shot -> Few-Shot -> QLoRA`** protocol evaluated on `backend/tests/data/evaluation_dataset.json` (`SA-32` / `SA-33` / `SA-34`). No metrics are fabricated before live runs complete.
 
 ---
 
-## 1. Model Allocation by Component
+## 1. Local Open-Source Model Allocation (`<= 9B` Parameter Budget)
 
-| Component | Agent / Scope | Primary Model | Fallback / Secondary | Provider (`Base URL`) | Why This Model |
+| Component | Agent / Scope | Primary Local Model | Co-Finalist / Fallback | Runtime Provider (`Base URL`) | Why This Model |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **VISION** | Student Orientation & Pre-Inscription (`1.1_Listener` – `1.6_Registrar`) | `openai/gpt-oss-120b` | `openai/gpt-oss-20b` (Groq) or OpenRouter failover | Groq (`https://api.groq.com/openai/v1`) | Strongest multilingual reasoning + tool calling on Groq; stays under `< 4 s` text latency target (`~1.0–2.6 s` in initial smoke test); better Tunisian Derja/Arabizi fidelity and lower acronym hallucination than `qwen/qwen3.8-27b`. |
-| **JARVIS** | Admission Scheduling & Follow-Up (`2.1_Scheduler`, `2.2_Communicator`, `2.3_Watchdog`) | `openai/gpt-oss-20b` | `openai/gpt-oss-120b` (escalation for ambiguous replies) | Groq (`https://api.groq.com/openai/v1`) | Fast, low-cost, high-RPM tool calling for short structured tasks: drafting reminders, classifying candidate replies (`confirm \| cancel \| reschedule \| escalate`), and waitlist outreach. Deterministic slot locks & timers stay in PostgreSQL + Celery. |
-| **VLM** | Transcript (*Relevé de notes*) OCR & JSON Extraction (`Bonus-1` / `Bonus-2`) | `qwen/qwen3.8-27b` | OpenRouter Vision model (backup) | Groq (`https://api.groq.com/openai/v1`) | Multimodal Vision + structured output on the same Groq API key. Extracts Bac section, subjects, grades, and confidence scores into validated JSON for PostgreSQL persistence (`core.declared_grades` / `core.candidate_profile`), flagging low-confidence fields for human/student verification. |
-| **STT** *(Sprint 2)* | Tunisian Voice Notes Transcription (`1.1_Listener`) | `whisper-large-v3` | `whisper-large-v3-turbo` | Groq (`https://api.groq.com/openai/v1`) | High accuracy on Tunisian Arabic / French code-switching; benchmarked against `whisper-large-v3-turbo` for latency vs. WER. |
-| **Guardrails** *(Optional)* | Prompt Injection & Content Moderation | `meta-llama/llama-prompt-guard-2-86m` | `openai/gpt-oss-safeguard-20b` | Groq (`https://api.groq.com/openai/v1`) | Lightweight pre-filter before VISION tool execution. |
+| **VISION** | Visiteur / Candidat Orientation & Pre-Inscription (`1.1_Listener` – `1.6_Registrar`) | `qwen3:8b` (8.2B, Apache 2.0) or fine-tuned `smartcampus-vision-8b` (QLoRA Q4_K_M GGUF) | `qwen2.5:7b-instruct` (7.6B, Apache 2.0); `mock` offline CI fallback | Local Ollama (`http://host.docker.internal:11434/v1`, keyless) | Strong multilingual coverage (French, Fusha, Tunisian Derja, Arabizi) within `<= 9B`; setting `LLM_ENABLE_THINKING=false` automatically injects `/no_think` for both `qwen3*` and `smartcampus-vision*` to meet the interactive `< 4 s` RAG target latency. |
+| **JARVIS** | Asynchronous Scheduling & Follow-Up (`2.1_Scheduler`, `2.2_Messenger`, `2.3_Fixer`) | `qwen2.5:7b-instruct` (7.6B, Apache 2.0) | `qwen3:8b` (`/no_think`) | Local Ollama (`http://host.docker.internal:11434/v1`, keyless) | Fast, structured JSON & template-bounded multilingual drafting for reminders and reply classification (`confirm \| cancel \| reschedule \| escalate`). Deterministic slot locks and timers remain strictly in PostgreSQL + Celery. |
+| **VLM** | Transcript (*Relevé de notes*) OCR & JSON Extraction (`1.4_Reader`) | `qwen2.5vl:7b` (7B, Apache 2.0) | `qwen3-vl:8b`; deterministic local PDF parser fallback (`pypdf` + arithmetic check) | Local Ollama (`VLM_PROVIDER=ollama`, keyless) | Open-weight vision-language extraction returning strict JSON (`bac_section`, `general_average`, `subjects`, per-field confidence `< 0.85` flagging) with zero cloud API key requirement. |
+| **RAG Embeddings** | Official Corpus Vector Indexing (`1.2_Librarian`) | `bge-m3` (`BAAI/bge-m3`, `1024d`, MIT) | Deterministic mock embeddings in offline CI | Local Ollama (`EMBEDDING_PROVIDER=ollama`, keyless) | Multilingual dense embeddings (`1024d`) aligned with `knowledge.chunks.embedding vector(1024)` + HNSW cosine index (`m=16, ef_construction=64`), paired with PostgreSQL `TSVECTOR` full-text search (RRF). |
+| **RAG Reranker** | Cross-Encoder Passage Reranking (`1.2_Librarian`) | `BAAI/bge-reranker-v2-m3` (568M, Apache 2.0) | RRF lexical/dense score fallback | Local Python / HuggingFace runtime | Multilingual cross-encoder reranking before CRAG relevance gating (`RAG_MIN_RELEVANCE_SCORE = 0.25`). |
+| **STT** | Multilingual Voice Notes (`1.1_Listener`) | `whisper-large-v3` (local `faster-whisper` / OpenAI-compatible server) | `openai_compatible` or `mock` fallback (`WHISPER_PROVIDER`) | `WHISPER_PROVIDER=local` (keyless `WHISPER_BASE_URL`) | Transcribes French, Tunisian Derja, and Arabic code-switching voice notes with mandatory user review before invoking VISION. |
 
 ---
 
-## 2. Detailed Role Breakdown
+## 2. Latency Optimization & QLoRA Fine-Tuning Workflow
 
-### A. VISION (Interactive Conversational Supervisor)
-- **Active Model (`SA-36`):** `openai/gpt-oss-120b`
-- **Responsibilities:**
-  - Multilingual student dialogue (**French**, **Fusha**, **Tunisian Derja**, **Arabizi**)
-  - RAG-grounded Q&A with mandatory source citations (`1.2_Librarian`)
-  - Profile gathering, eligibility explanation (`1.3_Gatekeeper`), shortlist recommendations (`1.5_Advisor`), and pre-inscription handoff (`1.6_Registrar`)
-- **Planned Evolution (Sprint 2):** Per `SC V3` scope guard (*fine-tune only one model*), a single QLoRA dialect adapter may be evaluated against this baseline on the 300-utterance Dialect NLU test set.
+### 2.1 Qwen3 `/no_think` Fast-Path Optimization
+- Qwen3-8B generates hidden `<think>...</think>` reasoning blocks by default, which can push interactive RAG turns above the `< 4 s` p95 target on local GPUs.
+- `backend/app/core/config.py` defaults to `LLM_ENABLE_THINKING=False`.
+- Both `backend/app/services/llm_service.py` and `backend/app/services/llm_benchmark_service.py` automatically append `/no_think` to the system message whenever `LLM_PROVIDER=ollama`, `LLM_ENABLE_THINKING=false`, and the active model name matches `qwen3` or `smartcampus-vision`, while stripping any residual `<think>` tags before returning the answer.
+- `ml/colab/Modelfile.smartcampus-vision-8b` embeds `/no_think` in its default `SYSTEM` directive for direct Ollama CLI smoke testing.
 
-### B. JARVIS (Asynchronous Scheduling & Follow-Up Orchestrator)
-- **Recommended Model:** `openai/gpt-oss-20b`
-- **Responsibilities:**
-  - `2.1_Scheduler`: Slot proposal wording (actual `FREE → HELD → BOOKED` transitions remain strictly atomic in PostgreSQL — zero double-booking)
-  - `2.2_Communicator`: Multilingual reminders (`J-2`, `H-3`) and candidate reply intent classification (`confirm`, `cancel`, `reschedule`, `need_human`)
-  - `2.3_Watchdog`: Escalation summaries for RH / NAU Responsable (`ESCALATED` / `DORMANT` transitions)
-- **Why a smaller model than VISION:** JARVIS runs asynchronously inside Celery workers at higher volume with narrower, structured prompts; `openai/gpt-oss-20b` optimizes throughput, token budget, and rate-limit headroom.
-
-### C. VLM (Relevé de Notes Extraction — `Bonus-1` & `Bonus-2`)
-- **Recommended Model:** `qwen/qwen3.8-27b` (Vision)
-- **Responsibilities:**
-  - Parse uploaded Tunisian Baccalaureate / university transcripts (image or PDF page render)
-  - Return a strict JSON schema: `{bac_section, session_year, general_average, subjects: [{name, grade, coefficient, confidence}], needs_manual_review}`
-  - **Validation rule:** Never auto-approve unverified grades; any low-confidence field or unreadable scan triggers manual confirmation in the UI before saving to PostgreSQL (`Bonus-2`).
+### 2.2 Progressive Evaluation & Single-Adapter QLoRA (`ml/colab/`)
+Per the project scope guard (*fine-tune at most one model*), fine-tuning is restricted to the single VISION conversational adapter trained on Google Colab Pro and exported as Q4_K_M GGUF:
+1. **Stage 0 — Zero-Shot Baseline:** Evaluate `qwen3:8b` (`/no_think`), `qwen2.5:7b-instruct`, `gemma2:9b`, and `aya-expanse:8b` on the 70-question multilingual + out-of-corpus trap suite (`SA-32` / `SA-33`).
+2. **Stage 1 — Few-Shot Prompting:** Add grounded French / Derja / Arabizi orientation exemplars and measure uplift on dialect register alignment and hallucination resistance.
+3. **Stage 2 — QLoRA 4-bit Fine-Tuning (`smartcampus-vision-8b`):** Train a single LoRA adapter on Colab Pro (Unsloth / PEFT), export to `unsloth.Q4_K_M.gguf`, package via `ollama create smartcampus-vision-8b -f ml/colab/Modelfile.smartcampus-vision-8b`, and compare head-to-head against the Zero-Shot and Few-Shot baselines.
 
 ---
 
-## 3. Provider Strategy (Groq vs. OpenRouter)
+## 3. Progressive RAG Strategy (`1.2_Librarian`)
 
-- **Groq (`https://api.groq.com/openai/v1`):** Default production/dev runtime for **VISION**, **JARVIS**, **VLM**, and **Whisper STT** under a single OpenAI-compatible API key (ultra-low latency).
-- **OpenRouter (`https://openrouter.ai/api/v1`):** Used for:
-  1. **Multi-model benchmarking (`SA-33` / `SA-34`)** across candidate models on `backend/tests/data/evaluation_dataset.json`.
-  2. **Zero-code-change demo failover** if Groq rate limits are reached (swap `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env`).
+The knowledge retrieval pipeline progresses incrementally and is empirically evaluated at each stage:
+1. **Classic Dense RAG:** `bge-m3` (`1024d`) cosine similarity on `knowledge.chunks` (`pgvector` HNSW).
+2. **Hybrid RAG (Dense + Lexical RRF):** Reciprocal Rank Fusion combining `pgvector` cosine distance and PostgreSQL `TSVECTOR` full-text search across scraped official `iit.tn` pages and curated NAU corpus documents.
+3. **Cross-Encoder Reranking & CRAG Gating:** Re-score top candidates with `BAAI/bge-reranker-v2-m3` and gate generation on `RAG_MIN_RELEVANCE_SCORE` so unsupported queries trigger honest refusal rather than hallucination.
+4. **Structured SQL BDR + Deterministic Business Rules:** Combine RAG passages with live PostgreSQL catalog queries (`core.program`, `core.program_prerequisite`, `core.program_fee`, `core.admission_campaign`) and YAML eligibility rules.
 
 ---
 
-## 4. Environment Configuration Reference (`.env`, never commit real keys)
+## 4. Environment Configuration Reference (`.env`, never commit secrets)
 
 ```env
-# --- Active SA-36 VISION Backend (implemented in backend/app/core/config.py) ---
-LLM_PROVIDER=openai_compatible
-LLM_BASE_URL=https://api.groq.com/openai/v1
+# --- Local Ollama Open-Source <=9B Runtime (backend/app/core/config.py) ---
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://host.docker.internal:11434/v1
 LLM_API_KEY=
-LLM_MODEL=openai/gpt-oss-120b
+LLM_MODEL=qwen3:8b
+LLM_ENABLE_THINKING=false
 LLM_TEMPERATURE=0.2
 LLM_MAX_TOKENS=1024
-LLM_TIMEOUT_SECONDS=30.0
 LLM_FALLBACK_TO_MOCK=true
 
-# --- Planned Separate Overrides (JARVIS / VLM / STT) ---
-# JARVIS_LLM_MODEL=openai/gpt-oss-20b
-# VLM_MODEL=qwen/qwen3.8-27b
-# STT_MODEL=whisper-large-v3
-```
+# --- Local VLM (1.4_Reader) ---
+VLM_PROVIDER=ollama
+VLM_BASE_URL=
+VLM_API_KEY=
+VLM_MODEL=qwen2.5vl:7b
 
+# --- Local Embeddings & Reranker (1.2_Librarian, vector(1024)) ---
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_MODEL=bge-m3
+EMBEDDING_DIMENSION=1024
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+RAG_MIN_RELEVANCE_SCORE=0.25
+
+# --- Whisper STT (1.1_Listener: local keyless | openai_compatible | mock) ---
+WHISPER_PROVIDER=local
+WHISPER_BASE_URL=http://host.docker.internal:8001/v1
+WHISPER_MODEL=whisper-large-v3
+```

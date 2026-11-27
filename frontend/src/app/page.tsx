@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Header } from '@/components/common/Header';
 import { PipelineIndicator } from '@/components/common/PipelineIndicator';
 import { ChatContainer } from '@/components/chat/ChatContainer';
@@ -11,27 +11,46 @@ import { CandidateStatus, TrackRecommendation, UserSession } from '@/types';
 export default function CandidatePage() {
   const [session, setSession] = useState<UserSession>(() => authService.getSession());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [status, setStatus] = useState<CandidateStatus>('ANONYMOUS');
+  const [status, setStatus] = useState<CandidateStatus>(() => {
+    const initial = authService.getSession();
+    return initial.status || (initial.isAnonymous ? 'ANONYMOUS' : 'AUTHENTICATED');
+  });
   const [selectedTrack, setSelectedTrack] = useState<TrackRecommendation | null>(null);
+
+  // Initialize / refresh the 7-day signed Visiteur guest session asynchronously on mount
+  useEffect(() => {
+    let cancelled = false;
+    authService.ensureGuestSession().then((ensured) => {
+      if (!cancelled) {
+        setSession(ensured);
+        if (ensured.status) {
+          setStatus(ensured.status);
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleAuthSuccess = (newSession: UserSession) => {
     setSession(newSession);
-    setStatus('AUTHENTICATED');
+    setStatus(newSession.status || 'AUTHENTICATED');
   };
 
   const handleLogout = () => {
-    authService.logout();
-    setSession(authService.getSession());
+    const visitorSession = authService.logout();
+    setSession(visitorSession);
     setStatus('ANONYMOUS');
   };
 
   const handleTrackSelected = (track: TrackRecommendation) => {
     setSelectedTrack(track);
-    setStatus('ORIENTED');
     if (session.isAnonymous) {
+      setStatus('ORIENTED');
       setIsAuthOpen(true);
     } else {
-      alert(`Filière retenue : ${track.trackName} (${track.school}). Vous pouvez maintenant déposer votre relevé.`);
+      setStatus('AUTHENTICATED');
     }
   };
 
@@ -47,13 +66,18 @@ export default function CandidatePage() {
 
       {selectedTrack && (
         <div className="bg-blue-600 text-white text-xs px-4 py-2 flex items-center justify-between">
-          <div className="max-w-7xl mx-auto flex items-center justify-between w-full">
+          <div className="max-w-7xl mx-auto flex items-center justify-between w-full gap-3">
             <span>
-              Filière présélectionnée : <strong>{selectedTrack.trackName}</strong> ({selectedTrack.school})
+              Filière présélectionnée : <strong>{selectedTrack.trackName}</strong> (
+              {selectedTrack.school}) —{' '}
+              {session.isAnonymous
+                ? 'Connectez-vous en Candidat pour déposer votre relevé officiel.'
+                : 'Utilisez le trombone dans le chat pour téléverser votre relevé officiel (VLM).'}
             </span>
             <button
+              type="button"
               onClick={() => setSelectedTrack(null)}
-              className="text-[11px] underline opacity-90 hover:opacity-100"
+              className="text-[11px] underline opacity-90 hover:opacity-100 flex-shrink-0"
             >
               Modifier
             </button>
@@ -66,6 +90,7 @@ export default function CandidatePage() {
           session={session}
           onOpenAuth={() => setIsAuthOpen(true)}
           onTrackSelected={handleTrackSelected}
+          onStatusChange={setStatus}
         />
       </main>
 

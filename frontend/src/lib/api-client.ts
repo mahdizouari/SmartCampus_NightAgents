@@ -1,14 +1,23 @@
 /**
  * SmartCampus AI — Core API Client Wrapper
- * Handles JWT injection, timeout, JSON/FormData formatting, and unified ApiError handling.
+ * Handles JWT injection, signed Visiteur cookie credentials, X-Session-ID propagation,
+ * timeout, JSON/FormData formatting, and unified ApiError handling.
  */
 
 import { ApiError } from './api-error';
+
+export const GUEST_SESSION_STORAGE_KEY = 'smartcampus_guest_session_id';
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: string | null | undefined): value is string {
+  return Boolean(value && UUID_V4_RE.test(value.trim()));
+}
 
 export interface RequestOptions extends RequestInit {
   timeoutMs?: number;
   token?: string;
   skipAuth?: boolean;
+  sessionId?: string;
 }
 
 export interface ApiResponseEnvelope<T> {
@@ -46,43 +55,102 @@ class ApiClient {
   }
 
   /**
-   * Core request dispatcher with timeout and standardized error trapping.
+   * Retrieves active Visiteur guest session UUID if running client-side.
+   */
+  public getStoredGuestSessionId(): string | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const sid = localStorage.getItem(GUEST_SESSION_STORAGE_KEY);
+      return isValidUuid(sid) ? sid.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Persists or clears the active Visiteur guest session UUID.
+   */
+  public setStoredGuestSessionId(sessionId: string | null): void {
+    if (typeof window === 'undefined') return;
+    try {
+      if (sessionId && isValidUuid(sessionId)) {
+        localStorage.setItem(GUEST_SESSION_STORAGE_KEY, sessionId.trim());
+      } else {
+        localStorage.removeItem(GUEST_SESSION_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /**
+   * Core request dispatcher with timeout, cookie credentials, and standardized error trapping.
    */
   public async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-    const { timeoutMs = 15000, token, skipAuth = false, headers = {}, ...customConfig } = options;
+    const {
+      timeoutMs = 20000,
+      token,
+      skipAuth = false,
+      sessionId,
+      headers = {},
+      ...customConfig
+    } = options;
 
-    const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    const url = endpoint.startsWith('http')
+      ? endpoint
+      : `${this.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const activeToken = token || (!skipAuth ? this.getStoredToken() : null);
+    const activeGuestSid = sessionId || this.getStoredGuestSessionId();
 
-    const mergedHeaders: HeadersInit = {
-      'Accept': 'application/json',
-      ...headers,
+    const mergedHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      ...(headers as Record<string, string>),
     };
 
     if (activeToken) {
-      (mergedHeaders as Record<string, string>)['Authorization'] = `Bearer ${activeToken}`;
+      mergedHeaders['Authorization'] = `Bearer ${activeToken}`;
+    }
+
+    // Attach X-Session-ID for Visiteur requests and session-merge endpoints
+    if (
+      activeGuestSid &&
+      isValidUuid(activeGuestSid) &&
+      (!activeToken || endpoint.includes('/auth/'))
+    ) {
+      mergedHeaders['X-Session-ID'] = activeGuestSid;
     }
 
     // Default to JSON body if object is passed and not already FormData
-    if (customConfig.body && !(customConfig.body instanceof FormData) && !(customConfig.body instanceof Blob)) {
+    if (
+      customConfig.body &&
+      !(customConfig.body instanceof FormData) &&
+      !(customConfig.body instanceof Blob)
+    ) {
       if (typeof customConfig.body === 'object') {
         customConfig.body = JSON.stringify(customConfig.body);
-        (mergedHeaders as Record<string, string>)['Content-Type'] = 'application/json';
+        mergedHeaders['Content-Type'] = 'application/json';
       }
     }
 
     try {
       const response = await fetch(url, {
         ...customConfig,
+        credentials: customConfig.credentials || 'include',
         headers: mergedHeaders,
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
+
+      // Capture issued/refreshed X-Session-ID from backend guest session endpoints
+      const responseSid = response.headers.get('X-Session-ID');
+      if (!activeToken && isValidUuid(responseSid)) {
+        this.setStoredGuestSessionId(responseSid);
+      }
 
       const contentType = response.headers.get('content-type');
       let data: unknown = null;
@@ -138,15 +206,18 @@ class ApiClient {
   }
 
   /**
-   * Uploads file payload (e.g. relevé de notes) using multipart/form-data.
+   * Uploads file payload (e.g. relevé de notes or RAG corpus brochure) using multipart/form-data.
    */
-  public async upload<T>(endpoint: string, formData: FormData, options?: RequestOptions): Promise<T> {
+  public async upload<T>(
+    endpoint: string,
+    formData: FormData,
+    options?: RequestOptions,
+  ): Promise<T> {
     return this.request<T>(endpoint, {
       ...options,
       method: 'POST',
       body: formData,
       headers: {
-        // Fetch will automatically set correct boundary when multipart/form-data header is omitted
         ...(options?.headers || {}),
       },
     });
@@ -154,4 +225,3 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
-

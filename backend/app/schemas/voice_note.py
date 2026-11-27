@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.session import ActorStage
+
 VoiceNoteMode = Literal["auto", "derja", "ar", "fr"]
 CampusScope = Literal["all", "IIT", "ISB", "ISA"]
 
@@ -96,3 +98,5 @@ class VoiceNoteProcessResponse(BaseModel):
     comprehension_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     needs_reformulation: bool = False
     reformulation_prompt: str | None = None
+    actor_stage: ActorStage = "VISITEUR"
+    candidate_status: str = "ANONYMOUS"

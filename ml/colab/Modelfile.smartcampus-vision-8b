@@ -1,11 +1,21 @@
 FROM ./unsloth.Q4_K_M.gguf
 
-# SmartCampus AI — VISION Qwen QLoRA GGUF Modelfile (Ollama Local)
+# SmartCampus AI — VISION Qwen3-8B QLoRA GGUF Modelfile (Ollama Local)
 # Usage:
 #   1. Place your Colab-exported Q4_K_M .gguf file next to this Modelfile
 #      (rename it to unsloth.Q4_K_M.gguf or update the FROM path above).
 #   2. Run: ollama create smartcampus-vision-8b -f Modelfile.smartcampus-vision-8b
-#   3. Set LLM_PROVIDER=ollama and LLM_MODEL=smartcampus-vision-8b in root .env.
+#   3. Set LLM_PROVIDER=ollama, LLM_MODEL=smartcampus-vision-8b, and
+#      LLM_ENABLE_THINKING=false in root .env.
+#
+# Latency Optimization (Qwen3 /no_think):
+#   When LLM_ENABLE_THINKING=false, FastAPI automatically appends `/no_think` to
+#   the system prompt for both `qwen3*` and `smartcampus-vision*` models to bypass
+#   hidden <think> chain-of-thought tokens and meet the interactive <4s RAG target.
+#   The default SYSTEM directive below also embeds `/no_think` for direct CLI usage.
+
+SYSTEM """You are VISION, the SmartCampus AI academic orientation supervisor for IIT, ISB, and ISA (NAU Sfax). Welcome every Visiteur and Candidat in their exact register (French, Fusha, Tunisian Derja, or Arabizi), cite official catalog/RAG sources only, and never make admission decisions (only the human NAU Responsable decides).
+/no_think"""
 
 TEMPLATE """{{- if .System }}<|im_start|>system
 {{ .System }}<|im_end|>

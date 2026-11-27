@@ -158,12 +158,19 @@ def test_critical_cross_schema_foreign_keys_defined():
 
 
 def test_alembic_revision_chain_is_linear():
-    """Verify Alembic history has a single linear chain ending at 20261116_0002."""
+    """Verify Alembic history has a single linear chain ending at 20261127_0003."""
     script = ScriptDirectory.from_config(_alembic_config())
     heads = script.get_heads()
     revisions = [rev.revision for rev in script.walk_revisions()]
-    assert heads == ["20261116_0002"]
-    assert revisions == ["20261116_0002", "20261116_0001"]
+    assert heads == ["20261127_0003"]
+    assert revisions == ["20261127_0003", "20261116_0002", "20261116_0001"]
+
+
+def test_knowledge_chunks_embedding_dimension_is_1024():
+    """Verify KnowledgeChunk ORM column uses 1024 dimensions matching BAAI/bge-m3."""
+    chunks_table = Base.metadata.tables["knowledge.chunks"]
+    embedding_col = chunks_table.c.embedding
+    assert getattr(embedding_col.type, "dim", None) == 1024
 
 
 def test_alembic_offline_upgrade_and_downgrade_sql():
@@ -178,6 +185,8 @@ def test_alembic_offline_upgrade_and_downgrade_sql():
 
     assert "CREATE TABLE core.alembic_version" in upgrade_sql
     assert "USING hnsw (embedding vector_cosine_ops)" in upgrade_sql
+    assert "ALTER TABLE knowledge.chunks ALTER COLUMN embedding TYPE vector(1024)" in upgrade_sql
+    assert "SET DEFAULT 'bge-m3'" in upgrade_sql
     assert "USING gin (content_tsv)" in upgrade_sql
     assert "uq_account_roles_scope" in upgrade_sql
     assert "ALTER TABLE core.candidate ENABLE ROW LEVEL SECURITY;" in upgrade_sql
@@ -187,9 +196,10 @@ def test_alembic_offline_upgrade_and_downgrade_sql():
 
     down_buf = io.StringIO()
     with contextlib.redirect_stdout(down_buf):
-        command.downgrade(_alembic_config(), "20261116_0002:base", sql=True)
+        command.downgrade(_alembic_config(), "20261127_0003:base", sql=True)
     downgrade_sql = down_buf.getvalue()
 
+    assert "ALTER TABLE knowledge.chunks ALTER COLUMN embedding TYPE vector(1536)" in downgrade_sql
     for table_key in _all_expected_tables():
         assert f"DROP TABLE {table_key}" in downgrade_sql
     assert "DROP TYPE IF EXISTS core.human_decision" in downgrade_sql

@@ -69,10 +69,10 @@ from app.services import file_storage_service as storage_svc
 
 router = APIRouter()
 
-# Existing SA-49 write RBAC preserved for backward compatibility
+# Post-review write RBAC: Responsable (school-scoped) & Admin only (Direction write retired)
 RequireDocumentAdmin = Annotated[
     CurrentActor,
-    Depends(require_roles("admin", "responsable", "direction")),
+    Depends(require_roles("admin", "responsable")),
 ]
 
 # Strict SA-56 write RBAC for version mutations, rollback, and deletion (rbac_matrix.md & SA-14 §7)

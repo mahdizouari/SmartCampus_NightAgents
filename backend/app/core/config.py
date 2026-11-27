@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     RAG_MIN_RELEVANCE_SCORE: float = 0.25
 
     # Speech-to-Text / Whisper Audio Transcription (Bonus-3: Voice Notes)
+    WHISPER_PROVIDER: str = "openai_compatible"  # openai_compatible | local | mock
     OPENAI_API_KEY: str = ""
     STT_API_KEY: str = ""
     WHISPER_API_KEY: str = ""

@@ -125,10 +125,11 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation d'ingénieurs concepteurs de solutions logicielles avancées, "
-            "architectures microservices, DevOps et systèmes décisionnels (BI)."
+            "Parcours GLID du diplôme d'ingénieur en Génie Informatique accrédité "
+            "ASIIN (label Euro-Inf) : conception et développement logiciel, "
+            "architecture applicative, gestion des données et informatique décisionnelle."
         ),
-        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+        "source_document": "https://iit.tn/filieres-ingenieur/genie-informatique-2/",
     },
     {
         "code": "IIT-ING-ARSI",
@@ -139,10 +140,11 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Spécialité dédiée à la cyber-sécurité, aux infrastructures cloud, "
-            "à la sécurisation des réseaux d'entreprise et à l'administration système."
+            "Parcours ARSI du diplôme d'ingénieur en Génie Informatique accrédité "
+            "ASIIN (label Euro-Inf) : ingénierie des réseaux, administration des "
+            "systèmes, infrastructures Cloud et cybersécurité."
         ),
-        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+        "source_document": "https://iit.tn/filieres-ingenieur/genie-informatique-2/",
     },
     {
         "code": "IIT-ING-DSIA",
@@ -153,10 +155,11 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Formation d'excellence en apprentissage automatique (Machine Learning), "
-            "Deep Learning, traitement du langage naturel (NLP) et Big Data."
+            "Parcours SDIA / DSIA du diplôme d'ingénieur en Génie Informatique "
+            "accrédité ASIIN (label Euro-Inf) : science des données, apprentissage "
+            "automatique (Machine Learning), Deep Learning et systèmes intelligents."
         ),
-        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+        "source_document": "https://iit.tn/filieres-ingenieur/genie-informatique-2/",
     },
     # ── IIT : Autres Filières d'Ingénierie ────────────────────────────────────
     {
@@ -171,7 +174,7 @@ PROGRAMS = [
             "Formation en conception mécanique assistée par ordinateur (CAO), "
             "mécatronique, robotique industrielle et fabrication avancée."
         ),
-        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+        "source_document": "https://iit.tn/filieres-ingenieur/genie-mecanique-2/",
     },
     {
         "code": "IIT-ING-INDUS",
@@ -182,10 +185,11 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Optimisation des processus industriels, logistique, chaîne "
-            "d'approvisionnement (Supply Chain), lean manufacturing et industrie 4.0."
+            "Formation d'ingénieurs accréditée EUR-ACE (ASIIN) en optimisation "
+            "des processus industriels, logistique, Supply Chain, lean manufacturing "
+            "et industrie 4.0."
         ),
-        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+        "source_document": "https://iit.tn/filieres-ingenieur/genie-industriel-2/",
     },
     {
         "code": "IIT-ING-ENER",
@@ -199,7 +203,7 @@ PROGRAMS = [
             "Efficacité énergétique, énergies renouvelables (solaire, éolien), "
             "systèmes thermiques, transition écologique et bilans carbone."
         ),
-        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+        "source_document": "https://iit.tn/formation/",
     },
     {
         "code": "IIT-ING-CIVIL",
@@ -213,7 +217,7 @@ PROGRAMS = [
             "Calcul des structures béton armé et métallique, géotechnique, "
             "conduite de chantiers de BTP, modélisation BIM et infrastructures."
         ),
-        "source_document": "TODO(corpus): IIT_catalogue_ingenieur_2026.pdf",
+        "source_document": "https://iit.tn/filieres-ingenieur/genie-civil/",
     },
     # ── IIT : Cycle Préparatoire & Licence ────────────────────────────────────
     {
@@ -225,10 +229,10 @@ PROGRAMS = [
         "duration_years": 2,
         "study_modes": ["PRESENTIEL"],
         "description": (
-            "Deux années intensives en mathématiques, physique appliquée et "
-            "algorithmique préparant à l'intégration directe en cycle ingénieur IIT."
+            "Deux années intensives en mathématiques, physique, chimie, STA et "
+            "informatique préparant à l'intégration aux écoles d'ingénieurs IIT."
         ),
-        "source_document": "TODO(corpus): IIT_brochure_prepa_2026.pdf",
+        "source_document": "https://iit.tn/prepa/",
     },
     {
         "code": "IIT-LIC-INFO",
@@ -239,10 +243,10 @@ PROGRAMS = [
         "duration_years": 3,
         "study_modes": ["PRESENTIEL", "DISTANCIEL"],
         "description": (
-            "Formation fondamentale en développement logiciel, bases de données, "
-            "systèmes d'exploitation, réseaux et applications web/mobiles."
+            "Formation fondamentale en génie logiciel et systèmes intelligents, "
+            "bases de données, réseaux, développement web/mobile et IA."
         ),
-        "source_document": "TODO(corpus): IIT_brochure_licence_2026.pdf",
+        "source_document": "https://iit.tn/genie-logiciel-systemes-intelligents/",
     },
     # ── ISB : Management, Finance & Marketing ────────────────────────────────
     {
@@ -534,7 +538,8 @@ async def seed_program_fees(
                      :payment_schedule, :effective_from, :source_document)
                 ON CONFLICT (program_id, academic_year, effective_from) DO UPDATE
                 SET tuition_amount = EXCLUDED.tuition_amount,
-                    payment_schedule = EXCLUDED.payment_schedule
+                    payment_schedule = EXCLUDED.payment_schedule,
+                    source_document = EXCLUDED.source_document
                 """
             ),
             {
@@ -612,6 +617,11 @@ async def seed_program_prerequisites(
                 "required_diploma": diploma,
             },
         )
+        prereq_source = (
+            "https://iit.tn/test/procedure-et-frais-dinscription/"
+            if prog_code.startswith("IIT-")
+            else "TODO(corpus): grille_admission_NAU_2026.pdf"
+        )
         if not existing.fetchone():
             await session.execute(
                 text(
@@ -629,7 +639,25 @@ async def seed_program_prerequisites(
                     "entry_track": track,
                     "required_diploma": diploma,
                     "min_average": min_avg,
-                    "source_document": "TODO(corpus): grille_admission_NAU_2026.pdf",
+                    "source_document": prereq_source,
+                },
+            )
+        else:
+            await session.execute(
+                text(
+                    """
+                    UPDATE core.program_prerequisite
+                    SET source_document = :source_document
+                    WHERE program_id = :program_id
+                      AND entry_track = :entry_track
+                      AND required_diploma = :required_diploma
+                    """
+                ),
+                {
+                    "program_id": prog_id,
+                    "entry_track": track,
+                    "required_diploma": diploma,
+                    "source_document": prereq_source,
                 },
             )
 
@@ -649,7 +677,7 @@ async def seed_admission_campaigns(session: AsyncSession) -> None:
             "phase_name": "Campagne Principale Admissions IIT 2026-2027",
             "opens_at": now - timedelta(days=10),
             "closes_at": now + timedelta(days=120),
-            "source_document": "TODO(corpus): calendrier_admission_IIT_2026.pdf",
+            "source_document": "https://iit.tn/test/inscription/",
         },
         {
             "school_code": "isb",

@@ -398,10 +398,11 @@ async def call_candidate_llm_api(
         headers["Authorization"] = f"Bearer {effective_key}"
 
     outgoing_messages = [dict(m) for m in messages]
+    model_lower = model_id.lower()
     if (
         not settings.LLM_ENABLE_THINKING
         and is_ollama
-        and "qwen3" in model_id.lower()
+        and any(tag in model_lower for tag in ("qwen3", "smartcampus-vision"))
         and outgoing_messages
         and outgoing_messages[0].get("role") == "system"
         and "/no_think" not in outgoing_messages[0].get("content", "")
