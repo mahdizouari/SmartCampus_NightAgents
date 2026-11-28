@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.session import ActorStage
+
 OtpChannel = Literal["email", "sms"]
 ConsentPurpose = Literal["ORIENTATION_PROFILE", "DOCUMENT_OCR", "ADMISSION_FOLLOWUP"]
 
@@ -93,6 +95,7 @@ class AuthUserSummary(BaseModel):
     full_name: str
     fullName: str
     role: str
+    actor_stage: ActorStage = "CANDIDATE"
     school_scope: str | None = None
     school: str | None = None
     candidate_id: UUID | None = None
@@ -108,6 +111,9 @@ class AuthTokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "Bearer"
     expires_in: int
+    actor_stage: ActorStage = "CANDIDATE"
+    session_merged: bool = False
+    turns_merged: int = 0
     user: AuthUserSummary
 
 

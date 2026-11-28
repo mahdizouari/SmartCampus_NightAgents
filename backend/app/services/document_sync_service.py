@@ -84,8 +84,8 @@ TRACKED_METADATA_FIELDS: tuple[str, ...] = (
     "status",
 )
 
-# TODO(open-question U5): Baseline 1536d compatible with SA-14/SA-17; adjust after benchmark.
-DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+# Aligned with BAAI/bge-m3 (1024d) local open-source embedding standard (Alembic 20261127_0003).
+DEFAULT_EMBEDDING_MODEL = "bge-m3"
 DEFAULT_CHUNK_SIZE = 512
 DEFAULT_CHUNK_OVERLAP = 64
 DEFAULT_MAX_RETRIES = 3
@@ -98,9 +98,27 @@ _ACTOR_TYPE_BY_ROLE: dict[str, str] = {
     "direction": "DIRECTION",
     "rh": "RH",
     "student": "STUDENT",
+    "candidate": "CANDIDATE",
+    "candidat": "CANDIDATE",
+    "visitor": "VISITOR",
+    "visiteur": "VISITOR",
+    "guest": "VISITOR",
 }
 _VALID_AUDIT_ACTOR_TYPES: frozenset[str] = frozenset(
-    {"STUDENT", "RH", "RESPONSABLE", "DIRECTION", "ADMIN", "VISION", "JARVIS", "SYSTEM"}
+    {
+        "VISITOR",
+        "CANDIDATE",
+        "VISITEUR",
+        "CANDIDAT",
+        "STUDENT",
+        "RH",
+        "RESPONSABLE",
+        "DIRECTION",
+        "ADMIN",
+        "VISION",
+        "JARVIS",
+        "SYSTEM",
+    }
 )
 
 

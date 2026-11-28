@@ -401,7 +401,7 @@ def test_list_and_filter_documents(test_client):
 
 def test_update_and_publish_document(test_client):
     client, mock_db = test_client
-    admin_token = make_test_jwt(role="direction")
+    admin_token = make_test_jwt(role="responsable")
     doc_id = uuid.uuid4()
     doc = CorpusDocument(
         id=doc_id,

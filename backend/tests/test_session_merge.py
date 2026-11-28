@@ -259,7 +259,7 @@ def test_merge_session_successful_transfer_profile_and_history(
         a for a in fake_merge_db.audit_logs if a.action == "GUEST_SESSION_MERGED"
     ]
     assert len(audit_entries) == 1
-    assert audit_entries[0].actor_type == "STUDENT"
+    assert audit_entries[0].actor_type == "CANDIDATE"
     assert audit_entries[0].entity_id == sid
 
 

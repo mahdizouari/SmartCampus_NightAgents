@@ -32,7 +32,7 @@ async def get_chat_llm_health() -> LlmHealthResponse:
     "/message",
     response_model=ChatMessageResponse,
     status_code=status.HTTP_200_OK,
-    summary="Send a student message to VISION / LLM backend (French, Derja, Arabizi)",
+    summary="Send a visitor/candidate message to VISION / LLM backend (French, Derja, Arabizi)",
 )
 async def post_chat_message(
     payload: ChatMessageRequest,
@@ -81,10 +81,10 @@ async def post_chat_message(
 @router.get(
     "/evaluate-dialect",
     status_code=status.HTTP_200_OK,
-    summary="Run SA-34 multilingual & Arabizi comprehension benchmark (admin/direction only)",
+    summary="Run SA-34 multilingual & Arabizi benchmark (responsable/admin/direction)",
 )
 async def get_dialect_evaluation_benchmark(
-    _actor: CurrentActor = Depends(require_roles("admin", "direction")),
+    _actor: CurrentActor = Depends(require_roles("admin", "direction", "responsable")),
 ) -> dict[str, Any]:
     report = await asyncio.to_thread(evaluate_pipeline)
     return report.to_dict()

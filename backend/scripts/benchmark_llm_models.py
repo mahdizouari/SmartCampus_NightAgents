@@ -2,11 +2,11 @@
 
 Usage:
     cd backend
-    # Run benchmark report (Pending live run if LLM_API_KEY is not set):
+    # Run against local keyless Ollama (default LLM_PROVIDER=ollama):
     python scripts/benchmark_llm_models.py
 
-    # Run live evaluation with explicit API key:
-    python scripts/benchmark_llm_models.py --api-key gsk_your_key_here --limit 10
+    # Run a quick smoke slice against a custom local/OpenAI-compatible endpoint:
+    python scripts/benchmark_llm_models.py --base-url http://localhost:11434/v1 --limit 10
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ async def main_async() -> int:
         "--api-key",
         type=str,
         default=None,
-        help="Optional LLM API key (Groq / OpenRouter) for live execution.",
+        help="Optional API key for an OpenAI-compatible endpoint (not required for local Ollama).",
     )
     parser.add_argument(
         "--base-url",
@@ -59,14 +59,20 @@ async def main_async() -> int:
     )
     args = parser.parse_args()
 
+    provider = settings.LLM_PROVIDER.lower().strip()
     effective_key = args.api_key or settings.LLM_API_KEY
+    effective_base = args.base_url or settings.LLM_BASE_URL
 
     print("=" * 115)
-    print("  SmartCampus AI — SA-33 Live Benchmark & Sélection des Modèles LLM")
+    print("  SmartCampus AI — SA-33 Live Benchmark & Selection des Modeles LLM (<= 9B)")
     print("  Dataset de test : SA-32 (backend/tests/data/evaluation_dataset.json — 70 questions)")
     print("  Grille officielle : architecture/evaluation_benchmark.md (100 points)")
-    status_str = "OUI (Live API activée)" if effective_key else "NON (Mode En attente)"
-    print(f"  Clé API configurée : {status_str}")
+    if provider == "ollama":
+        print(f"  Provider: ollama (local keyless) — {effective_base}")
+    elif effective_key:
+        print(f"  Provider: {provider} (API key configured) — {effective_base}")
+    else:
+        print(f"  Provider: {provider} (Pending live Ollama/Colab run — no API key)")
     print("=" * 115)
 
     report = await run_full_benchmark(

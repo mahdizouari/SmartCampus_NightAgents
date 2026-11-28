@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { normalizeRoleToActorStage } from '@/services/auth-service';
 import {
   CampusScope,
   ChatMessage,
@@ -11,8 +12,8 @@ import { chatService } from '@/services/chat-service';
 
 class VoiceNoteService {
   /**
-   * Step 1: Transcribe recorded audio with OpenAI Whisper.
-   * Does NOT invoke LLM; returns editable transcript for student review.
+   * Step 1: Transcribe recorded audio with Whisper STT.
+   * Does NOT invoke LLM; returns editable transcript for Visitor/Candidate review.
    */
   public async transcribe(
     audioBlob: Blob,
@@ -32,12 +33,15 @@ class VoiceNoteService {
     formData.append('campus_scope', campusScope);
 
     try {
-      return await apiClient.upload<VoiceNoteTranscribeResponse>('/voice-notes/transcribe', formData);
+      return await apiClient.upload<VoiceNoteTranscribeResponse>(
+        '/voice-notes/transcribe',
+        formData,
+      );
     } catch {
-      // Graceful fallback for offline frontend dev / testing
       const fallbackTranscripts: Record<VoiceNoteMode, string> = {
-        derja: "عسلامة، نحب نسجل في مرحلة تكوين المهندسين في IIT وفما برشا اختصاصات كيفاش نختار وبقداش التسجيل؟",
-        ar: "مرحبا، أود الاستفسار عن شروط القبول والتسجيل في ماجستير إدارة الأعمال في ISB ومشاريع التخرج PFE.",
+        derja:
+          'عسلامة، نحب نسجل في مرحلة تكوين المهندسين في IIT وفما برشا اختصاصات كيفاش نختار وبقداش التسجيل؟',
+        ar: 'مرحبا، أود الاستفسار عن شروط القبول والتسجيل في ماجستير إدارة الأعمال في ISB ومشاريع التخرج PFE.',
         fr: "Bonjour, je souhaite me renseigner sur les filières d'ingénierie à l'IIT et les modalités d'admission.",
         auto: "3aslema! Nheb na3ref kifech nsajel fi l'IIT w l'ISB w chnowa les filières d'ingénierie w architecture disponibles.",
       };
@@ -52,9 +56,10 @@ class VoiceNoteService {
   }
 
   /**
-   * Step 2: Route user-confirmed/corrected transcript to VISION agent / LLM pipeline.
+   * Step 2: Route confirmed transcript to VISION supervisor pipeline.
    */
   public async process(payload: VoiceNoteProcessRequest): Promise<ChatMessage> {
+    const activeGuestSid = payload.session_id || apiClient.getStoredGuestSessionId() || undefined;
     const userMsg: ChatMessage = {
       id: `usr-${Date.now()}`,
       sender: 'user',
@@ -62,27 +67,34 @@ class VoiceNoteService {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isVoice: true,
     };
-    chatService.getLocalHistory().push(userMsg);
+    chatService.appendMessage(userMsg);
 
     try {
-      const res = await apiClient.post<VoiceNoteProcessResponse>('/voice-notes/process', payload);
+      const res = await apiClient.post<VoiceNoteProcessResponse>('/voice-notes/process', {
+        ...payload,
+        session_id: activeGuestSid,
+      });
       const botMsg: ChatMessage = {
         id: `vis-${Date.now()}`,
         sender: 'vision',
-        subAgent: res.subAgent,
-        content: res.reply,
+        subAgent: res.subAgent || res.sub_agent,
+        content: res.reply || res.reply_text || '',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        detected_language: res.detected_language,
         detectedDialect: res.detectedDialect,
         recommendations: res.recommendations,
         citations: res.citations,
         actionPrompt: res.actionPrompt,
+        actorStage: res.actor_stage
+          ? normalizeRoleToActorStage(res.actor_stage, false)
+          : undefined,
+        candidateStatus: res.candidate_status,
       };
-      chatService.getLocalHistory().push(botMsg);
+      chatService.appendMessage(botMsg);
       return botMsg;
     } catch {
-      // Graceful fallback for offline frontend dev
       const botMsg = chatService.generateFallbackResponse(payload.final_transcript);
-      chatService.getLocalHistory().push(botMsg);
+      chatService.appendMessage(botMsg);
       return botMsg;
     }
   }

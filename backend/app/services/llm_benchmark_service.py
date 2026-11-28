@@ -3,12 +3,12 @@
 Benchmarks candidate LLM models against the official SA-32 70-question multilingual dataset
 (French, Fusha, Tunisian Derja, Arabizi, and out-of-corpus traps) using real live API calls.
 
-Strict anti-hallucination compliance (SC V3 §10):
+Strict anti-hallucination compliance:
   - Zero fabricated or simulated scores/latencies.
-  - When LLM_API_KEY is configured, sends asynchronous /chat/completions requests to the
-    provider (Groq / OpenRouter) parameterizing each candidate model ID.
-  - When LLM_API_KEY is not configured, models are transparently marked as
-    'Pending live run (requires LLM_API_KEY)' rather than producing fake metrics.
+  - When LLM_PROVIDER=ollama (local keyless) or LLM_API_KEY is configured, sends asynchronous
+    /chat/completions requests parameterizing each candidate <=9B model ID.
+  - When no live provider is configured, models are transparently marked as
+    'PENDING_LIVE_RUN' rather than producing fake metrics.
   - Unit tests use explicit AsyncMock / unittest.mock to test evaluation & scoring logic.
 """
 
@@ -359,7 +359,7 @@ def select_stratified_items(
 
 
 def _parse_retry_after_seconds(resp: httpx.Response, attempt: int) -> float:
-    """Compute backoff seconds from Retry-After header or Groq error body."""
+    """Compute backoff seconds from Retry-After header or provider rate-limit error body."""
     header_val = resp.headers.get("retry-after")
     if header_val:
         try:
@@ -398,10 +398,11 @@ async def call_candidate_llm_api(
         headers["Authorization"] = f"Bearer {effective_key}"
 
     outgoing_messages = [dict(m) for m in messages]
+    model_lower = model_id.lower()
     if (
         not settings.LLM_ENABLE_THINKING
         and is_ollama
-        and "qwen3" in model_id.lower()
+        and any(tag in model_lower for tag in ("qwen3", "smartcampus-vision"))
         and outgoing_messages
         and outgoing_messages[0].get("role") == "system"
         and "/no_think" not in outgoing_messages[0].get("content", "")
@@ -655,14 +656,17 @@ def generate_markdown_comparison_table(models: list[ModelBenchmarkSummary]) -> s
 
     for m in models:
         role_short = m.selection_verdict.split("(")[0].strip()
-        if "VISION" in m.selection_verdict:
-            verdict_badge = "**Retenu (VISION)**"
-        elif "JARVIS" in m.selection_verdict:
-            verdict_badge = "**Retenu (JARVIS)**"
-        elif "VLM" in m.selection_verdict:
-            verdict_badge = "**Retenu (VLM)**"
+        verdict_upper = m.selection_verdict.upper()
+        if "JARVIS" in verdict_upper and "VISION" in verdict_upper:
+            verdict_badge = "**Selected Co-Finalist (JARVIS / VISION)**"
+        elif "PRIMARY" in verdict_upper or "VISION" in verdict_upper:
+            verdict_badge = "**Selected Primary (VISION)**"
+        elif "JARVIS" in verdict_upper:
+            verdict_badge = "**Selected (JARVIS)**"
+        elif "VLM" in verdict_upper:
+            verdict_badge = "**Selected (VLM)**"
         else:
-            verdict_badge = "Écarté / Secondaire"
+            verdict_badge = "Benchmark Alternative"
 
         if m.status == "COMPLETED" and m.overall_score_100 is not None:
             score_str = f"**{m.overall_score_100:.1f}**"
@@ -677,17 +681,18 @@ def generate_markdown_comparison_table(models: list[ModelBenchmarkSummary]) -> s
             tr_str = f"{m.trap_score_100:.1f}" if m.trap_score_100 is not None else "-"
             p50_s = f"{m.latency_p50_ms / 1000.0:.2f} s" if m.latency_p50_ms is not None else "-"
             p95_s = f"{m.latency_p95_ms / 1000.0:.2f} s" if m.latency_p95_ms is not None else "-"
-            status_badge = "✅ Mesuré"
+            status_badge = "Measured"
         else:
-            status_badge = "⏳ En attente API key"
-            score_str = "En attente"
+            status_badge = (
+                "Failed" if m.status == "FAILED" else "Pending live Ollama/Colab run"
+            )
+            score_str = "Pending"
             fr_str = "-"
             ar_str = "-"
             tn_str = "-"
             ab_str = "-"
             tr_str = "-"
-            target_lat = getattr(m, "target_latency_p50_s", 2.0)
-            p50_s = f"Cible < {target_lat:.1f} s"
+            p50_s = "-"
             p95_s = "-"
 
         cost_s = f"${m.cost_per_1k_queries_usd:.4f}"

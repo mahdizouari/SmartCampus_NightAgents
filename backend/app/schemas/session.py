@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 GuestLanguage = Literal["FR", "DERJA", "ARABIZI"]
 GuestPipelineStep = Literal["ANONYMOUS", "PROFILING", "ELIGIBLE", "INELIGIBLE", "ORIENTED"]
 GuestSchoolCode = Literal["iit", "isb", "isa"]
+ActorStage = Literal["VISITOR", "CANDIDATE", "RESPONSABLE"]
 
 
 class MessageTurn(BaseModel):
@@ -74,6 +75,7 @@ class GuestSessionIssuedResponse(BaseModel):
 
     session_id: UUID
     status: Literal["ANONYMOUS"] = "ANONYMOUS"
+    actor_stage: ActorStage = "VISITOR"
     expires_at: datetime
     ttl_seconds: int = 604800
     preferred_language: GuestLanguage | None = None
@@ -112,6 +114,7 @@ class SessionMergeResponse(BaseModel):
     candidate_id: UUID
     account_id: UUID
     anonymous_session_id: UUID
+    actor_stage: ActorStage = "CANDIDATE"
     turns_merged: int
     declared_profile_synced: bool
     current_status: str

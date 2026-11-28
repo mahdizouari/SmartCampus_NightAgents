@@ -26,8 +26,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
-# TODO(open-question U5): Baseline 1536d compatible with SA-14; adjust if embedding model changes.
-DEFAULT_EMBEDDING_DIMENSION = 1536
+# Aligned with BAAI/bge-m3 (1024d) local open-source embedding standard (Alembic 20261127_0003).
+DEFAULT_EMBEDDING_DIMENSION = 1024
 
 
 class CorpusDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -186,7 +186,7 @@ class DocumentSyncJob(UUIDPrimaryKeyMixin, Base):
     embedding_model: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
-        server_default=text("'text-embedding-3-small'"),
+        server_default=text("'bge-m3'"),
     )
     chunk_size: Mapped[int] = mapped_column(
         Integer,

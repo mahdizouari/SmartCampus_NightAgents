@@ -1,7 +1,8 @@
-"""OpenAI Whisper speech-to-text integration service for SmartCampus voice notes.
+"""Whisper speech-to-text integration service for SmartCampus voice notes.
 
-Supports trilingual student orientation covering IIT, ISB, and ISA in Tunisian Derja,
-Modern Standard Arabic (Fusha), and French with code-switching and domain terminology.
+Defaults to local keyless Whisper STT (`WHISPER_PROVIDER=local`) or any OpenAI-compatible
+`/audio/transcriptions` endpoint. Supports trilingual orientation covering IIT, ISB, and ISA
+in Tunisian Derja, Modern Standard Arabic (Fusha), and French with domain terminology.
 """
 
 import logging
@@ -19,7 +20,7 @@ from app.schemas.voice_note import (
 
 logger = logging.getLogger(__name__)
 
-# Max allowed audio size: 25 MB (OpenAI Whisper limit)
+# Max allowed audio size: 25 MB (Whisper STT limit)
 MAX_AUDIO_SIZE_BYTES = 25 * 1024 * 1024
 
 ALLOWED_AUDIO_EXTENSIONS = {"webm", "mp4", "m4a", "mp3", "wav", "ogg"}
@@ -67,7 +68,7 @@ WHISPER_PROMPTS: dict[VoiceNoteMode, str] = {
     ),
 }
 
-# Mock transcripts when OPENAI_API_KEY is not configured (offline / testing fallback)
+# Mock transcripts when WHISPER_PROVIDER=mock or external API key is unset (offline/test fallback)
 MOCK_VOICE_TRANSCRIPTS: dict[VoiceNoteMode, str] = {
     "derja": (
         "عسلامة، نحب نسجل في مرحلة تكوين المهندسين في IIT وفما برشا اختصاصات "
@@ -169,10 +170,14 @@ async def transcribe_audio(
     transcript_id = f"vn-{uuid4()}"
     prompt, language = build_whisper_prompt(mode, campus_scope)
 
+    provider = settings.WHISPER_PROVIDER.lower().strip()
     api_key = settings.effective_whisper_api_key
-    if not api_key:
+    use_mock = provider == "mock" or (provider != "local" and not api_key)
+    if use_mock:
         logger.warning(
-            "No STT/Whisper/LLM key set. Using mock transcript for mode='%s'.",
+            "Whisper STT running in mock mode (provider='%s', key_set=%s) for mode='%s'.",
+            provider,
+            bool(api_key),
             mode,
         )
         mock_text = MOCK_VOICE_TRANSCRIPTS.get(mode, MOCK_VOICE_TRANSCRIPTS["auto"])
@@ -187,7 +192,7 @@ async def transcribe_audio(
             audio_filename=file.filename,
         )
 
-    # Prepare multipart request to Whisper STT API
+    # Prepare multipart request to Whisper STT API (keyless when WHISPER_PROVIDER=local)
     mime_type = file.content_type or "audio/webm"
     filename = file.filename or "audio.webm"
     form_data: dict[str, str] = {
@@ -199,7 +204,9 @@ async def transcribe_audio(
         form_data["language"] = language
 
     whisper_url = f"{settings.effective_whisper_base_url}/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     try:
         async with httpx.AsyncClient(timeout=settings.WHISPER_TIMEOUT_SECONDS) as client:
@@ -240,10 +247,10 @@ async def transcribe_audio(
         data = resp.json()
         transcript = str(data.get("text", "")).strip()
     except Exception as exc:
-        logger.error("Failed to parse OpenAI Whisper response: %s", exc)
+        logger.error("Failed to parse Whisper STT response: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Réponse invalide reçue de l'API OpenAI Whisper.",
+            detail="Réponse invalide reçue du service de transcription Whisper.",
         ) from exc
 
     if not transcript:

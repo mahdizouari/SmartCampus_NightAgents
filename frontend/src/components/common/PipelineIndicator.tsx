@@ -39,26 +39,26 @@ export const PipelineIndicator: React.FC<PipelineIndicatorProps> = ({ currentSta
   const phases = [
     {
       num: 1,
-      title: '① Découvrir',
-      desc: 'Dialogue & Orientation (Sans compte)',
+      title: '1. Visiteur · Découvrir',
+      desc: 'Orientation libre sans compte (élève ou parent)',
       icon: Compass,
     },
     {
       num: 2,
-      title: '② Candidater',
-      desc: 'Connexion, Relevé & QCM',
+      title: '2. Candidat · Préinscription',
+      desc: 'Connexion OTP, Relevé VLM & QCM',
       icon: FileText,
     },
     {
       num: 3,
-      title: '③ Suivi JARVIS',
-      desc: 'Créneau & Rappels automatiques',
+      title: '3. Suivi JARVIS',
+      desc: 'Créneau d’entretien & rappels auto',
       icon: CalendarCheck,
     },
     {
       num: 4,
-      title: '④ Décision Humaine',
-      desc: 'Entretien & Validation Resp. NAU',
+      title: '4. Décision Responsable',
+      desc: 'Entretien & validation humaine signée',
       icon: CheckCircle2,
     },
   ];
@@ -108,4 +108,3 @@ export const PipelineIndicator: React.FC<PipelineIndicatorProps> = ({ currentSta
     </div>
   );
 };
-

@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 import secrets
 import time
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,8 @@ from app.core.deps import (
     create_access_token,
     create_refresh_token,
     decode_hs256_jwt,
+    is_candidate_role,
+    resolve_actor_stage,
 )
 from app.models.users import (
     Account,
@@ -43,6 +46,8 @@ from app.schemas.auth import (
     RefreshTokenRequest,
 )
 
+logger = logging.getLogger(__name__)
+
 _MAX_OTP_ATTEMPTS = 5
 _OTP_COOLDOWN_SECONDS = 60
 
@@ -60,7 +65,12 @@ class _OtpChallenge:
 _OTP_STORE: dict[str, _OtpChallenge] = {}
 
 _ACTOR_TYPE_BY_ROLE: dict[str, str] = {
+    "guest": "VISITOR",
+    "visitor": "VISITOR",
+    "visiteur": "VISITOR",
     "student": "STUDENT",
+    "candidate": "CANDIDATE",
+    "candidat": "CANDIDATE",
     "rh": "RH",
     "responsable": "RESPONSABLE",
     "direction": "DIRECTION",
@@ -163,7 +173,7 @@ async def _resolve_account_role_and_candidate(
         school_scope = acc_role.school_scope
 
     candidate: Candidate | None = None
-    if role_code == "student":
+    if is_candidate_role(role_code):
         cand_res = await db.execute(
             select(Candidate).where(Candidate.account_id == account.id)
         )
@@ -200,10 +210,14 @@ def _build_token_response(
     role_code: str,
     school_scope: str | None,
     candidate: Candidate | None,
+    *,
+    session_merged: bool = False,
+    turns_merged: int = 0,
 ) -> AuthTokenResponse:
     cand_id = str(candidate.id) if candidate else None
     cand_status = candidate.status if candidate else "AUTHENTICATED"
     expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    actor_stage = resolve_actor_stage(role_code, is_authenticated=True)
 
     access_token = create_access_token(
         account_id=str(account.id),
@@ -223,12 +237,16 @@ def _build_token_response(
         refresh_token=refresh_token,
         token_type="Bearer",
         expires_in=expires_in,
+        actor_stage=actor_stage,
+        session_merged=session_merged,
+        turns_merged=turns_merged,
         user=AuthUserSummary(
             id=account.id,
             email=account.email,
             full_name=account.full_name,
             fullName=account.full_name,
             role=role_code,
+            actor_stage=actor_stage,
             school_scope=school_scope,
             school=school_scope.upper() if school_scope else None,
             candidate_id=candidate.id if candidate else None,
@@ -236,6 +254,67 @@ def _build_token_response(
             isAnonymous=False,
         ),
     )
+
+
+async def _attempt_auto_guest_session_merge(
+    db: AsyncSession,
+    *,
+    account: Account,
+    role_code: str,
+    school_scope: str | None,
+    candidate: Candidate | None,
+    anonymous_session_id: UUID | None,
+    consent_merge: bool,
+    request: Request | None = None,
+    response: Response | None = None,
+) -> tuple[bool, int]:
+    """Automatically merge an active Visitor session (payload, signed cookie, or X-Session-ID).
+
+    Never fails authentication when no active guest session exists or when a stale cookie
+    cannot be merged; logs a warning for observability instead of failing silently.
+    """
+    if not consent_merge or candidate is None:
+        return False, 0
+
+    has_cookie = (
+        request is not None
+        and bool(request.cookies.get(settings.GUEST_SESSION_COOKIE_NAME))
+    )
+    has_header = request is not None and bool(request.headers.get("x-session-id"))
+    if anonymous_session_id is None and not has_cookie and not has_header:
+        return False, 0
+
+    try:
+        from app.schemas.session import SessionMergeRequest
+        from app.services.guest_session_service import merge_guest_session_to_candidate
+
+        merge_actor = CurrentActor(
+            account_id=str(account.id),
+            role=role_code,
+            school_scope=school_scope,
+            candidate_id=str(candidate.id),
+            email=account.email,
+        )
+        merge_result = await merge_guest_session_to_candidate(
+            db,
+            actor=merge_actor,
+            payload=SessionMergeRequest(
+                anonymous_session_id=anonymous_session_id,
+                consent_explicit=consent_merge,
+            ),
+            request=request,
+            response=response,
+        )
+        if merge_result.current_status:
+            candidate.status = merge_result.current_status
+        return True, merge_result.turns_merged
+    except Exception as exc:
+        logger.warning(
+            "Visitor -> Candidate automatic guest session merge skipped for account %s: %s",
+            account.id,
+            exc,
+        )
+        return False, 0
 
 
 async def _find_or_create_account(
@@ -280,7 +359,13 @@ async def _find_or_create_account(
     return account
 
 
-async def verify_otp(db: AsyncSession, payload: OtpVerifyRequest) -> AuthTokenResponse:
+async def verify_otp(
+    db: AsyncSession,
+    payload: OtpVerifyRequest,
+    *,
+    request: Request | None = None,
+    response: Response | None = None,
+) -> AuthTokenResponse:
     """Verify the 6-digit OTP, provision/fetch account & candidate, and issue JWT tokens."""
     destination = payload.destination or ""
     key = f"{payload.channel}:{destination}"
@@ -337,30 +422,26 @@ async def verify_otp(db: AsyncSession, payload: OtpVerifyRequest) -> AuthTokenRe
     )
     await db.commit()
 
-    if payload.anonymous_session_id is not None:
-        try:
-            from app.schemas.session import SessionMergeRequest
-            from app.services.guest_session_service import merge_guest_session_to_candidate
+    session_merged, turns_merged = await _attempt_auto_guest_session_merge(
+        db,
+        account=account,
+        role_code=role_code,
+        school_scope=school_scope,
+        candidate=candidate,
+        anonymous_session_id=payload.anonymous_session_id,
+        consent_merge=payload.consent_merge,
+        request=request,
+        response=response,
+    )
 
-            merge_actor = CurrentActor(
-                account_id=str(account.id),
-                role=role_code,
-                school_scope=school_scope,
-                candidate_id=str(candidate.id) if candidate else None,
-                email=account.email,
-            )
-            await merge_guest_session_to_candidate(
-                db,
-                actor=merge_actor,
-                payload=SessionMergeRequest(
-                    anonymous_session_id=payload.anonymous_session_id,
-                    consent_explicit=payload.consent_merge,
-                ),
-            )
-        except Exception:
-            pass
-
-    return _build_token_response(account, role_code, school_scope, candidate)
+    return _build_token_response(
+        account,
+        role_code,
+        school_scope,
+        candidate,
+        session_merged=session_merged,
+        turns_merged=turns_merged,
+    )
 
 
 async def verify_google_id_token(id_token: str) -> dict[str, Any]:
@@ -402,6 +483,9 @@ async def verify_google_id_token(id_token: str) -> dict[str, Any]:
 async def authenticate_google_oauth(
     db: AsyncSession,
     payload: GoogleOAuthRequest,
+    *,
+    request: Request | None = None,
+    response: Response | None = None,
 ) -> AuthTokenResponse:
     """Verify Google OAuth ID token, provision/fetch account & candidate, and issue JWTs."""
     claims = await verify_google_id_token(payload.id_token)
@@ -431,30 +515,26 @@ async def authenticate_google_oauth(
     )
     await db.commit()
 
-    if payload.anonymous_session_id is not None:
-        try:
-            from app.schemas.session import SessionMergeRequest
-            from app.services.guest_session_service import merge_guest_session_to_candidate
+    session_merged, turns_merged = await _attempt_auto_guest_session_merge(
+        db,
+        account=account,
+        role_code=role_code,
+        school_scope=school_scope,
+        candidate=candidate,
+        anonymous_session_id=payload.anonymous_session_id,
+        consent_merge=payload.consent_merge,
+        request=request,
+        response=response,
+    )
 
-            merge_actor = CurrentActor(
-                account_id=str(account.id),
-                role=role_code,
-                school_scope=school_scope,
-                candidate_id=str(candidate.id) if candidate else None,
-                email=account.email,
-            )
-            await merge_guest_session_to_candidate(
-                db,
-                actor=merge_actor,
-                payload=SessionMergeRequest(
-                    anonymous_session_id=payload.anonymous_session_id,
-                    consent_explicit=payload.consent_merge,
-                ),
-            )
-        except Exception:
-            pass
-
-    return _build_token_response(account, role_code, school_scope, candidate)
+    return _build_token_response(
+        account,
+        role_code,
+        school_scope,
+        candidate,
+        session_merged=session_merged,
+        turns_merged=turns_merged,
+    )
 
 
 async def refresh_access_token(
@@ -511,6 +591,7 @@ async def get_current_user_summary(
         full_name=account.full_name,
         fullName=account.full_name,
         role=role_code,
+        actor_stage=resolve_actor_stage(role_code, is_authenticated=True),
         school_scope=school_scope,
         school=school_scope.upper() if school_scope else None,
         candidate_id=candidate.id if candidate else None,
@@ -573,7 +654,7 @@ async def record_consent(
 
     db.add(
         AuditLog(
-            actor_type="STUDENT",
+            actor_type=_ACTOR_TYPE_BY_ROLE.get(actor.role.lower(), "STUDENT"),
             actor_id=str(account.id),
             action="auth.consent.granted",
             entity_type="consent",

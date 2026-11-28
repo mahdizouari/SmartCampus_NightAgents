@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,10 +15,50 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.schemas.session import GuestSessionIssuedResponse
+from app.schemas.session import ActorStage, GuestSessionIssuedResponse
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 _DEFAULT_INSECURE_SECRET = "change_me_in_production_use_a_long_random_string"
+
+CANDIDATE_ROLE_ALIASES: frozenset[str] = frozenset({"student", "candidate", "candidat"})
+VISITOR_ROLE_ALIASES: frozenset[str] = frozenset({"guest", "visitor", "visiteur"})
+STAFF_ROLE_ALIASES: frozenset[str] = frozenset({"responsable", "admin", "rh", "direction"})
+
+
+def normalize_role_alias(role: str | None) -> str:
+    """Normalize role aliases (candidate/candidat <-> student, visitor/visiteur <-> guest)."""
+    cleaned = (role or "").strip().lower()
+    if cleaned in CANDIDATE_ROLE_ALIASES:
+        return "student"
+    if not cleaned or cleaned in VISITOR_ROLE_ALIASES:
+        return "guest"
+    return cleaned
+
+
+def is_candidate_role(role: str | None) -> bool:
+    """Return True when the role represents an authenticated candidate/student."""
+    return (role or "").strip().lower() in CANDIDATE_ROLE_ALIASES
+
+
+def resolve_actor_stage(role: str | None, *, is_authenticated: bool = True) -> ActorStage:
+    """Resolve the simplified actor stage: VISITOR -> CANDIDATE or RESPONSABLE."""
+    if not is_authenticated:
+        return "VISITOR"
+    cleaned = (role or "").strip().lower()
+    if not cleaned or cleaned in VISITOR_ROLE_ALIASES:
+        return "VISITOR"
+    if cleaned in CANDIDATE_ROLE_ALIASES:
+        return "CANDIDATE"
+    return "RESPONSABLE"
+
+
+def _expand_role_aliases(roles: Iterable[str]) -> set[str]:
+    expanded = {r.strip().lower() for r in roles if r and r.strip()}
+    if expanded & CANDIDATE_ROLE_ALIASES:
+        expanded |= CANDIDATE_ROLE_ALIASES
+    if expanded & VISITOR_ROLE_ALIASES:
+        expanded |= VISITOR_ROLE_ALIASES
+    return expanded
 
 
 @dataclass(frozen=True)
@@ -30,6 +70,11 @@ class CurrentActor:
     school_scope: str | None = None
     candidate_id: str | None = None
     email: str | None = None
+
+    @property
+    def actor_stage(self) -> ActorStage:
+        """Canonical actor stage (CANDIDATE or RESPONSABLE for authenticated actors)."""
+        return resolve_actor_stage(self.role, is_authenticated=True)
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -198,11 +243,14 @@ async def get_current_actor(
 
 
 def require_roles(*allowed_roles: str) -> Callable[..., Any]:
-    """Build a FastAPI dependency requiring the actor to hold one of allowed_roles."""
-    normalized = {r.lower() for r in allowed_roles}
+    """Build a FastAPI dependency requiring the actor to hold one of allowed_roles.
+
+    Transparently accepts aliases (student/candidate/candidat, guest/visitor/visiteur).
+    """
+    normalized = _expand_role_aliases(allowed_roles)
 
     async def _guard(actor: CurrentActor = Depends(get_current_actor)) -> CurrentActor:
-        if actor.role not in normalized:
+        if actor.role.lower() not in normalized:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions. Required role in: {sorted(normalized)}.",
@@ -215,11 +263,23 @@ def require_roles(*allowed_roles: str) -> Callable[..., Any]:
 async def require_catalog_admin(
     actor: CurrentActor = Depends(get_current_actor),
 ) -> CurrentActor:
-    """Enforce PLATFORM_ADMIN RBAC role for catalog management mutations (SA-5 / SA-20)."""
+    """Enforce PLATFORM_ADMIN RBAC role for top-level school registry mutations (SA-5 / SA-20)."""
     if actor.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PLATFORM_ADMIN privileges are required to modify the academic catalog.",
+        )
+    return actor
+
+
+async def require_catalog_manager(
+    actor: CurrentActor = Depends(get_current_actor),
+) -> CurrentActor:
+    """Allow school-scoped Responsable or Admin to manage catalog sub-resources."""
+    if actor.role not in {"responsable", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Responsable or Admin privileges are required to modify catalog entries.",
         )
     return actor
 

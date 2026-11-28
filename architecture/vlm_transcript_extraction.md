@@ -1,19 +1,19 @@
 # SmartCampus AI — Extraction VLM des Relevés de Notes Tunisiens (Bac & Licence — Bonus-1 / SA-42)
 
-**Tâche :** `SA-42` / `[Bonus-1]` — Extraire les notes et moyennes depuis une image/PDF de relevé du Bac (et relevé universitaire de Licence pour passerelle Bac+3) en JSON via VLM (`Qwen-VL` / `GPT-4o-mini`) (*GitHub Issue #12*)
+**Tâche :** `SA-42` / `[Bonus-1]` — Extraire les notes et moyennes depuis une image/PDF de relevé du Bac (et relevé universitaire de Licence pour passerelle Bac+3) en JSON via VLM open-source local (`qwen2.5vl:7b` sur Ollama sans clé API, co-évalué dans `ml/colab/03_vlm_ocr_whisper_benchmark.ipynb`) (*GitHub Issue #12*)
 **Epic Bonus :** Prétraitement Multimodal & Extraction IA — Story 1 (VLM)
 **Composant VISION :** `1.4_Reader`
-**Handoff aval :** `Bonus-2` (*Connecter l'extraction JSON au profil candidat PostgreSQL*)
+**Handoff aval :** `Bonus-2` (*Connecter l'extraction JSON au profil candidat PostgreSQL — `/api/v1/documents/extract-and-sync-transcript`*)
 
 ---
 
 ## 1. Architecture du Module (`VISION 1.4_Reader`)
 
-Le module d'extraction est exposé via FastAPI (`/api/v1/documents`) et orchestré par `backend/app/services/vlm_transcript_service.py` :
+Le module d'extraction et de synchronisation profil est exposé via FastAPI (`/api/v1/documents`) et orchestré par `backend/app/services/vlm_transcript_service.py` et `backend/app/services/transcript_profile_service.py` :
 
-1. **Contrôle d'accès « Give or Keep » & RBAC :**
-   - `POST /api/v1/documents/extract-bac-transcript` exige un jeton JWT valide (`role` dans `student`, `rh`, `responsable`, `admin`). Les visiteurs anonymes sont rejetés avec `401 Unauthorized`.
-   - `GET /api/v1/documents/vlm/health` expose l'état de configuration du VLM et les formats supportés.
+1. **Contrôle d'accès « Give or Keep » (`Visiteur -> Candidat`) & RBAC anti-IDOR :**
+   - `POST /api/v1/documents/extract-bac-transcript`, `POST /api/v1/documents/extract-and-sync-transcript`, `POST /api/v1/documents/sync-transcript-profile` et `GET /api/v1/documents/my-transcript-profile` exigent un jeton JWT valide (`role` dans `candidate`, `candidat`, `student` — alias canoniques du stade `CANDIDATE` via `is_candidate_role` — ou personnel `rh`, `responsable`, `admin`). Les visiteurs anonymes (`VISITOR`) sont rejetés avec `401 Unauthorized`, et tout candidat (`candidate` / `candidat` / `student`) est strictement restreint à son propre `candidate_id` (protection anti-IDOR).
+   - `GET /api/v1/documents/vlm/health` expose l'état de disponibilité du VLM local Ollama (`VLM_PROVIDER=ollama`, `VLM_MODEL=qwen2.5vl:7b`) et les contraintes de formats supportés.
 2. **Validation binaire par octets magiques & PDF scannés réels :**
    - Vérification stricte de la taille bornée (`<= 10 Mo`, sinon `413`) et des octets magiques (`%PDF-`, PNG, JPEG, WEBP — sinon `415`).
    - Extraction native des **images raster embarquées dans les PDF scannés** (`pypdf` `page.images`) : un vrai scan PDF tunisien sans couche texte (ex. relevé ISIMS Sfax ou Bac scanné) est automatiquement converti en image redimensionnée (`<= 1600px`) encodée en Base64 Data-URI pour le Vision LLM, sans dépendance OS externe (`poppler`/`tesseract`).
@@ -23,7 +23,7 @@ Le module d'extraction est exposé via FastAPI (`/api/v1/documents`) et orchestr
    - **Relevé Universitaire / Licence Passerelle (`RELEVE_UNIVERSITAIRE`, `diploma_stage = "L1".."L3"|"M1"`) :** adapté aux candidats Bac+3 (ex. Université de Sfax — ISIMS Licence Big Data) candidatant en passerelle 1ère année Cycle Ingénieur IIT, avec extraction des Unités d'Enseignement (`Coef`, `Moy`, `Crédits acquis`), `program_title`, `credits_acquired`, `mention` et `jury_decision`.
 4. **Vérification arithmétique & Gouvernance HITL :**
    - Recalcul indépendant de la moyenne pondérée (`compute_tunisian_bac_average`), détection d'écart (`> 0.25` -> `discrepancy_detected = True`, `verification_status = "MISMATCH_RH"`, `needs_manual_review = True`) et marquage de tout champ `< 0.85` dans `low_confidence_fields`.
-   - Zéro hallucination hors-ligne : sans `VLM_API_KEY`, une image ou un PDF scanné sans couche texte renvoie `extraction_source = "image_fallback"`, `subjects = []`, `min_confidence = 0.0` et `needs_manual_review = True`.
+   - Zéro hallucination hors-ligne : l'extraction s'appuie en priorité sur le VLM open-source local sans clé **`qwen2.5vl:7b`** (`VLM_PROVIDER=ollama`, repli `qwen3-vl:8b` et parser PDF déterministe `pypdf`). Lorsque le démon Ollama local n'est pas joignable (ex. exécution CI hors-ligne), une image ou un PDF scanné sans couche texte renvoie de manière déterministe `extraction_source = "image_fallback"`, `subjects = []`, `min_confidence = 0.0` et `needs_manual_review = True`.
 
 ---
 

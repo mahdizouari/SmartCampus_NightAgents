@@ -97,11 +97,12 @@ class Settings(BaseSettings):
     RAG_MIN_RELEVANCE_SCORE: float = 0.25
 
     # Speech-to-Text / Whisper Audio Transcription (Bonus-3: Voice Notes)
+    WHISPER_PROVIDER: str = "openai_compatible"  # openai_compatible | local | mock
     OPENAI_API_KEY: str = ""
     STT_API_KEY: str = ""
     WHISPER_API_KEY: str = ""
     WHISPER_MODEL: str = "whisper-large-v3"
-    WHISPER_BASE_URL: str = ""  # Defaults to LLM_BASE_URL when empty
+    WHISPER_BASE_URL: str = ""  # Defaults to local :8001/v1 or LLM_BASE_URL
     WHISPER_TIMEOUT_SECONDS: float = 60.0
 
     # Binary File & Object Storage Adapter Settings (SA-50)
@@ -155,8 +156,12 @@ class Settings(BaseSettings):
 
     @property
     def effective_whisper_base_url(self) -> str:
-        """Returns the Whisper STT base URL (inherits LLM_BASE_URL if unset)."""
-        return (self.WHISPER_BASE_URL.strip() or self.LLM_BASE_URL.strip()).rstrip("/")
+        """Return Whisper STT base URL (local :8001/v1 when local, else LLM_BASE_URL)."""
+        if self.WHISPER_BASE_URL.strip():
+            return self.WHISPER_BASE_URL.strip().rstrip("/")
+        if self.WHISPER_PROVIDER.strip().lower() == "local":
+            return "http://host.docker.internal:8001/v1"
+        return self.LLM_BASE_URL.strip().rstrip("/")
 
     @property
     def effective_whisper_api_key(self) -> str:

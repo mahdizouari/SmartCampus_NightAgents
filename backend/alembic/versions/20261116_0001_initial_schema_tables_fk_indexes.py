@@ -19,12 +19,14 @@ from app.models.base import (
     SCHOOL_CODES,
     SLOT_STATUS_VALUES,
 )
-from app.models.documents_rag import DEFAULT_EMBEDDING_DIMENSION
 
 revision: str = "20261116_0001"
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# Historical vector dimension for revision 0001; migration 20261127_0003 migrates to 1024 (bge-m3).
+INITIAL_EMBEDDING_DIMENSION = 1536
 
 
 def _ensure_schemas_and_extensions() -> None:
@@ -1263,7 +1265,7 @@ def _create_documents_and_knowledge_tables() -> None:
             sa.Computed("to_tsvector('french', content)", persisted=True),
             nullable=False,
         ),
-        sa.Column("embedding", Vector(DEFAULT_EMBEDDING_DIMENSION), nullable=False),
+        sa.Column("embedding", Vector(INITIAL_EMBEDDING_DIMENSION), nullable=False),
         sa.Column(
             "metadata",
             postgresql.JSONB(),

@@ -25,7 +25,7 @@ router = APIRouter()
     "/vlm/health",
     response_model=VlmHealthResponse,
     status_code=status.HTTP_200_OK,
-    summary="Report configured Vision LLM (Qwen-VL / GPT-4o-mini) readiness and upload constraints",
+    summary="Report local Vision LLM (Ollama qwen2.5vl:7b) readiness and upload constraints",
 )
 async def get_vlm_extraction_health() -> VlmHealthResponse:
     return svc.get_vlm_health()

@@ -5,6 +5,7 @@ import { Header } from '@/components/common/Header';
 import { ResponsableDashboard } from '@/components/responsable/ResponsableDashboard';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { authService } from '@/services/auth-service';
+import { chatService } from '@/services/chat-service';
 import { UserSession } from '@/types';
 
 export default function ResponsablePage() {
@@ -16,8 +17,9 @@ export default function ResponsablePage() {
   };
 
   const handleLogout = () => {
-    authService.logout();
-    setSession(authService.getSession());
+    chatService.resetHistory();
+    const visitorSession = authService.logout();
+    setSession(visitorSession);
   };
 
   return (
@@ -29,7 +31,10 @@ export default function ResponsablePage() {
       />
 
       <main className="flex-1">
-        <ResponsableDashboard />
+        <ResponsableDashboard
+          session={session}
+          onOpenAuth={() => setIsAuthOpen(true)}
+        />
       </main>
 
       <AuthModal
@@ -40,4 +45,3 @@ export default function ResponsablePage() {
     </div>
   );
 }
-

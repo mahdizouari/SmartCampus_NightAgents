@@ -3,7 +3,7 @@
 **Tâche :** `SA-34` — Évaluer la compréhension du dialecte tunisien et de l'Arabizi (*GitHub Issue #11*)
 **Epic :** `SA-30` — Évaluation & Intégration LLM
 **Dépendances validées :** `SA-32` (`backend/tests/data/evaluation_dataset.json`, `architecture/evaluation_benchmark.md`) et `SA-36` (`backend/app/services/llm_service.py`, `architecture/llm_models.md`)
-**Modèle cible configuré (`SA-36`) :** `openai/gpt-oss-120b` via Groq (`https://api.groq.com/openai/v1`) avec repli déterministe sécurisé et orchestration multi-agents **VISION** (`1.1_Listener` à `1.6_Registrar`).
+**Modèle cible configuré (`SA-36`) :** `qwen3:8b` (`/no_think` via `LLM_ENABLE_THINKING=false`) et adaptateur QLoRA `smartcampus-vision-8b` (co-finaliste `qwen2.5:7b-instruct`, évalués face à `gemma2:9b` et `aya-expanse:8b`) via **Ollama local sans clé API** (`http://host.docker.internal:11434/v1`), avec repli déterministe hors-ligne et orchestration multi-agents **VISION** (`1.1_Listener` à `1.6_Registrar`).
 
 ---
 
@@ -23,7 +23,7 @@ Conformément aux critères d'acceptation de `SA-34` et à la grille officielle 
 
 ### Transparence méthodologique (Zéro métrique inventée)
 - **Mode `pipeline` (exécuté et mesuré ci-dessous) :** Évaluation déterministe et reproductible du **routage dialectal, de la classification d'intention et du repli** (`detect_dialect()` -> `classify_intent_and_subagent()` -> `assess_comprehension_confidence()` -> `POST /api/v1/chat/message`), comparant la **baseline `SA-36` (commit `aa3cbb2`)** avant réglage à la **version durcie `SA-34`**. Les pourcentages `100.0 %` ci-dessous mesurent strictement cette **précision de routage déterministe sur les 85 cas du benchmark**, distincte de la note générative sur 100 points du LLM distant.
-- **Mode `live-llm` (implémenté et prêt à exécuter) :** Le script `backend/scripts/evaluate_dialect_arabizi.py --mode live-llm` appelle le modèle distant configuré (`openai/gpt-oss-120b` via Groq ou OpenRouter) et note chaque réponse générative selon la **grille officielle sur 100 points** de `architecture/evaluation_benchmark.md §3` (Alignement linguistique 25 pts avec pénalité stricte `0/25` si Fusha sur Derja/Arabizi, Exactitude factuelle 35 pts, Résistance aux hallucinations 25 pts, HITL & Sécurité 15 pts) + latence `p50`/`p95`. Aucune clé API externe n'étant stockée dans le dépôt, les scores du fournisseur distant ne sont pas estimés ni inventés : ils sont mesurés en direct dès que `LLM_API_KEY` est renseigné dans le fichier `.env` local.
+- **Mode `live-llm` (implémenté et prêt à exécuter sur Ollama local / Colab Pro, `PENDING_LIVE_RUN`) :** Le script `backend/scripts/evaluate_dialect_arabizi.py --mode live-llm` (ainsi que le notebook `ml/colab/01_zero_shot_few_shot_rag_benchmark.ipynb`) interroge les modèles open-source locaux `<= 9B` servis sans clé par Ollama (`qwen3:8b` `/no_think`, `qwen2.5:7b-instruct`, `gemma2:9b`, `aya-expanse:8b` et `smartcampus-vision-8b` QLoRA) et note chaque réponse générative selon la **grille officielle sur 100 points** de `architecture/evaluation_benchmark.md §3` (Alignement linguistique 25 pts avec pénalité stricte `0/25` si Fusha sur Derja/Arabizi, Exactitude factuelle 35 pts, Résistance aux hallucinations 25 pts, HITL & Sécurité 15 pts) + latence `p50`/`p95`. Conformément à la règle anti-hallucination, aucun score génératif n'est inventé avant exécution effective sur GPU Ollama / Colab Pro (`PENDING_LIVE_RUN`).
 
 ---
 
@@ -106,34 +106,34 @@ Pour répondre directement à l'exigence métier de `SA-34`, une politique de re
    - Requête sans ancre métier contenant des démonstratifs vagues (`hedhi`, `hedha`, `heki`, `هكا`), des abréviations Arabizi sans voyelles (`kfh`, `n3ml`, `9dh`, `3slm`), des tokens bruités alphanumériques (détectés génériquement par `_NOISE_GIBBERISH_RE`) ou une entrée dialectale isolée (`<= 2` mots non-salutation sans ancre métier) -> confiance **`0.25` à `0.35` (< seuil `0.45`)** -> **`needs_reformulation = True`**. Les questions courtes valides (ex. *« fama bourse ? »*, *« kifech nabda ? »*) passent normalement au LLM.
 2. **Comportement sécurisé lorsque `needs_reformulation = True` :**
    - **Court-circuit anti-hallucination** : le backend n'interroge pas le LLM à l'aveugle sur une entrée inintelligible ; il renvoie l'intention `CLARIFICATION_REQUIRED` (`sub_agent = "1.1_Listener"`, `model_used = "smartcampus-clarification-fallback-v1"`).
-   - **Message bilingue bienveillant (Derja/Arabizi + Français)** invitant explicitement l'étudiant à **reformuler sa question en français simple**, avec exemples concrets (*« Quelles sont les filières ingénieur à l'IIT ? »*, *« Suis-je éligible avec un Bac Mathématiques ? »*).
+   - **Message bilingue bienveillant (Derja/Arabizi + Français)** invitant explicitement le visiteur ou candidat (`Visiteur -> Candidat`, incluant lycéens, diplômés et parents/proches) à **reformuler sa question en français simple**, avec exemples concrets (*« Quelles sont les filières ingénieur à l'IIT ? »*, *« Suis-je éligible avec un Bac Mathématiques ? »*).
    - **Actions rapides guidées (`suggested_actions`) :** *« Reformuler ma question en français »*, *« Découvrir les formations IIT & ISB »*, *« Vérifier mon éligibilité Bac / Passerelle »*.
 
 ---
 
-## 5. Recommandations pour `Bonus-4` (Normalisateur Arabizi) et les Benchmarks Live Sprint 2
+## 5. Recommandations pour `Bonus-4` (Normalisateur Arabizi) et les Benchmarks Live Locaux (`<= 9B`)
 
 1. **Normalisateur Arabizi (`Bonus-4`) :**
    - Intégrer un dictionnaire de normalisation phonétique tunisien (`3 -> ع`, `5 -> خ`, `7 -> ح`, `9 -> ق`, `2 -> أ/ء`) **uniquement** sur les mots identifiés comme Arabizi (sans altérer les sigles et notes chiffrées comme `Bac+3`, `15.75`, `GLID`, `2026-2027`).
    - Étendre la table des variantes orthographiques observées (`chnoma/chnoua/chnouwa/chnouma`, `kifeh/kifech/kfh`, `n7eb/nheb`, `mte3/mta3`, `na5ou/ne5ou`, `bellehi/blhi/brbi`, `ywalmni/ywalmouni`).
-2. **Exécution Live sur `openai/gpt-oss-120b` (Groq) et comparatif OpenRouter :**
-   - Une fois `LLM_API_KEY` configuré dans le fichier `.env` local (jamais commité), lancer :
+2. **Exécution Live sans clé sur Ollama (`<= 9B`) & Protocole Colab Pro (`0-Shot -> Few-Shot -> QLoRA`) :**
+   - Avec Ollama démarré localement (`LLM_PROVIDER=ollama`, `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_ENABLE_THINKING=false`), lancer :
      ```bash
-     docker compose exec backend python scripts/evaluate_dialect_arabizi.py --mode live-llm --json-out /tmp/sa34_live_results.json
+     docker compose exec -T backend python scripts/evaluate_dialect_arabizi.py --mode live-llm --json-out /tmp/sa34_live_results.json
      ```
-   - Comparer la note sur 100 points (`evaluation_benchmark.md §3`) et la latence `p95` (`< 4 000 ms`) entre `openai/gpt-oss-120b` (Groq) et les candidats OpenRouter.
+   - Comparer sur Google Colab Pro (`ml/colab/01_zero_shot_few_shot_rag_benchmark.ipynb` & `02_qwen_qlora_finetune_gguf_ollama.ipynb`) la note sur 100 points (`evaluation_benchmark.md §3`) et la latence `p95` (`< 4 000 ms` cible) entre `qwen3:8b` (`/no_think`), `qwen2.5:7b-instruct`, `gemma2:9b`, `aya-expanse:8b` et l'adaptateur QLoRA `smartcampus-vision-8b`.
 
 ---
 
 ## 6. Commandes de Reproductibilité (Docker)
 
 ```bash
-# 1. Exécuter le benchmark complet SA-32 (70) + SA-34 (15) = 85 requêtes
-docker compose exec backend python scripts/evaluate_dialect_arabizi.py --mode pipeline
+# 1. Exécuter le benchmark déterministe complet SA-32 (70) + SA-34 (15) = 85 requêtes
+docker compose exec -T backend python scripts/evaluate_dialect_arabizi.py --mode pipeline
 
 # 2. Exécuter le linter Ruff et la suite de tests automatisés SA-34 + SA-36
-docker compose exec backend sh -c "ruff check . && pytest tests/test_dialect_evaluation.py tests/test_llm_chat.py -v"
+docker compose exec -T backend sh -c "ruff check . && pytest tests/test_dialect_evaluation.py tests/test_llm_chat.py -v"
 
-# 3. Exécuter la suite complète backend (124 tests)
-docker compose exec backend pytest -q
+# 3. Exécuter la suite complète hors-ligne du backend
+docker compose exec -T backend pytest -q
 ```

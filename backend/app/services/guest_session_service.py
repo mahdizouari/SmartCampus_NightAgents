@@ -784,7 +784,7 @@ async def merge_guest_session_to_candidate(
     # 6. Audit logging
     db.add(
         AuditLog(
-            actor_type="STUDENT",
+            actor_type="CANDIDATE",
             actor_id=str(actor.account_id),
             action="GUEST_SESSION_MERGED",
             entity_type="GUEST_SESSION",

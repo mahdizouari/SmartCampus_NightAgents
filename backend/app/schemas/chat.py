@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.session import ActorStage
+
 LanguageHint = Literal["auto", "fr", "derja", "arabizi"]
 DetectedDialect = Literal["French", "Tunisian_Derja", "Arabizi"]
 VisionSubAgent = Literal[
@@ -116,6 +118,14 @@ class ChatMessageResponse(BaseModel):
     guardrail_action: str | None = Field(
         default=None,
         description="Action code performed by the guardrail node if triggered (SA-46 / Bonus-5).",
+    )
+    actor_stage: ActorStage = Field(
+        default="VISITOR",
+        description="Canonical actor stage: VISITOR (guest), CANDIDATE (auth), or RESPONSABLE.",
+    )
+    candidate_status: str = Field(
+        default="ANONYMOUS",
+        description="Current candidate lifecycle status (ANONYMOUS..WITHDRAWN).",
     )
 
 

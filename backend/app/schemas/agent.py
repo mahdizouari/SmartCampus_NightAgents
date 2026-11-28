@@ -58,7 +58,18 @@ CandidateStatus = Literal[
     "WITHDRAWN",
 ]
 
-ActorRole = Literal["guest", "student", "rh", "responsable", "direction", "admin"]
+ActorRole = Literal[
+    "guest",
+    "visitor",
+    "visiteur",
+    "student",
+    "candidate",
+    "candidat",
+    "rh",
+    "responsable",
+    "direction",
+    "admin",
+]
 CampusScope = Literal["all", "IIT", "ISB", "ISA"]
 SchoolCodeLower = Literal["iit", "isb", "isa"]
 

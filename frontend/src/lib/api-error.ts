@@ -30,17 +30,22 @@ export class ApiError extends Error {
     let code = `HTTP_${status}`;
     let details: ValidationErrorDetail[] | undefined = undefined;
 
+    let hasExplicitMessage = false;
+
     if (data && typeof data === 'object') {
       const errObj = data as Record<string, unknown>;
-      if (typeof errObj.detail === 'string') {
+      if (typeof errObj.detail === 'string' && errObj.detail.trim()) {
         message = errObj.detail;
+        hasExplicitMessage = true;
       } else if (Array.isArray(errObj.detail)) {
         // FastAPI / Pydantic validation errors array
         message = 'Erreur de validation des données transmises.';
         code = 'VALIDATION_ERROR';
         details = errObj.detail as ValidationErrorDetail[];
-      } else if (typeof errObj.message === 'string') {
+        hasExplicitMessage = true;
+      } else if (typeof errObj.message === 'string' && errObj.message.trim()) {
         message = errObj.message;
+        hasExplicitMessage = true;
       }
 
       if (typeof errObj.code === 'string') {
@@ -49,14 +54,24 @@ export class ApiError extends Error {
     }
 
     if (status === 401) {
-      message = 'Authentification requise pour cette action.';
+      if (!hasExplicitMessage) {
+        message = 'Authentification requise pour cette action.';
+      }
       code = 'UNAUTHORIZED';
     } else if (status === 403) {
-      message = 'Accès non autorisé pour ce profil.';
+      if (!hasExplicitMessage) {
+        message = 'Accès non autorisé pour ce profil.';
+      }
       code = 'FORBIDDEN';
     } else if (status === 404) {
-      message = 'Ressource introuvable.';
+      if (!hasExplicitMessage) {
+        message = 'Ressource introuvable.';
+      }
       code = 'NOT_FOUND';
+    } else if (status === 409) {
+      code = 'CONFLICT';
+    } else if (status === 429) {
+      code = 'RATE_LIMITED';
     } else if (status >= 500) {
       code = 'SERVER_ERROR';
     }

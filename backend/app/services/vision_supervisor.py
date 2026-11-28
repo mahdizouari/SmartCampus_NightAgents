@@ -51,6 +51,7 @@ from langgraph.types import Command, interrupt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.deps import is_candidate_role, resolve_actor_stage
 from app.models.users import CandidateProfile, OutboxEvent
 from app.schemas.agent import (
     FORBIDDEN_AGENT_STATUSES,
@@ -173,7 +174,8 @@ def build_default_subagent_configs() -> dict[VisionSubAgent, SubAgentConfig]:
             component_type="LLM",
             description="Multilingual voice/text NLU, Arabizi normalization, intent detection.",
             role_prompt_addon=(
-                "[SOUS-AGENT ACTIF : 1.1_Listener] Accueille l'étudiant dans son registre exact "
+                "[SOUS-AGENT ACTIF : 1.1_Listener] Accueille le visiteur ou candidat "
+                "(lycéen, étudiant ou parent/proche) dans son registre exact "
                 "(FR / Fusha / Derja / Arabizi), clarifie toute demande ambiguë sans jamais "
                 "deviner, et rappelle la gouvernance HITL ou la règle Give-or-Keep si demandé."
             ),
@@ -182,7 +184,7 @@ def build_default_subagent_configs() -> dict[VisionSubAgent, SubAgentConfig]:
             temperature=0.2,
             max_tokens=512,
             output_constraints=(
-                "Match student dialect/language register",
+                "Match visitor/candidate dialect/language register",
                 "Request French reformulation when comprehension confidence < 0.45",
             ),
         ),
@@ -347,12 +349,12 @@ class DefaultActionGuard:
                 audit_required=False,
             )
 
-        if context.actor_role == "student":
+        if is_candidate_role(context.actor_role):
             if tool.permission_level != "PUBLIC_READ" and context.candidate_id is None:
                 return ActionGuardDecision(
                     allowed=False,
                     reason=(
-                        "Anti-IDOR violation: authenticated student context is missing a "
+                        "Anti-IDOR violation: authenticated candidate context is missing a "
                         "bound candidate_id for a non-public tool."
                     ),
                     audit_required=True,
@@ -365,7 +367,7 @@ class DefaultActionGuard:
                 return ActionGuardDecision(
                     allowed=False,
                     reason=(
-                        "Anti-IDOR violation: students may only access their own "
+                        "Anti-IDOR violation: candidates may only access their own "
                         "candidate dossier."
                     ),
                     audit_required=True,
@@ -1904,6 +1906,14 @@ class VisionSupervisor:
             else "smartcampus-fallback-v1"
         )
 
+        final_candidate_status = final_state.get("candidate_status", initial_status)
+        actor_stage = resolve_actor_stage(
+            final_state.get("actor_role", turn_input.actor_role),
+            is_authenticated=bool(
+                final_state.get("is_authenticated", turn_input.is_authenticated)
+            ),
+        )
+
         response = ChatMessageResponse(
             session_id=resolved_session_id,
             sessionId=resolved_session_id,
@@ -1928,6 +1938,8 @@ class VisionSupervisor:
             history_turn_count=final_state.get("history_turn_count"),
             guardrail_triggered=guardrail_triggered,
             guardrail_action=guardrail_action,
+            actor_stage=actor_stage,
+            candidate_status=final_candidate_status,
         )
 
         tool_call_models = [
@@ -1941,7 +1953,7 @@ class VisionSupervisor:
         return VisionTurnOutput(
             response=response,
             thread_id=resolved_thread_id,
-            candidate_status=final_state.get("candidate_status", initial_status),
+            candidate_status=final_candidate_status,
             case_owner=str(final_state.get("case_owner") or turn_input.case_owner),
             nodes_visited=list(final_state.get("nodes_visited") or []),
             tool_calls=tool_call_models,
