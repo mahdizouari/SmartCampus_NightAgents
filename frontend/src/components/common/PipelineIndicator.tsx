@@ -39,25 +39,25 @@ export const PipelineIndicator: React.FC<PipelineIndicatorProps> = ({ currentSta
   const phases = [
     {
       num: 1,
-      title: '① Visiteur · Découvrir',
+      title: '1. Visiteur · Découvrir',
       desc: 'Orientation libre sans compte (élève ou parent)',
       icon: Compass,
     },
     {
       num: 2,
-      title: '② Candidat · Préinscription',
+      title: '2. Candidat · Préinscription',
       desc: 'Connexion OTP, Relevé VLM & QCM',
       icon: FileText,
     },
     {
       num: 3,
-      title: '③ Suivi JARVIS',
+      title: '3. Suivi JARVIS',
       desc: 'Créneau d’entretien & rappels auto',
       icon: CalendarCheck,
     },
     {
       num: 4,
-      title: '④ Décision Responsable',
+      title: '4. Décision Responsable',
       desc: 'Entretien & validation humaine signée',
       icon: CheckCircle2,
     },

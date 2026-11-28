@@ -4,8 +4,8 @@ Parses uploaded Tunisian Baccalaureate transcript images (PNG/JPEG/WEBP) and PDF
 strictly validated Pydantic JSON with subject grades, official coefficients, recomputed
 weighted average cross-check, per-field confidence scores, and HITL review flags.
 
-Compatible with Groq (qwen/qwen3.8-27b), OpenAI (gpt-4o-mini), and OpenRouter Vision APIs,
-with a genuine pypdf text-layer parser fallback when running offline without API keys.
+Defaults to local keyless Ollama Vision (qwen2.5vl:7b / qwen3-vl:8b via VLM_PROVIDER=ollama),
+with optional OpenAI-compatible VLM endpoints and a pypdf text-layer parser fallback offline.
 """
 
 from __future__ import annotations
@@ -578,7 +578,7 @@ async def _call_vlm_openai_compatible(
     image_data_uri: str | None = None,
     pdf_text: str | None = None,
 ) -> tuple[dict[str, Any], str]:
-    """Call OpenAI-compatible Vision API (Ollama qwen2.5vl:7b, Groq, OpenAI, or OpenRouter)."""
+    """Call OpenAI-compatible Vision API (local Ollama qwen2.5vl:7b or configured VLM endpoint)."""
     url = f"{settings.effective_vlm_base_url}/chat/completions"
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if settings.effective_vlm_api_key:
@@ -915,8 +915,9 @@ async def extract_bac_transcript(
             model_used = "smartcampus-vlm-unconfigured"
             source = "image_fallback"
             warnings = [
-                "Scanned PDF contains raster page image(s) without embedded text and VLM_API_KEY "
-                "is unset. Configure VLM_API_KEY (Groq qwen/qwen3.8-27b or OpenAI gpt-4o-mini)."
+                "Scanned PDF contains raster page image(s) without embedded text and no live VLM "
+                "provider is active (VLM_API_KEY is unset). Configure local keyless Ollama "
+                "(VLM_PROVIDER=ollama, VLM_MODEL=qwen2.5vl:7b) or set VLM_API_KEY."
             ]
     else:
         data_uri, (width, height) = await asyncio.to_thread(
@@ -945,8 +946,9 @@ async def extract_bac_transcript(
             model_used = "smartcampus-image-fallback-v1"
             source = "image_fallback"
             warnings.append(
-                "VLM_API_KEY is not configured in .env; raster image OCR requires a live "
-                "Vision LLM (Groq qwen/qwen3.8-27b or GPT-4o-mini), or upload a digital PDF."
+                "No live VLM provider is active (VLM_API_KEY is unset); raster image OCR requires "
+                "local Ollama Vision (VLM_PROVIDER=ollama, VLM_MODEL=qwen2.5vl:7b, keyless) or an "
+                "OpenAI-compatible VLM_API_KEY, or upload a digital PDF."
             )
         else:
             raise HTTPException(

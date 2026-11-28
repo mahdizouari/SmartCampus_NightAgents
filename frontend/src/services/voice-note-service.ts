@@ -80,6 +80,7 @@ class VoiceNoteService {
         subAgent: res.subAgent || res.sub_agent,
         content: res.reply || res.reply_text || '',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        detected_language: res.detected_language,
         detectedDialect: res.detectedDialect,
         recommendations: res.recommendations,
         citations: res.citations,

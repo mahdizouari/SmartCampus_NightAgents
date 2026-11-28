@@ -5,6 +5,7 @@ import { Header } from '@/components/common/Header';
 import { ResponsableDashboard } from '@/components/responsable/ResponsableDashboard';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { authService } from '@/services/auth-service';
+import { chatService } from '@/services/chat-service';
 import { UserSession } from '@/types';
 
 export default function ResponsablePage() {
@@ -16,6 +17,7 @@ export default function ResponsablePage() {
   };
 
   const handleLogout = () => {
+    chatService.resetHistory();
     const visitorSession = authService.logout();
     setSession(visitorSession);
   };

@@ -37,7 +37,7 @@ Le modèle cible simplifié repose sur **trois stades d'acteurs canoniques (`Act
 * **Exclusivité du rôle `NAU_RESPONSABLE` :** Seul un utilisateur détenant le rôle `NAU_RESPONSABLE` et rattaché à l'école cible (`iit`, `isb` ou `isa`) peut émettre une signature sur l'endpoint `POST /responsable/candidates/{candidate_id}/decision`. Toute tentative externe est bloquée avec un code HTTP `403 Forbidden` et journalisée dans `core.audit`.
 
 ### 2.3 Règle du Propriétaire Unique (« One Owner »)
-* À tout instant, la gestion d'un dossier obéit à la contrainte : `candidate.owner` / `rh_ticket.owner` $\in$ `{JARVIS, RH:<user_id>}`.
+* À tout instant, la gestion d'un dossier obéit à la contrainte : `candidate.owner` / `rh_ticket.owner` dans `{JARVIS, RH:<user_id>}`.
 * Dès qu'un agent `HUMAN_RH` prend en charge un ticket (`PATCH /rh/tickets/{id}/claim`), `owner` passe à `RH:<user_id>`, ce qui **suspend automatiquement et immédiatement l'ensemble des relances programmées par JARVIS** pour ce candidat.
 
 ---
@@ -124,17 +124,17 @@ CREATE POLICY responsable_iit_insert_decision ON iit.decisions
 
 Afin de protéger les ressources d'inférence coûteuses (LLM, Whisper STT, VLM OCR), des plafonds stricts en nombre de requêtes HTTP sont appliqués :
 
-| Profil d'acteur | Quota global API | Quota Chat LLM / STT (speech to text) (`/chat/message`) | Quota Upload VLM (`/documents/*`) |
+| Stade / Profil d'acteur | Quota global API | Quota Chat LLM / STT (`/chat/message`, `/voice-notes/*`) | Quota Upload VLM (`/documents/*`) |
 | :--- | :--- | :--- | :--- |
-| **`ANONYMOUS_GUEST`** | 30 req / min par IP | 15 req / min par session | 0 req / min *(accès interdit avant auth)* |
-| **`AUTHENTICATED_STUDENT`**| 120 req / min par compte | 30 req / min par compte | 5 req / heure par compte |
-| **`HUMAN_RH`** | 300 req / min par compte | N/A (portail de gestion) | 30 req / heure par compte |
-| **`NAU_RESPONSABLE`** | 300 req / min par compte | N/A (portail d'évaluation) | 30 req / heure par compte |
+| **`VISITOR` (`guest` / `visitor` / `visiteur`)** | 30 req / min par IP | 15 req / min par session | 0 req / min *(accès interdit avant auth)* |
+| **`CANDIDATE` (`candidate` / `candidat` / `student`)** | 120 req / min par compte (`is_candidate_role`) | 30 req / min par compte | 5 req / heure par compte |
+| **`RESPONSABLE` (`responsable`, `school_scope`)** | 300 req / min par compte | N/A (portail d'évaluation & gestion BD/RAG) | 30 req / heure par compte |
+| **`HUMAN_RH` (`rh`, support)** | 300 req / min par compte | N/A (support exceptions) | 30 req / heure par compte |
 
 ### 5.2 Plafonds & Règles Métiers Associées (Business Logic)
 Distincts des quotas réseau, ces plafonds sont garantis par le code métier :
-* **Visiteur anonyme :** Aucune réservation de créneau autorisée.
-* **Candidat authentifié :** 1 seul rendez-vous actif et un plafond strict de **2 reports de date maximum** (au 3ᵉ report $\rightarrow$ blocage et escalade `rh_ticket`).
+* **Visiteur sans compte (`VISITOR`) :** Aucune réservation de créneau ni téléversement de relevé autorisé avant authentification.
+* **Candidat authentifié (`CANDIDATE`) :** 1 seul rendez-vous actif et un plafond strict de **2 reports de date maximum** (au 3e report -> blocage et escalade `rh_ticket`).
 * **Responsable / RH :** Pas de restriction sur la publication de créneaux ou le calage manuel de rendez-vous en exception.
 
 ### 5.3 En-têtes de Réponse Rate Limit (IETF Draft)

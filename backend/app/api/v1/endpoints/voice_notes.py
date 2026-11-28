@@ -44,7 +44,8 @@ _optional_bearer = HTTPBearer(auto_error=False)
     summary="Transcribe student voice note into text for review (Whisper STT)",
     description=(
         "Accepts a voice recording (webm, mp4, m4a, mp3, wav, ogg up to 25MB). "
-        "Transcribes it with OpenAI / Groq Whisper using domain context for IIT, ISB, and ISA "
+        "Transcribes it with local Whisper STT (whisper-large-v3, keyless via "
+        "WHISPER_PROVIDER=local) using domain context for IIT, ISB, and ISA "
         "(French, Derja, and Modern Standard Arabic). "
         "Returns the transcript for user review/correction without invoking the LLM."
     ),

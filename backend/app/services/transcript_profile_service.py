@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import CurrentActor
+from app.core.deps import CurrentActor, is_candidate_role
 from app.models.users import (
     AuditLog,
     Candidate,
@@ -52,6 +52,10 @@ _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 _ACTOR_TYPE_BY_ROLE: dict[str, str] = {
     "student": "STUDENT",
+    "candidate": "CANDIDATE",
+    "candidat": "CANDIDATE",
+    "visitor": "VISITOR",
+    "visiteur": "VISITOR",
     "rh": "RH",
     "responsable": "RESPONSABLE",
     "direction": "DIRECTION",
@@ -200,16 +204,16 @@ async def _resolve_target_candidate(
     """Resolve and authorize target Candidate, preventing cross-candidate IDOR for students."""
     actor_cand_uuid = _parse_actor_candidate_uuid(actor.candidate_id)
 
-    if actor.role == "student":
+    if is_candidate_role(actor.role):
         if actor_cand_uuid is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Authenticated student token has no linked candidate profile.",
+                detail="Authenticated candidate token has no linked candidate profile.",
             )
         if requested_candidate_id is not None and requested_candidate_id != actor_cand_uuid:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only sync transcripts into their own candidate profile.",
+                detail="Candidates can only sync or access transcripts for their own profile.",
             )
         target_id = actor_cand_uuid
     else:
@@ -432,7 +436,7 @@ async def sync_transcript_to_profile(
 
     # 4. Append PII-free immutable AuditLog record
     audit = AuditLog(
-        actor_type=_ACTOR_TYPE_BY_ROLE.get(actor.role, "SYSTEM"),
+        actor_type=_ACTOR_TYPE_BY_ROLE.get((actor.role or "").strip().lower(), "SYSTEM"),
         actor_id=str(actor.account_id),
         action="TRANSCRIPT_PROFILE_SYNCED",
         entity_type="candidate_profile",

@@ -146,6 +146,7 @@ export interface ChatMessage {
   timestamp: string;
   isVoice?: boolean;
   audioDurationSeconds?: number;
+  detected_language?: string;
   detectedDialect?: 'French' | 'Tunisian_Derja' | 'Arabizi';
   citations?: SourceCitation[];
   recommendations?: TrackRecommendation[];
@@ -263,6 +264,7 @@ export interface VoiceNoteProcessResponse {
   reply_text?: string;
   subAgent: VisionSubAgentId;
   sub_agent?: VisionSubAgentId;
+  detected_language?: string;
   detectedDialect?: 'French' | 'Tunisian_Derja' | 'Arabizi';
   recommendations?: TrackRecommendation[];
   actionPrompt?: ChatActionPrompt;

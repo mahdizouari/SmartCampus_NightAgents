@@ -429,7 +429,7 @@ def _seed_doc_with_v1(
                 chunk_index=idx,
                 content=f"Synthetic chunk {idx} for v1",
                 token_count=10,
-                embedding=[0.0] * 1536,
+                embedding=[0.0] * 1024,
                 chunk_metadata={"source": code, "version": 1},
                 is_active=True,
             )
@@ -854,7 +854,7 @@ def test_atomic_version_promotion_and_rollback(sync_env):
                 chunk_index=idx,
                 content=f"Synthetic chunk {idx} for v2",
                 token_count=12,
-                embedding=[0.0] * 1536,
+                embedding=[0.0] * 1024,
                 chunk_metadata={"source": doc.code, "version": 2},
                 is_active=False,
             )
@@ -1303,7 +1303,7 @@ def test_post_rollback_index_status_cancellation_and_sync_log(sync_env):
                 chunk_index=idx,
                 content=f"v2 chunk {idx}",
                 token_count=8,
-                embedding=[0.0] * 1536,
+                embedding=[0.0] * 1024,
                 chunk_metadata={},
                 is_active=False,
             )
@@ -1436,7 +1436,7 @@ def test_patch_status_deleted_mime_fallback_and_scope_ordering(sync_env):
             chunk_index=0,
             content="Active chunk before PATCH delete",
             token_count=6,
-            embedding=[0.0] * 1536,
+            embedding=[0.0] * 1024,
             chunk_metadata={},
             is_active=True,
         )

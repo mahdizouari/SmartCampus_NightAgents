@@ -30,6 +30,7 @@ import httpx
 import pytest
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -40,6 +41,7 @@ from app.core.deps import (
     normalize_role_alias,
     resolve_actor_stage,
 )
+from app.core.rate_limit import evaluate_rate_limit
 from app.main import app
 from app.models.catalog import (
     AdmissionCampaign,
@@ -59,7 +61,9 @@ from app.models.users import (
     AccountRole,
     AuditLog,
     Candidate,
+    CandidateDocument,
     CandidateProfile,
+    DeclaredGrade,
     Role,
 )
 from app.schemas.agent import AgentToolSpec, ToolExecutionContext
@@ -808,3 +812,333 @@ def test_bge_m3_1024d_and_actor_constraints_aligned():
     assert "'CANDIDATE'" in audit_checks[0]
     assert "'VISITEUR'" in audit_checks[0]
     assert "'CANDIDAT'" in audit_checks[0]
+
+
+# ---------------------------------------------------------------------------
+# Post-Audit Security, Config & Benchmark Regressions (P0.1 - P0.4)
+# ---------------------------------------------------------------------------
+
+
+class _FakeTranscriptSyncDB:
+    """Minimal in-memory AsyncSession double for transcript anti-IDOR & audit regression tests."""
+
+    def __init__(self) -> None:
+        self.candidates: dict[UUID, Candidate] = {}
+        self.profiles: dict[UUID, CandidateProfile] = {}
+        self.documents: dict[UUID, CandidateDocument] = {}
+        self.grades: dict[UUID, DeclaredGrade] = {}
+        self.audit_logs: list[AuditLog] = []
+
+    async def get(self, model: type[Any], pk: Any) -> Any:
+        if model is Candidate:
+            return self.candidates.get(pk)
+        if model is CandidateProfile:
+            return self.profiles.get(pk)
+        if model is CandidateDocument:
+            return self.documents.get(pk)
+        return None
+
+    def add(self, obj: Any) -> None:
+        now = datetime.now(UTC)
+        if isinstance(obj, Candidate):
+            obj.id = obj.id or uuid4()
+            self.candidates[obj.id] = obj
+        elif isinstance(obj, CandidateProfile):
+            obj.updated_at = obj.updated_at or now
+            self.profiles[obj.candidate_id] = obj
+        elif isinstance(obj, CandidateDocument):
+            obj.id = obj.id or uuid4()
+            obj.uploaded_at = obj.uploaded_at or now
+            self.documents[obj.id] = obj
+        elif isinstance(obj, DeclaredGrade):
+            obj.id = obj.id or uuid4()
+            self.grades[obj.id] = obj
+        elif isinstance(obj, AuditLog):
+            obj.id = obj.id or uuid4()
+            obj.created_at = obj.created_at or now
+            self.audit_logs.append(obj)
+
+    async def delete(self, obj: Any) -> None:
+        if isinstance(obj, DeclaredGrade):
+            self.grades.pop(obj.id, None)
+
+    async def flush(self) -> None:
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+    async def execute(self, stmt: Any) -> _FakeResult:
+        compiled = stmt.compile()
+        params = compiled.params
+        sql_str = str(compiled)
+        if "core.candidate_profile" in sql_str:
+            cid = next((v for k, v in params.items() if "candidate_id" in k), None)
+            item = self.profiles.get(cid)
+            return _FakeResult([item] if item is not None else [])
+        if "core.document" in sql_str:
+            cid = next((v for k, v in params.items() if "candidate_id" in k), None)
+            return _FakeResult([d for d in self.documents.values() if d.candidate_id == cid])
+        if "core.declared_grades" in sql_str:
+            cid = next((v for k, v in params.items() if "candidate_id" in k), None)
+            stage = next((v for k, v in params.items() if "diploma_stage" in k), None)
+            return _FakeResult(
+                [
+                    g
+                    for g in self.grades.values()
+                    if g.candidate_id == cid and (stage is None or g.diploma_stage == stage)
+                ]
+            )
+        if "core.candidate" in sql_str:
+            cid = next((v for k, v in params.items() if "id" in k), None)
+            item = self.candidates.get(cid)
+            return _FakeResult([item] if item is not None else [])
+        return _FakeResult([])
+
+
+def _minimal_bac_extraction_payload() -> dict[str, Any]:
+    return {
+        "document_type": "RELEVE_BAC",
+        "diploma_stage": "BAC",
+        "bac_section": "Mathématiques",
+        "session_year": "2026",
+        "session_type": "Principale",
+        "governorate": "Sfax",
+        "general_average": 14.5,
+        "calculated_average": 14.5,
+        "average_discrepancy": 0.0,
+        "discrepancy_detected": False,
+        "mention": "Bien",
+        "jury_decision": "Admis",
+        "subjects": [
+            {
+                "name": "Mathématiques",
+                "grade": 15.0,
+                "grade_scale": 20.0,
+                "coefficient": 4.0,
+                "is_optional": False,
+                "confidence": 0.96,
+                "needs_confirmation": False,
+            },
+            {
+                "name": "Sciences Physiques",
+                "grade": 14.0,
+                "grade_scale": 20.0,
+                "coefficient": 4.0,
+                "is_optional": False,
+                "confidence": 0.95,
+                "needs_confirmation": False,
+            },
+        ],
+        "field_confidences": {
+            "bac_section": 0.99,
+            "session_year": 0.99,
+            "general_average": 0.98,
+        },
+        "overall_confidence": 0.97,
+        "min_confidence": 0.95,
+        "low_confidence_fields": [],
+        "needs_manual_review": False,
+        "verification_status": "PENDING",
+        "extraction_source": "vlm_live",
+        "model_used": "qwen2.5vl:7b",
+        "file_name": "bac_sfax.jpg",
+        "content_type": "image/jpeg",
+        "file_size_bytes": 102400,
+        "latency_ms": 820,
+        "warnings": [],
+    }
+
+
+@pytest.mark.parametrize("role_alias", ["candidate", "candidat"])
+def test_transcript_profile_anti_idor_and_candidate_audit_for_aliases(role_alias: str):
+    """P0.1: candidate/candidat JWTs cannot read/write another candidate & log actor CANDIDATE."""
+    t_db = _FakeTranscriptSyncDB()
+    own_acc, own_cand = uuid4(), uuid4()
+    other_acc, other_cand = uuid4(), uuid4()
+    t_db.add(
+        Candidate(
+            id=own_cand,
+            account_id=own_acc,
+            candidate_number=f"CAND-{str(own_cand)[:6]}",
+            email="own@nau.tn",
+            status="AUTHENTICATED",
+            owner="JARVIS",
+        )
+    )
+    t_db.add(
+        Candidate(
+            id=other_cand,
+            account_id=other_acc,
+            candidate_number=f"CAND-{str(other_cand)[:6]}",
+            email="other@nau.tn",
+            status="AUTHENTICATED",
+            owner="JARVIS",
+        )
+    )
+
+    async def _override_get_db():
+        yield t_db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        with TestClient(app) as tc:
+            token = create_access_token(
+                account_id=str(own_acc),
+                role=role_alias,
+                candidate_id=str(own_cand),
+                email="own@nau.tn",
+            )
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Cross-candidate sync and read must both be blocked with 403 (anti-IDOR)
+            r_idor_sync = tc.post(
+                "/api/v1/documents/sync-transcript-profile",
+                headers=headers,
+                json={
+                    "extraction": _minimal_bac_extraction_payload(),
+                    "candidate_id": str(other_cand),
+                },
+            )
+            assert r_idor_sync.status_code == 403
+
+            r_idor_read = tc.get(
+                f"/api/v1/documents/my-transcript-profile?candidate_id={other_cand}",
+                headers=headers,
+            )
+            assert r_idor_read.status_code == 403
+            assert other_cand not in t_db.profiles
+            assert len(t_db.audit_logs) == 0
+
+            # Own-profile sync succeeds and records AuditLog.actor_type == "CANDIDATE"
+            r_own_sync = tc.post(
+                "/api/v1/documents/sync-transcript-profile",
+                headers=headers,
+                json={
+                    "extraction": _minimal_bac_extraction_payload(),
+                    "confirmed_by_student": True,
+                },
+            )
+            assert r_own_sync.status_code == 200
+            assert r_own_sync.json()["candidate_id"] == str(own_cand)
+            assert len(t_db.audit_logs) == 1
+            assert t_db.audit_logs[0].action == "TRANSCRIPT_PROFILE_SYNCED"
+            assert t_db.audit_logs[0].actor_type == "CANDIDATE"
+
+            r_own_read = tc.get("/api/v1/documents/my-transcript-profile", headers=headers)
+            assert r_own_read.status_code == 200
+            assert r_own_read.json()["candidate_id"] == str(own_cand)
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role_alias", ["candidate", "candidat"])
+async def test_rate_limit_applies_student_tier_to_candidate_role_aliases(role_alias: str):
+    """P0.2: candidate/candidat callers get RATE_LIMIT_STUDENT_PER_MINUTE, not staff 300/min."""
+    cand_token = create_access_token(
+        account_id=str(uuid4()),
+        role=role_alias,
+        candidate_id=str(uuid4()),
+    )
+    cand_req = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/catalog/programs",
+            "headers": [(b"authorization", f"Bearer {cand_token}".encode("ascii"))],
+            "query_string": b"",
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+    cand_decision = await evaluate_rate_limit(cand_req)
+    assert cand_decision.allowed is True
+    assert cand_decision.limit == settings.RATE_LIMIT_STUDENT_PER_MINUTE
+    assert cand_decision.limit != settings.RATE_LIMIT_STAFF_PER_MINUTE
+
+    resp_token = create_access_token(
+        account_id=str(uuid4()),
+        role="responsable",
+        school_scope="iit",
+    )
+    resp_req = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/catalog/programs",
+            "headers": [(b"authorization", f"Bearer {resp_token}".encode("ascii"))],
+            "query_string": b"",
+            "client": ("127.0.0.1", 12345),
+        }
+    )
+    resp_decision = await evaluate_rate_limit(resp_req)
+    assert resp_decision.limit == settings.RATE_LIMIT_STAFF_PER_MINUTE
+
+
+def test_effective_whisper_base_url_defaults_to_local_8001_when_local_provider(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """P0.3: WHISPER_PROVIDER=local with empty URL targets local :8001/v1, not Ollama :11434."""
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "http://host.docker.internal:11434/v1")
+    monkeypatch.setattr(settings, "WHISPER_PROVIDER", "local")
+    monkeypatch.setattr(settings, "WHISPER_BASE_URL", "")
+    assert settings.effective_whisper_base_url == "http://host.docker.internal:8001/v1"
+
+    monkeypatch.setattr(settings, "WHISPER_BASE_URL", "http://custom-whisper:9000/v1/")
+    assert settings.effective_whisper_base_url == "http://custom-whisper:9000/v1"
+
+    monkeypatch.setattr(settings, "WHISPER_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(settings, "WHISPER_BASE_URL", "")
+    assert settings.effective_whisper_base_url == "http://host.docker.internal:11434/v1"
+
+
+def test_llm_benchmark_markdown_verdict_labels_and_zero_emojis():
+    """P0.4: qwen3:8b vs qwen2.5:7b-instruct verdict labels are distinct and contain zero emojis."""
+    summaries: list[llm_benchmark_service.ModelBenchmarkSummary] = []
+    for idx, profile in enumerate(llm_benchmark_service.CANDIDATE_MODELS):
+        is_completed = idx == 0
+        summaries.append(
+            llm_benchmark_service.ModelBenchmarkSummary(
+                model_id=profile.model_id,
+                display_name=profile.display_name,
+                provider=profile.provider,
+                parameter_size=profile.parameter_size,
+                total_evaluated=70 if is_completed else 0,
+                status="COMPLETED" if is_completed else "PENDING_LIVE_RUN",
+                overall_score_100=91.5 if is_completed else None,
+                french_score_100=94.0 if is_completed else None,
+                fusha_score_100=90.0 if is_completed else None,
+                derja_arabic_score_100=89.0 if is_completed else None,
+                arabizi_score_100=88.0 if is_completed else None,
+                trap_score_100=96.5 if is_completed else None,
+                latency_p50_ms=1450 if is_completed else None,
+                latency_p95_ms=2600 if is_completed else None,
+                latency_mean_ms=1520 if is_completed else None,
+                cost_per_1k_queries_usd=0.0,
+                hitl_violations=0,
+                hallucination_trap_failures=0,
+                selection_verdict=profile.recommended_role,
+            )
+        )
+
+    table = llm_benchmark_service.generate_markdown_comparison_table(summaries)
+    assert "✅" not in table
+    assert "⏳" not in table
+    assert "En attente API key" not in table
+    assert "Cible <" not in table
+
+    rows = {
+        line.split("|")[1].strip(): line
+        for line in table.splitlines()[2:]
+        if line.startswith("|")
+    }
+    qwen3_row = next(v for k, v in rows.items() if "`qwen3:8b`" in k)
+    qwen25_row = next(v for k, v in rows.items() if "`qwen2.5:7b-instruct`" in k)
+    gemma_row = next(v for k, v in rows.items() if "`gemma2:9b`" in k)
+
+    assert "| Measured |" in qwen3_row
+    assert "**Selected Primary (VISION)**" in qwen3_row
+    assert "| Pending live Ollama/Colab run |" in qwen25_row
+    assert "**Selected Co-Finalist (JARVIS / VISION)**" in qwen25_row
+    assert "**Selected Primary (VISION)**" not in qwen25_row
+    assert "Benchmark Alternative" in gemma_row

@@ -6,6 +6,7 @@ import { PipelineIndicator } from '@/components/common/PipelineIndicator';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { authService } from '@/services/auth-service';
+import { chatService } from '@/services/chat-service';
 import { CandidateStatus, TrackRecommendation, UserSession } from '@/types';
 
 export default function CandidatePage() {
@@ -16,6 +17,7 @@ export default function CandidatePage() {
     return initial.status || (initial.isAnonymous ? 'ANONYMOUS' : 'AUTHENTICATED');
   });
   const [selectedTrack, setSelectedTrack] = useState<TrackRecommendation | null>(null);
+  const [chatResetKey, setChatResetKey] = useState(0);
 
   // Initialize / refresh the 7-day signed Visitor guest session asynchronously on mount
   useEffect(() => {
@@ -39,9 +41,12 @@ export default function CandidatePage() {
   };
 
   const handleLogout = () => {
+    chatService.resetHistory();
     const visitorSession = authService.logout();
     setSession(visitorSession);
     setStatus('ANONYMOUS');
+    setSelectedTrack(null);
+    setChatResetKey((prev) => prev + 1);
   };
 
   const handleTrackSelected = (track: TrackRecommendation) => {
@@ -87,6 +92,7 @@ export default function CandidatePage() {
 
       <main className="flex-1 p-3 sm:p-6 flex flex-col">
         <ChatContainer
+          key={chatResetKey}
           session={session}
           onOpenAuth={() => setIsAuthOpen(true)}
           onTrackSelected={handleTrackSelected}

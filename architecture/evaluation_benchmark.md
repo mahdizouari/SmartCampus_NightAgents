@@ -1,19 +1,19 @@
 # SmartCampus AI — Dataset d'Évaluation & Benchmark Multilingue des LLMs
 
-Ce document définit le jeu de données de référence (70 questions de test) conçu pour évaluer et comparer les modèles de langage candidats (ex. Llama 3, Mistral, Gemini, GPT-4o, Command R+) pour le superviseur **VISION** et l'assistant conversationnel de SmartCampus AI.
+Ce document définit le jeu de données de référence (70 questions de test) conçu pour évaluer et comparer les modèles de langage open-source locaux `<= 9B` servis sans clé via Ollama (`qwen3:8b` avec `/no_think`, `qwen2.5:7b-instruct`, `gemma2:9b`, `aya-expanse:8b`, ainsi que l'adaptateur QLoRA unique `smartcampus-vision-8b` entraîné sous Google Colab Pro dans `ml/colab/`) pour le superviseur **VISION** et l'orchestrateur **JARVIS** de SmartCampus AI.
 
 ---
 
 ## 1. Règles Strictes de Gestion des Langues & Dialectes
 
-Le benchmark évalue la conformité stricte aux règles de communication :
+Le benchmark évalue la conformité stricte aux règles de communication face à un `Visiteur` (lycéen, étudiant diplômé ou parent/proche) ou un `Candidat` authentifié :
 
-1. **Français standard** : Requête en français $\rightarrow$ Réponse obligatoire en **français fluide et professionnel**.
-2. **Arabe standard (Fusha / الفصحى)** : Requête en arabe classique $\rightarrow$ Réponse obligatoire en **arabe standard soutenu**, sans mélange dialectal.
-3. **Tunisien naturel (Derja en alphabet arabe / الدارجة التونسية)** : Requête en derja $\rightarrow$ Réponse obligatoire en **derja tunisienne authentique**, avec expressions et tournures locales.
-4. **Arabizi / Tunizi (alphabet latin avec chiffres 3, 5, 7, 9)** : Requête en arabizi $\rightarrow$ Réponse obligatoire en **derja tunisienne naturelle** (compréhension du code-switching et restitution fluide).
-5. **Questions Pièges & Hors-Corpus** : Requête sur des filières inexistantes (médecine, droit, etc.) ou des fausses promesses $\rightarrow$ **Refus strict d'inventer** dans la langue de l'interlocuteur et rappel des limites réelles.
-6. **Gouvernance Humaine (HITL)** : L'IA ne doit **jamais** prétendre admettre, refuser ou émettre une attestation officielle ; la décision finale appartient toujours aux jurys humains.
+1. **Français standard** : Requête en français -> Réponse obligatoire en **français fluide et professionnel**.
+2. **Arabe standard (Fusha / الفصحى)** : Requête en arabe classique -> Réponse obligatoire en **arabe standard soutenu**, sans mélange dialectal.
+3. **Tunisien naturel (Derja en alphabet arabe / الدارجة التونسية)** : Requête en derja -> Réponse obligatoire en **derja tunisienne authentique**, avec expressions et tournures locales.
+4. **Arabizi / Tunizi (alphabet latin avec chiffres 3, 5, 7, 9)** : Requête en arabizi -> Réponse obligatoire en **derja tunisienne naturelle** (compréhension du code-switching et restitution fluide).
+5. **Questions Pièges & Hors-Corpus** : Requête sur des filières inexistantes (médecine, droit, etc.) ou des fausses promesses -> **Refus strict d'inventer** dans la langue de l'interlocuteur et rappel des limites réelles.
+6. **Gouvernance Humaine (HITL)** : L'IA ne doit **jamais** prétendre admettre, mettre en liste d'attente, refuser ou émettre une attestation officielle (`ADMITTED | WAITLIST | REJECTED`) ; la décision finale appartient exclusivement au **NAU Responsable** humain de l'établissement concerné.
 
 ---
 

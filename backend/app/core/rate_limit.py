@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.deps import decode_hs256_jwt
+from app.core.deps import decode_hs256_jwt, is_candidate_role
 from app.core.redis import get_redis_client
 
 _EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
@@ -160,7 +160,7 @@ async def evaluate_rate_limit(
             if limit_override is not None
             else (
                 settings.RATE_LIMIT_STUDENT_PER_MINUTE
-                if role == "student"
+                if is_candidate_role(role)
                 else settings.RATE_LIMIT_STAFF_PER_MINUTE
             )
         )

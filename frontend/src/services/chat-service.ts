@@ -27,6 +27,7 @@ export interface ChatResponse {
   reply_text?: string;
   subAgent: VisionSubAgentId;
   sub_agent?: VisionSubAgentId;
+  detected_language?: string;
   detectedDialect?: 'French' | 'Tunisian_Derja' | 'Arabizi';
   recommendations?: TrackRecommendation[];
   actionPrompt?: ChatActionPrompt;
@@ -41,11 +42,17 @@ export interface ChatResponse {
   }[];
 }
 
+export type ChatMessageResponse = ChatResponse;
+
 class ChatService {
   private memoryHistory: ChatMessage[] = [...INITIAL_MESSAGES];
 
   public getLocalHistory(): ChatMessage[] {
     return this.memoryHistory;
+  }
+
+  public resetHistory(): void {
+    this.memoryHistory = [...INITIAL_MESSAGES];
   }
 
   public appendMessage(msg: ChatMessage): void {
@@ -77,6 +84,7 @@ class ChatService {
         subAgent: res.subAgent || res.sub_agent,
         content: res.reply || res.reply_text || '',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        detected_language: res.detected_language,
         detectedDialect: res.detectedDialect,
         recommendations: res.recommendations,
         citations: res.citations?.map((c) => ({

@@ -45,17 +45,17 @@ Les agents interviennent en tant qu'**acteurs secondaires (`«agent»`)** : ils 
 
 | Orchestrateur | Sous-agent / Nœud | Type technique | Rôle exact |
 | :--- | :--- | :--- | :--- |
-| **`VISION`** *(LangGraph Supervisor · Front-office, Étapes 1–6 + Sign-up)* | `1.1 Listener` | **LLM** (+ Whisper STT, LID, normaliseur Arabizi) | Transcrit l'audio, normalise Derja/Arabizi, détecte l'intention et la langue. |
-| | `1.2 Librarian` | **LLM** (+ pgvector BM25 + vecteurs) | Répond en continu sur le corpus officiel IIT / ISB / ISA avec citations obligatoires des sources. |
+| **`VISION`** *(LangGraph Supervisor · Front-office, Étapes 1–6 + Sign-up)* | `1.1 Listener` | **LLM** (+ Whisper STT local sans clé, LID, normaliseur Arabizi) | Transcrit l'audio, normalise Derja/Arabizi, détecte l'intention et la langue. |
+| | `1.2 Librarian` | **LLM+RAG** (`pgvector` `bge-m3` `1024d` + `TSVECTOR` RRF + reranker) | Répond en continu sur le corpus officiel IIT / ISB / ISA (dont les 42 pages `https://iit.tn/` dans `backend/data/corpus/iit/`) avec citations obligatoires des sources. |
 | | `1.3 Gatekeeper` | **LLM + Règles YAML** | Extrait les faits déclarés (`candidate_profile`) et évalue l'éligibilité, les prérequis et les passerelles/équivalences de manière déterministe. |
-| | `1.4 Reader` | **VLM** (+ OpenCV) | Extrait les matières, notes et moyennes du relevé officiel après authentification, avec score de confiance par champ. |
+| | `1.4 Reader` | **VLM** (`qwen2.5vl:7b` local Ollama + `pypdf` / Pillow) | Extrait les matières, notes et moyennes du relevé officiel après authentification, avec score de confiance par champ. |
 | | `1.5 Advisor` | **Code + LLM** | Calcule `score_compatibilite()` (critères académiques et intérêts uniquement, sans biais) et justifie 2 à 3 parcours. |
 | | `1.6 Registrar` | **LLM** | Pré-remplit le formulaire cible, génère le QCM (5–10 questions) depuis la banque approuvée, rédige le brief 1 page et émet l'événement `outbox`. |
 | **`JARVIS`** *(Event / Timer Workers · Back-office, Étape 7)* | `2.1 Scheduler` | **Code déterministe** | Gère les créneaux (`FREE / HELD / BOOKED`), interdit tout double-booking (`unique(responsable_id, start_time)` + `SELECT ... FOR UPDATE`), gère automatiquement la liste d'attente (blocage temporaire 15 min aux 3 candidats suivants). |
 | | `2.2 Messenger` | **LLM** (borné par templates RH) | Personnalise les relances (T-24h, 24h, 48h), interprète les réponses (confirmer / déplacer / annuler) et notifie la décision humaine signée. |
 | | `2.3 Fixer` | **Règles + LLM** | Libère les créneaux annulés, applique le plafond `reschedules <= 2` et ouvre les tickets `rh_ticket` (résumé 5 lignes + historique chronologique). |
-| **Transversal** | **Guardrail Node** | **Règles + LLM** | Contrôle chaque sortie : présence de citation pour tout fait académique, aucune promesse d'admission, aucun frais ou délai inventé, protection contre l'injection de prompt et masquage PII dans les journaux. |
-| **Optionnel (*stretch*)** | **`ATLAS`** | **LLM** | Traduit les questions de la `Direction` en requêtes SQL en lecture seule sur les vues statistiques. |
+| **Transversal** | **Guardrail Node** | **Règles + Ancrage RAG** | Contrôle chaque sortie : présence de citation pour tout fait académique, aucune promesse d'admission, aucun frais ou délai inventé, protection contre l'injection de prompt et masquage PII dans les journaux. |
+| **Optionnel (*stretch*)** | **`ATLAS`** | **LLM** | Traduit des questions analytiques du `Responsable` en requêtes SQL en lecture seule sur les vues statistiques agrégées. |
 
 ---
 
@@ -120,7 +120,7 @@ flowchart LR
 
 ### 3.3 Processus 3 : Prise de rendez-vous, Relances & Escalade RH (`Étape 7`)
 
-* **Acteurs :** `Student` *(candidat identifié)*, `JARVIS` (`2.1 Scheduler`, `2.2 Messenger`, `2.3 Fixer`), `Human RH`, `NAU Responsable` *(publication des créneaux `UC13`)*.
+* **Acteurs :** `Candidat` *(`CANDIDATE`, authentifié)*, `JARVIS` (`2.1 Scheduler`, `2.2 Messenger`, `2.3 Fixer`), `Human RH`, `NAU Responsable` *(publication des créneaux `UC13`)*.
 * **Machine à états des rendez-vous :**
 
 ```text
@@ -146,7 +146,7 @@ AWAITING_SLOT --> INVITED --> BOOKED --> REMINDED --> ATTENDED --> (Étape 8 : D
 | Situation | Action autorisée de `JARVIS` | Escalade vers `Human RH` (`rh_ticket` + arrêt auto) |
 | :--- | :--- | :--- |
 | Préinscription démarrée non soumise | Relances à 48h et 7 jours | Jamais (nettoyage automatique en fin de campagne) |
-| Invitation sans réponse | Relances à 24h et 48h | **À 72h sans réponse** → statut `DORMANT` + ticket RH |
+| Invitation sans réponse | Relances à 24h et 48h | **À 72h sans réponse** -> statut `DORMANT` + ticket RH |
 | Demande de report ou d'annulation | Propose d'autres créneaux ; libère le créneau annulé (blocage temporaire 15 min pour les 3 candidats suivants en liste d'attente) | **À la 3ème modification** (`reschedules > 2`) |
 | Absence le jour de l'entretien | Enregistre `NO_SHOW` | **Immédiat** — reprise manuelle par appel humain |
 | Annulation par `NAU Responsable` | Transmet les excuses et propose des créneaux prioritaires | **Si aucun créneau disponible sous 7 jours** |
@@ -156,7 +156,7 @@ AWAITING_SLOT --> INVITED --> BOOKED --> REMINDED --> ATTENDED --> (Étape 8 : D
 
 ### 3.4 Processus 4 : Entretien & Décision finale HITL (`Étape 8`)
 
-* **Acteurs :** `NAU Responsable` *(décideur unique)*, `Student` *(destinataire)*, `JARVIS` *(messager uniquement après validation humaine)*.
+* **Acteurs :** `NAU Responsable` *(décideur unique)*, `Candidat` *(`CANDIDATE`, destinataire)*, `JARVIS` *(messager uniquement après validation humaine)*.
 * **Déroulement :**
   1. En amont de l'entretien, `NAU Responsable` consulte depuis son portail le **brief 1 page**, les scores QCM, l'historique d'orientation et les éventuelles alertes d'équivalence ou d'anomalie (`UC14`).
   2. Il mène l'entretien (`INTERVIEWED`) puis **saisit et signe manuellement la décision officielle** accompagnée de ses observations : **`ADMITTED`**, **`WAITLIST`** ou **`REJECTED`**.

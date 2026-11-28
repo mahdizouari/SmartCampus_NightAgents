@@ -71,6 +71,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   const endOfChatRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingSecondsRef = useRef<number>(0);
+  const recordingCancelledRef = useRef<boolean>(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -225,19 +227,27 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       };
 
       recorder.onstop = async () => {
+        if (recordingCancelledRef.current) {
+          recordingCancelledRef.current = false;
+          return;
+        }
+        const elapsedSeconds = recordingSecondsRef.current;
         const audioBlob = new Blob(audioChunksRef.current, {
           type: recorder.mimeType || 'audio/webm',
         });
         setRecordedAudioBlob(audioBlob);
-        await executeTranscription(audioBlob, voiceMode, campusScope, recordingSeconds);
+        await executeTranscription(audioBlob, voiceMode, campusScope, elapsedSeconds);
       };
 
+      recordingCancelledRef.current = false;
+      recordingSecondsRef.current = 0;
       recorder.start(250);
       setIsRecording(true);
       setRecordingSeconds(0);
 
       timerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
+        recordingSecondsRef.current += 1;
+        setRecordingSeconds(recordingSecondsRef.current);
       }, 1000);
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -270,6 +280,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   const cancelVoiceRecording = () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    recordingCancelledRef.current = true;
+    recordingSecondsRef.current = 0;
     setIsRecording(false);
     setRecordingSeconds(0);
     audioChunksRef.current = [];

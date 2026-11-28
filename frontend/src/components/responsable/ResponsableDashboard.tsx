@@ -9,6 +9,7 @@ import {
   SchoolCode,
   UserSession,
 } from '@/types';
+import { formatErrorMessage } from '@/lib/api-error';
 import { responsableService } from '@/services/responsable-service';
 import {
   ShieldCheck,
@@ -58,6 +59,12 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
   const [documents, setDocuments] = useState<KnowledgeDocumentItem[]>([]);
   const [loadingBd, setLoadingBd] = useState(false);
   const [bdFeedback, setBdFeedback] = useState<string | null>(null);
+  const [bdError, setBdError] = useState<string | null>(null);
+
+  const lockedResponsableSchool: 'iit' | 'isb' | 'isa' | null =
+    session?.role === 'RESPONSABLE' && session.school
+      ? (session.school.toLowerCase() as 'iit' | 'isb' | 'isa')
+      : null;
 
   // Program Edit Modal State
   const [editingProgram, setEditingProgram] = useState<CatalogProgramItem | null>(null);
@@ -155,6 +162,7 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
   };
 
   const openEditProgramModal = (prog: CatalogProgramItem) => {
+    setBdError(null);
     setEditingProgram(prog);
     setProgTitle(prog.title);
     setProgDuration(prog.duration_years);
@@ -167,6 +175,7 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
     if (!editingProgram) return;
     setSavingProgram(true);
     setBdFeedback(null);
+    setBdError(null);
     try {
       const res = await responsableService.updateCatalogProgram(editingProgram.id, {
         title: progTitle.trim(),
@@ -181,6 +190,8 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
           ? `Formation ${res.item.code} mise à jour dans PostgreSQL (core.program).`
           : `Formation ${res.item.code} mise à jour en aperçu local (connectez un compte Responsable OTP pour persister en base).`,
       );
+    } catch (err: unknown) {
+      setBdError(formatErrorMessage(err));
     } finally {
       setSavingProgram(false);
     }
@@ -188,18 +199,28 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
 
   const handleUploadDocument = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!docCode.trim() || !docTitle.trim()) return;
-    if (!docFile && !docContent.trim()) {
-      setBdFeedback('Veuillez joindre un fichier (PDF/MD/TXT/DOCX) ou saisir un contenu Markdown.');
+    const cleanedCode = docCode.trim();
+    const cleanedTitle = docTitle.trim();
+    if (!cleanedCode || !cleanedTitle) return;
+    if (cleanedCode.length < 2 || !/^[A-Za-z0-9._-]+$/.test(cleanedCode)) {
+      setBdError(
+        'Le code document doit comporter au moins 2 caractères (lettres, chiffres, points, tirets ou underscores uniquement).',
+      );
       return;
     }
+    if (!docFile && !docContent.trim()) {
+      setBdError('Veuillez joindre un fichier (PDF/MD/TXT/DOCX) ou saisir un contenu Markdown.');
+      return;
+    }
+    const effectiveSchool = lockedResponsableSchool || docSchool;
     setUploadingDoc(true);
     setBdFeedback(null);
+    setBdError(null);
     try {
       const res = await responsableService.uploadKnowledgeDocument({
-        code: docCode,
-        title: docTitle,
-        school_code: docSchool,
+        code: cleanedCode,
+        title: cleanedTitle,
+        school_code: effectiveSchool,
         doc_type: docType,
         description: docDescription,
         is_published: docPublished,
@@ -219,8 +240,10 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
       setBdFeedback(
         res.syncedBackend
           ? `Document officiel ${res.item.code} enregistré et mis en file d’indexation RAG (SA-56).`
-          : `Document ${res.item.code} ajouté en aperçu local (connectez un compte Responsable OTP pour persister dans core.documents).`,
+          : `Document ${res.item.code} ajouté en aperçu local (connectez un compte Responsable OTP pour persister dans knowledge.corpus_documents).`,
       );
+    } catch (err: unknown) {
+      setBdError(formatErrorMessage(err));
     } finally {
       setUploadingDoc(false);
     }
@@ -381,11 +404,12 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
             <button
               type="button"
               onClick={() => {
+                setBdError(null);
                 setDocSchool(
-                  selectedSchool === 'ALL'
-                    ? session?.school
-                      ? (session.school.toLowerCase() as 'iit' | 'isb' | 'isa')
-                      : 'iit'
+                  lockedResponsableSchool
+                    ? lockedResponsableSchool
+                    : selectedSchool === 'ALL'
+                    ? 'iit'
                     : (selectedSchool.toLowerCase() as 'iit' | 'isb' | 'isa'),
                 );
                 setIsDocModalOpen(true);
@@ -441,6 +465,19 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
             type="button"
             onClick={() => setBdFeedback(null)}
             className="text-emerald-700 hover:text-emerald-900"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {bdError && activeTab === 'catalog_corpus' && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between">
+          <span>{bdError}</span>
+          <button
+            type="button"
+            onClick={() => setBdError(null)}
+            className="text-red-700 hover:text-red-900"
           >
             <X className="w-4 h-4" />
           </button>
@@ -940,6 +977,11 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
             </div>
 
             <form onSubmit={handleUploadDocument} className="p-5 space-y-3.5 text-xs">
+              {bdError && (
+                <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 font-medium">
+                  {bdError}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 uppercase mb-1">
@@ -948,6 +990,10 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
                   <input
                     type="text"
                     required
+                    minLength={2}
+                    maxLength={64}
+                    pattern="^[A-Za-z0-9._-]+$"
+                    title="2 à 64 caractères : lettres, chiffres, points, tirets ou underscores"
                     value={docCode}
                     onChange={(e) => setDocCode(e.target.value)}
                     placeholder="IIT-GLID-2027"
@@ -955,13 +1001,16 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 uppercase mb-1">École</label>
+                  <label className="block font-bold text-slate-700 uppercase mb-1">
+                    École {lockedResponsableSchool ? `(${session?.school})` : ''}
+                  </label>
                   <select
-                    value={docSchool}
+                    value={lockedResponsableSchool || docSchool}
+                    disabled={Boolean(lockedResponsableSchool)}
                     onChange={(e) =>
                       setDocSchool(e.target.value as 'iit' | 'isb' | 'isa' | 'nau_common')
                     }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-900 bg-white"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-900 bg-white disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
                   >
                     <option value="iit">IIT</option>
                     <option value="isb">ISB</option>
@@ -979,6 +1028,8 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
                   <input
                     type="text"
                     required
+                    minLength={3}
+                    maxLength={255}
                     value={docTitle}
                     onChange={(e) => setDocTitle(e.target.value)}
                     placeholder="Brochure Génie Informatique IIT"
@@ -1096,6 +1147,11 @@ export const ResponsableDashboard: React.FC<ResponsableDashboardProps> = ({
             </div>
 
             <form onSubmit={handleSaveProgram} className="p-5 space-y-3.5 text-xs">
+              {bdError && (
+                <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 font-medium">
+                  {bdError}
+                </div>
+              )}
               <div>
                 <label className="block font-bold text-slate-700 uppercase mb-1">
                   Intitulé officiel

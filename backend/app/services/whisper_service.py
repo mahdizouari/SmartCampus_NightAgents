@@ -1,7 +1,8 @@
-"""OpenAI Whisper speech-to-text integration service for SmartCampus voice notes.
+"""Whisper speech-to-text integration service for SmartCampus voice notes.
 
-Supports trilingual student orientation covering IIT, ISB, and ISA in Tunisian Derja,
-Modern Standard Arabic (Fusha), and French with code-switching and domain terminology.
+Defaults to local keyless Whisper STT (`WHISPER_PROVIDER=local`) or any OpenAI-compatible
+`/audio/transcriptions` endpoint. Supports trilingual orientation covering IIT, ISB, and ISA
+in Tunisian Derja, Modern Standard Arabic (Fusha), and French with domain terminology.
 """
 
 import logging
@@ -19,7 +20,7 @@ from app.schemas.voice_note import (
 
 logger = logging.getLogger(__name__)
 
-# Max allowed audio size: 25 MB (OpenAI Whisper limit)
+# Max allowed audio size: 25 MB (Whisper STT limit)
 MAX_AUDIO_SIZE_BYTES = 25 * 1024 * 1024
 
 ALLOWED_AUDIO_EXTENSIONS = {"webm", "mp4", "m4a", "mp3", "wav", "ogg"}
@@ -67,7 +68,7 @@ WHISPER_PROMPTS: dict[VoiceNoteMode, str] = {
     ),
 }
 
-# Mock transcripts when OPENAI_API_KEY is not configured (offline / testing fallback)
+# Mock transcripts when WHISPER_PROVIDER=mock or external API key is unset (offline/test fallback)
 MOCK_VOICE_TRANSCRIPTS: dict[VoiceNoteMode, str] = {
     "derja": (
         "عسلامة، نحب نسجل في مرحلة تكوين المهندسين في IIT وفما برشا اختصاصات "
@@ -246,10 +247,10 @@ async def transcribe_audio(
         data = resp.json()
         transcript = str(data.get("text", "")).strip()
     except Exception as exc:
-        logger.error("Failed to parse OpenAI Whisper response: %s", exc)
+        logger.error("Failed to parse Whisper STT response: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Réponse invalide reçue de l'API OpenAI Whisper.",
+            detail="Réponse invalide reçue du service de transcription Whisper.",
         ) from exc
 
     if not transcript:

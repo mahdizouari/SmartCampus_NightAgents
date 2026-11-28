@@ -61,6 +61,8 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                 ? 'Derja (تونسي)'
                 : message.detectedDialect === 'Arabizi'
                 ? 'Arabizi'
+                : message.detected_language === 'ar' && message.detectedDialect === 'French'
+                ? 'Arabe (Fusha)'
                 : 'Français'}
             </span>
           )}

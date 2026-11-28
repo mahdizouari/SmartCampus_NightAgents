@@ -109,6 +109,35 @@ export const Header: React.FC<HeaderProps> = ({ session, onOpenAuth, onLogout })
           )}
         </div>
       </div>
+
+      {/* Compact Mobile Navigation (< 768px) */}
+      <nav
+        aria-label="Navigation mobile"
+        className="md:hidden border-t border-slate-100 bg-slate-50/80 px-4 py-1.5 flex items-center gap-1.5"
+      >
+        <Link
+          href="/"
+          className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            pathname === '/'
+              ? 'bg-white text-blue-700 font-semibold shadow-2xs border border-slate-200/80'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+          <span>Visiteur / Candidat</span>
+        </Link>
+        <Link
+          href="/responsable"
+          className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            pathname.startsWith('/responsable')
+              ? 'bg-white text-blue-700 font-semibold shadow-2xs border border-slate-200/80'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+          <span>Portail Responsable</span>
+        </Link>
+      </nav>
     </header>
   );
 };

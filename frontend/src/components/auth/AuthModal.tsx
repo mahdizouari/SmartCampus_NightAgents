@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Mail, KeyRound, ArrowRight, ShieldCheck, CheckCircle2, User } from 'lucide-react';
+import { formatErrorMessage } from '@/lib/api-error';
 import { authService } from '@/services/auth-service';
 import { UserSession } from '@/types';
 
@@ -43,8 +44,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         setCode(res.devOtpCode);
       }
       setStep('OTP');
-    } catch {
-      setErrorMsg('Erreur lors de l’envoi du code OTP. Veuillez réessayer.');
+    } catch (err: unknown) {
+      setErrorMsg(formatErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -65,17 +66,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       });
       onSuccess(session);
       onClose();
-    } catch {
-      setErrorMsg('Code OTP invalide ou expiré.');
+    } catch (err: unknown) {
+      setErrorMsg(formatErrorMessage(err));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResponsableDemoLogin = () => {
-    const session = authService.loginAsResponsableDemo('IIT');
-    onSuccess(session);
-    onClose();
+  const handleResponsableDemoLogin = async () => {
+    setLoading(true);
+    setErrorMsg(null);
+    setFeedback(null);
+    try {
+      const session = await authService.loginAsResponsableDemo('IIT');
+      onSuccess(session);
+      onClose();
+    } catch (err: unknown) {
+      setErrorMsg(formatErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -239,9 +249,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               Accès démonstration encadrement académique
             </p>
             <button
-              onClick={handleResponsableDemoLogin}
+              onClick={() => void handleResponsableDemoLogin()}
+              disabled={loading}
               type="button"
-              className="w-full flex items-center justify-center gap-2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+              className="w-full flex items-center justify-center gap-2 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
               <span>Connexion Démo : Responsable IIT (HITL &amp; Suivi BD)</span>

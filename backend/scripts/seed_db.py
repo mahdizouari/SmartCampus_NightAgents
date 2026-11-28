@@ -203,7 +203,7 @@ PROGRAMS = [
             "Efficacité énergétique, énergies renouvelables (solaire, éolien), "
             "systèmes thermiques, transition écologique et bilans carbone."
         ),
-        "source_document": "https://iit.tn/formation/",
+        "source_document": "TODO(corpus): official_iit_energy_url_pending",
     },
     {
         "code": "IIT-ING-CIVIL",
@@ -549,7 +549,7 @@ async def seed_program_fees(
                     "Paiement en 3 tranches (Septembre 40%, Janvier 30%, Avril 30%)"
                 ),
                 "effective_from": date(2026, 9, 1),
-                "source_document": prog["source_document"],
+                "source_document": "TODO(corpus): demo_seed_placeholder",
             },
         )
         count += 1

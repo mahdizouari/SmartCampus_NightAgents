@@ -406,12 +406,17 @@ def test_seed_db_iit_programs_reference_verified_iit_urls_without_breaking_count
 
     iit_programs = [p for p in PROGRAMS if p["school_code"] == "iit"]
     assert len(iit_programs) == 9
-    for prog in iit_programs:
+    verified_iit = [p for p in iit_programs if p["code"] != "IIT-ING-ENER"]
+    assert len(verified_iit) == 8
+    for prog in verified_iit:
         src = prog["source_document"]
         assert src.startswith("https://iit.tn/"), (
             f"IIT program {prog['code']} still has unverified source_document: {src}"
         )
         assert "TODO(corpus)" not in src
+
+    ener_prog = next(p for p in iit_programs if p["code"] == "IIT-ING-ENER")
+    assert ener_prog["source_document"] == "TODO(corpus): official_iit_energy_url_pending"
 
     # ISB and ISA were not scraped; they must honestly retain TODO(corpus) markers
     non_iit_programs = [p for p in PROGRAMS if p["school_code"] != "iit"]

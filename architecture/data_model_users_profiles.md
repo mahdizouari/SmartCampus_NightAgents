@@ -241,7 +241,7 @@ erDiagram
 ### 3.1 Identité, rôles et acteurs (`accounts`, `roles`, `account_roles`, `guest_sessions`)
 
 #### `core.accounts` — Comptes utilisateurs authentifiés
-Regroupe l'ensemble des utilisateurs identifiés (candidats identifiés, `Human RH`, `NAU Responsable`, `Direction`, `Platform Admin`).
+Regroupe l'ensemble des utilisateurs identifiés : candidats authentifiés (`CANDIDATE`), responsables d'établissement (`RESPONSABLE` / `NAU Responsable`), support exceptions (`Human RH`), ainsi que les comptes techniques historiques (`direction`, `admin`) conservés pour la rétrocompatibilité SQL/RLS.
 
 | Colonne | Type SQL | Contraintes | Description |
 | :--- | :--- | :--- | :--- |
@@ -251,23 +251,23 @@ Regroupe l'ensemble des utilisateurs identifiés (candidats identifiés, `Human 
 | `full_name` | `VARCHAR(255)` | `NOT NULL` | Nom complet affiché dans les portails et fiches d'entretien. |
 | `auth_provider` | `VARCHAR(32)` | `NOT NULL CHECK (auth_provider IN ('EMAIL_OTP', 'PHONE_OTP', 'GOOGLE_OAUTH', 'SSO'))` | Méthode d'authentification utilisée. |
 | `provider_subject` | `VARCHAR(255)` | `NULL` | Identifiant externe OAuth/SSO (`UNIQUE (auth_provider, provider_subject)` si non null). |
-| `department` | `VARCHAR(128)` | `NULL` | Service de rattachement pour le personnel (ex. `admissions`, `direction`). |
+| `department` | `VARCHAR(128)` | `NULL` | Service de rattachement pour le personnel (ex. `admissions`, `scolarite`). |
 | `is_active` | `BOOLEAN` | `NOT NULL DEFAULT TRUE` | Permet la désactivation sans perte d'historique d'audit ou de décisions passées. |
 | `email_verified_at` | `TIMESTAMPTZ` | `NULL` | Horodatage de vérification de l'adresse email. |
 | `last_login_at` | `TIMESTAMPTZ` | `NULL` | Dernière connexion réussie. |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Date de création du compte. |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | Date de dernière mise à jour. |
 
-#### `core.roles` — Référentiel des rôles RBAC
-Les codes sont alignés avec les claims JWT `role` et la politique RBAC de l'API :
+#### `core.roles` — Référentiel des rôles RBAC (élargi par la révision Alembic `20261127_0003`)
+Les codes sont alignés avec les claims JWT `role`, le type canonique `ActorStage` (`VISITOR | CANDIDATE | RESPONSABLE`) et la contrainte `roles_code_valid` :
 
 | `code` | `label` | Périmètre d'accès |
 | :--- | :--- | :--- |
-| `student` | Candidat identifié (`AUTHENTICATED_STUDENT`) | Propre dossier uniquement (RLS sur `candidate_id`). |
-| `rh` | Responsable admissions & exceptions (`HUMAN_RH`) | Transversal IIT / ISB / ISA sur tickets RH et anomalies documentaires ; aucune signature d'admission. |
-| `responsable` | Responsable NAU (`NAU_RESPONSABLE`) | Cloisonné par `school_scope` (RLS) ; publication créneaux, évaluation entretien, signature décision HITL. |
-| `direction` | Direction générale NAU | Lecture seule sur tableaux de bord consolidés et requêtes analytiques `ATLAS`. |
-| `admin` | Administrateur plateforme (`PLATFORM_ADMIN`) | Gestion RBAC, corpus RAG, règles YAML, banque QCM et modèles de notifications. |
+| `candidate` / `candidat` / `student` | Candidat identifié (`CANDIDATE` — alias équivalents via `is_candidate_role`) | Propre dossier uniquement (RLS et anti-IDOR strict sur `candidate_id`). Promu depuis `VISITOR` après OTP/OAuth avec fusion automatique de session. |
+| `responsable` | Responsable NAU (`RESPONSABLE` / `NAU_RESPONSABLE`) | Cloisonné par `school_scope` (`iit \| isb \| isa`, RLS) ; CRUD catalogue & corpus RAG de son école, publication créneaux, suivi dossiers/briefs, et **signature HITL exclusive (`ADMITTED \| WAITLIST \| REJECTED`)**. |
+| `rh` | Support admissions & exceptions (`HUMAN_RH`) | Transversal IIT / ISB / ISA sur tickets `rh_ticket` et anomalies documentaires (`MISMATCH_RH`) ; aucune signature d'admission. |
+| `direction` *(retiré UI)* | Rôle historique (lecture seule résiduelle) | Conservé uniquement pour la compatibilité SQL/migrations ; droits d'écriture retirés (`403 Forbidden` sur catalogue et `/knowledge/documents`). |
+| `admin` *(registre racine / CI)* | Rôle technique racine | Conservé pour la compatibilité SQL/RLS et la gestion technique du registre racine (`/api/v1/catalog/schools`). |
 
 #### `core.account_roles` — Affectation des rôles et cloisonnement par école
 Permet le multi-rôle contrôlé et porte l'attribut `school_scope` exigé par les politiques Row-Level Security (RLS).
@@ -479,7 +479,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_provider_subject
 
 CREATE TABLE IF NOT EXISTS core.roles (
     id          SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    code        VARCHAR(32)  NOT NULL UNIQUE CHECK (code IN ('student', 'rh', 'responsable', 'direction', 'admin')),
+    code        VARCHAR(32)  NOT NULL UNIQUE CHECK (code IN ('student', 'candidate', 'candidat', 'rh', 'responsable', 'direction', 'admin')), -- élargi par Alembic 20261127_0003 (roles_code_valid)
     label       VARCHAR(100) NOT NULL,
     description TEXT         NOT NULL
 );
@@ -634,7 +634,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_unprocessed ON core.outbox (created_at) WH
 
 CREATE TABLE IF NOT EXISTS core.audit_log (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    actor_type  VARCHAR(24) NOT NULL CHECK (actor_type IN ('STUDENT', 'RH', 'RESPONSABLE', 'DIRECTION', 'ADMIN', 'VISION', 'JARVIS', 'SYSTEM')),
+    actor_type  VARCHAR(24) NOT NULL CHECK (actor_type IN ('VISITOR', 'CANDIDATE', 'VISITEUR', 'CANDIDAT', 'STUDENT', 'RH', 'RESPONSABLE', 'DIRECTION', 'ADMIN', 'VISION', 'JARVIS', 'SYSTEM')), -- élargi par Alembic 20261127_0003 (audit_actor_type_valid)
     actor_id    VARCHAR(64) NOT NULL,
     action      VARCHAR(96) NOT NULL,
     entity_type VARCHAR(48) NOT NULL,
@@ -658,7 +658,7 @@ Cette section garantit l'assemblage direct avec les lots parallèles du modèle 
 * **Ordre de migration (`SA-17`) :** créer `core.school` et `core.program` (`SA-12`) avant d'activer les contraintes `FOREIGN KEY` de `core.account_roles`, `core.candidate`, `core.shortlist` et `core.equivalence_requests`.
 
 ### 5.2 Compatibilité avec `SA-14` et les modules aval (Préinscription, QCM, Rendez-vous et Entretiens)
-* **Complémentarité avec `SA-14` (gestion documentaire & sync RAG) :** `SA-14` référence déjà directement `core.accounts(id)` depuis `core.documents.created_by` et `core.document_versions.uploaded_by`. Par ailleurs, `core.document` (singulier, `SA-13`) désigne exclusivement les justificatifs privés des candidats (relevés VLM chiffrés dans MinIO), tandis que `core.documents` (pluriel, `SA-14`) stocke les documents officiels du corpus RAG.
+* **Complémentarité avec `SA-14` / `SA-56` (gestion documentaire & sync RAG `https://iit.tn/`) :** `SA-14` référence directement `core.accounts(id)` depuis `core.documents.created_by` (`CorpusDocument`) et `core.document_versions.uploaded_by` (`CorpusDocumentVersion`). Par ailleurs, `core.document` (singulier, `CandidateDocument`, `SA-13`) désigne exclusivement les justificatifs privés des candidats (relevés VLM chiffrés), tandis que `core.documents` (pluriel), `core.document_versions`, `core.document_sync_jobs` (`embedding_model DEFAULT 'bge-m3'`) et `knowledge.chunks` (`vector(1024)` HNSW) stockent le corpus officiel RAG — incluant les **42 documents Markdown officiels** de `https://iit.tn/` (`backend/data/corpus/iit/`) synchronisés de façon idempotente par `backend/scripts/sync_iit_corpus.py`.
 * **Clés primaires exportées vers les modules préinscription, RDV et décisions :**
 
 | Domaine aval | Schéma | Tables cibles | Clés étrangères consommées depuis `SA-13` | Contraintes critiques |
@@ -677,5 +677,5 @@ Cette section garantit l'assemblage direct avec les lots parallèles du modèle 
     USING (id = current_setting('request.jwt.claim.candidate_id', true)::uuid)
     ```
     et `USING (candidate_id = current_setting('request.jwt.claim.candidate_id', true)::uuid)` sur les tables enfants.
-* **Alignement rôles JWT & DB :** `core.roles.code` reprend exactement les valeurs attendues par les claims JWT (`student`, `rh`, `responsable`, `direction`, `admin`) et alimente la table de jonction `core.account_roles(school_scope)` nécessaire aux politiques RLS multi-écoles (`iit`, `isb`, `isa`).
+* **Alignement rôles JWT, `ActorStage` & DB (Alembic `20261127_0003`) :** `core.roles.code` accepte `'candidate'`, `'candidat'` et `'student'` (normalisés vers `ActorStage = "CANDIDATE"` via `is_candidate_role`), `'responsable'` (`ActorStage = "RESPONSABLE"` cloisonné par `core.account_roles.school_scope`), `'rh'` (support exceptions), ainsi que `'direction'` et `'admin'` maintenus pour la rétrocompatibilité SQL/RLS, tandis que `core.audit_log.actor_type` couvre `'VISITOR'`, `'CANDIDATE'`, `'VISITEUR'`, `'CANDIDAT'`, `'STUDENT'`, `'RH'`, `'RESPONSABLE'`, `'DIRECTION'`, `'ADMIN'`, `'VISION'`, `'JARVIS'` et `'SYSTEM'`.
 * **Alignement Frontend (`SA-8`) :** l'énumération `core.candidate_status` correspond trait pour trait au type `CandidateStatus` (`ANONYMOUS` → `ADMITTED | WAITLIST | REJECTED` + `DORMANT`, `ESCALATED`, `WITHDRAWN`), et `core.candidate.candidate_number` permet d'afficher la référence métier du dossier (`NAU-2026-XXXX`).

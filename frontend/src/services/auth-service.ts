@@ -1,4 +1,5 @@
 import { apiClient, isValidUuid } from '@/lib/api-client';
+import { isApiError } from '@/lib/api-error';
 import { ActorStage, CandidateStatus, SchoolCode, UserRole, UserSession } from '@/types';
 
 interface GuestSessionBackendResponse {
@@ -213,7 +214,10 @@ class AuthService {
         message: `Code OTP envoyé à ${email}${devHint}.`,
         devOtpCode: res.dev_otp_code || undefined,
       };
-    } catch {
+    } catch (err: unknown) {
+      if (!isApiError(err) || err.status !== 0) {
+        throw err;
+      }
       return {
         success: true,
         message: `Un code à 6 chiffres a été envoyé à ${email} (Mode hors-ligne : utilisez 123456).`,
@@ -236,18 +240,23 @@ class AuthService {
       apiClient.getStoredGuestSessionId() ||
       (isValidUuid(this.currentSession.sessionId) ? this.currentSession.sessionId : null);
     const acceptConsent = options?.acceptConsent !== false;
+    const trimmedFullName = options?.fullName?.trim();
+
+    const verifyPayload: Record<string, unknown> = {
+      channel: 'email',
+      email,
+      code,
+      anonymous_session_id: anonymousSid || undefined,
+      consent_merge: true,
+    };
+    if (trimmedFullName && trimmedFullName.length >= 2) {
+      verifyPayload.full_name = trimmedFullName;
+    }
 
     try {
       const response = await apiClient.post<AuthVerifyBackendResponse>(
         '/auth/otp/verify',
-        {
-          channel: 'email',
-          email,
-          code,
-          full_name: options?.fullName?.trim() || undefined,
-          anonymous_session_id: anonymousSid || undefined,
-          consent_merge: true,
-        },
+        verifyPayload,
         {
           skipAuth: true,
           sessionId: anonymousSid || undefined,
@@ -319,10 +328,14 @@ class AuthService {
       };
       this.persistSession(verifiedSession);
       return verifiedSession;
-    } catch {
-      // Offline / demo fallback ONLY when backend is unreachable or demo code 123456 is used
+    } catch (err: unknown) {
+      // ONLY enter offline demo fallback when backend is unreachable (status === 0).
+      // Real 401/422/429 backend errors are re-thrown cleanly to the UI.
+      if (!isApiError(err) || err.status !== 0) {
+        throw err;
+      }
       if (code !== '123456') {
-        throw new Error('Code OTP invalide ou expiré.');
+        throw new Error('Code OTP invalide ou expiré (en mode hors-ligne, utilisez 123456).');
       }
       apiClient.setStoredGuestSessionId(null);
       const fallbackRole: UserRole = email.toLowerCase().startsWith('responsable')
@@ -331,7 +344,8 @@ class AuthService {
       const session: UserSession = {
         id: generateUuidV4(),
         email,
-        fullName: options?.fullName?.trim() || email.split('@')[0],
+        fullName:
+          trimmedFullName && trimmedFullName.length >= 2 ? trimmedFullName : email.split('@')[0],
         role: fallbackRole,
         actorStage: fallbackRole,
         school: fallbackRole === 'RESPONSABLE' ? 'IIT' : undefined,
@@ -347,10 +361,66 @@ class AuthService {
     }
   }
 
-  public loginAsResponsableDemo(school: SchoolCode = 'IIT'): UserSession {
+  public async loginAsResponsableDemo(school: SchoolCode = 'IIT'): Promise<UserSession> {
+    const email = `responsable.${school.toLowerCase()}@smartcampus.tn`;
+
+    try {
+      const otpRes = await apiClient.post<OtpSendBackendResponse>(
+        '/auth/otp/send',
+        { channel: 'email', email },
+        { skipAuth: true },
+      );
+
+      if (otpRes.dev_otp_code) {
+        const verifyRes = await apiClient.post<AuthVerifyBackendResponse>(
+          '/auth/otp/verify',
+          {
+            channel: 'email',
+            email,
+            code: otpRes.dev_otp_code,
+            consent_merge: false,
+          },
+          { skipAuth: true },
+        );
+
+        const accessToken = verifyRes.access_token || verifyRes.token;
+        const mappedRole = normalizeRoleToActorStage(
+          verifyRes.actor_stage ||
+            verifyRes.user.actor_stage ||
+            verifyRes.user.role ||
+            'RESPONSABLE',
+          false,
+        );
+
+        apiClient.setStoredGuestSessionId(null);
+
+        const liveSession: UserSession = {
+          id: verifyRes.user.id,
+          email: verifyRes.user.email || email,
+          fullName:
+            verifyRes.user.fullName || verifyRes.user.full_name || `Dr. Responsable ${school}`,
+          role: mappedRole,
+          actorStage: mappedRole,
+          school:
+            normalizeSchoolCode(verifyRes.user.school || verifyRes.user.school_scope) || school,
+          status: verifyRes.user.status || 'AUTHENTICATED',
+          isAnonymous: false,
+          token: accessToken,
+        };
+        this.persistSession(liveSession);
+        return liveSession;
+      }
+      // dev_otp_code is not exposed -> fall back to offline preview token below
+    } catch (err: unknown) {
+      if (!isApiError(err) || err.status !== 0) {
+        throw err;
+      }
+      // Unreachable backend (status === 0) -> fall back to offline preview token below
+    }
+
     const session: UserSession = {
       id: '00000000-0000-4000-8000-000000000002',
-      email: `responsable.${school.toLowerCase()}@smartcampus.tn`,
+      email,
       fullName: `Dr. Responsable ${school}`,
       role: 'RESPONSABLE',
       actorStage: 'RESPONSABLE',

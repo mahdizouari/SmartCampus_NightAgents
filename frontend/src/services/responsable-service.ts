@@ -1,4 +1,6 @@
 import { apiClient } from '@/lib/api-client';
+import { isApiError } from '@/lib/api-error';
+import { authService } from '@/services/auth-service';
 import {
   CandidateDossier,
   CatalogProgramItem,
@@ -112,6 +114,32 @@ class ResponsableService {
     return [...this.localPrograms];
   }
 
+  private isUsingDemoOfflineToken(): boolean {
+    const sessionToken = authService.getSession().token;
+    if (sessionToken && sessionToken.startsWith('demo-')) {
+      return true;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('smartcampus_token');
+        return Boolean(stored && stored.startsWith('demo-'));
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  private canFallbackToLocalPreview(err: unknown): boolean {
+    if (isApiError(err) && err.status === 0) {
+      return true;
+    }
+    if (this.isUsingDemoOfflineToken() && (!isApiError(err) || err.status === 401)) {
+      return true;
+    }
+    return false;
+  }
+
   /**
    * School-scoped program update (`PATCH /api/v1/catalog/programs/{program_id}`).
    */
@@ -126,8 +154,10 @@ class ResponsableService {
       );
       this.localPrograms = this.localPrograms.map((p) => (p.id === programId ? updated : p));
       return { item: updated, syncedBackend: true };
-    } catch {
-      // Demo token / offline fallback so Responsable UI remains testable without live OTP token
+    } catch (err: unknown) {
+      if (!this.canFallbackToLocalPreview(err)) {
+        throw err;
+      }
       const existing = this.localPrograms.find((p) => p.id === programId);
       if (!existing) {
         throw new Error('Formation introuvable dans le catalogue.');
@@ -139,6 +169,13 @@ class ResponsableService {
       this.localPrograms = this.localPrograms.map((p) => (p.id === programId ? patched : p));
       return { item: patched, syncedBackend: false };
     }
+  }
+
+  public async updateProgram(
+    programId: string,
+    payload: UpdateCatalogProgramPayload,
+  ): Promise<{ item: CatalogProgramItem; syncedBackend: boolean }> {
+    return this.updateCatalogProgram(programId, payload);
   }
 
   /**
@@ -196,7 +233,10 @@ class ResponsableService {
       );
       this.localDocuments = [created, ...this.localDocuments.filter((d) => d.code !== created.code)];
       return { item: created, syncedBackend: true };
-    } catch {
+    } catch (err: unknown) {
+      if (!this.canFallbackToLocalPreview(err)) {
+        throw err;
+      }
       const fallbackDoc: KnowledgeDocumentItem = {
         id: `doc-local-${Date.now()}`,
         code: payload.code.trim(),
